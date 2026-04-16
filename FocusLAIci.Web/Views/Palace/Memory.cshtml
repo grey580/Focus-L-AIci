@@ -1,0 +1,114 @@
+@model FocusLAIci.Web.Models.MemoryDetailViewModel
+@{
+    ViewData["Title"] = Model.Memory.Title;
+}
+
+<nav aria-label="breadcrumb" class="breadcrumb-bar">
+    <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a asp-controller="Home" asp-action="Index">Dashboard</a></li>
+        @if (!string.IsNullOrWhiteSpace(Model.Memory.WingSlug))
+        {
+            <li class="breadcrumb-item"><a asp-action="Wing" asp-route-slug="@Model.Memory.WingSlug">@Model.Memory.WingName</a></li>
+        }
+        <li class="breadcrumb-item active" aria-current="page">@Model.Memory.Title</li>
+    </ol>
+</nav>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Memory detail</p>
+        <h1>@Model.Memory.Title</h1>
+        <p class="page-copy">@Model.Memory.Summary</p>
+    </div>
+    <a class="btn btn-primary" asp-action="EditMemory" asp-route-id="@Model.Memory.Id">Edit Memory</a>
+</section>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h2 class="h5">Verbatim memory</h2>
+                <pre class="memory-content">@Model.Content</pre>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <h2 class="h5">Metadata</h2>
+                <dl class="meta-grid">
+                    <dt>Wing</dt>
+                    <dd>@Model.Memory.WingName</dd>
+                    <dt>Room</dt>
+                    <dd>@Model.Memory.RoomName</dd>
+                    <dt>Kind</dt>
+                    <dd>@Model.Memory.Kind</dd>
+                    <dt>Source</dt>
+                    <dd>@Model.Memory.SourceKind</dd>
+                    <dt>Importance</dt>
+                    <dd>@Model.Memory.Importance / 5</dd>
+                    <dt>Pinned</dt>
+                    <dd>@(Model.Memory.IsPinned ? "Yes" : "No")</dd>
+                    <dt>Created</dt>
+                    <dd>@Model.CreatedUtc.ToString("yyyy-MM-dd HH:mm") UTC</dd>
+                    <dt>Updated</dt>
+                    <dd>@Model.Memory.UpdatedUtc.ToString("yyyy-MM-dd HH:mm") UTC</dd>
+                    @if (Model.OccurredUtc.HasValue)
+                    {
+                        <dt>Occurred</dt>
+                        <dd>@Model.OccurredUtc.Value.ToString("yyyy-MM-dd HH:mm") UTC</dd>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.SourceReference))
+                    {
+                        <dt>Reference</dt>
+                        <dd class="text-break">@Model.SourceReference</dd>
+                    }
+                </dl>
+                <div class="tag-row">
+                    @foreach (var tag in Model.Memory.Tags)
+                    {
+                        <a class="tag-pill tag-link" asp-action="Explore" asp-route-tag="@tag">@tag</a>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <h2 class="h5">Outgoing links</h2>
+                @if (Model.OutgoingLinks.Count == 0)
+                {
+                    <p class="text-secondary mb-0">No outgoing links yet.</p>
+                }
+                else
+                {
+                    <ul class="list-unstyled mb-0">
+                        @foreach (var link in Model.OutgoingLinks)
+                        {
+                            <li class="mb-2"><span class="memory-meta">@link.Label</span><br /><a asp-action="Memory" asp-route-id="@link.MemoryId">@link.Title</a></li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h2 class="h5">Incoming links</h2>
+                @if (Model.IncomingLinks.Count == 0)
+                {
+                    <p class="text-secondary mb-0">No incoming links yet.</p>
+                }
+                else
+                {
+                    <ul class="list-unstyled mb-0">
+                        @foreach (var link in Model.IncomingLinks)
+                        {
+                            <li class="mb-2"><span class="memory-meta">@link.Label</span><br /><a asp-action="Memory" asp-route-id="@link.MemoryId">@link.Title</a></li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+</div>

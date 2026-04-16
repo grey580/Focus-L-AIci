@@ -1,0 +1,146 @@
+﻿@using FocusLAIci.Web.Models
+@model ExploreViewModel
+@{
+    ViewData["Title"] = "Explore";
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Memory explorer</p>
+        <h1>Search the palace</h1>
+        <p class="page-copy">Browse wings, rooms, tags, and verbatim notes. This is the main retrieval surface for future development work.</p>
+    </div>
+    <a class="btn btn-primary" asp-action="NewMemory">Add Memory</a>
+</section>
+
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-12">
+                <p class="memory-meta mb-1">Basic search</p>
+            </div>
+            <div class="col-lg-8">
+                <label class="form-label">Search text</label>
+                <input class="form-control" name="query" value="@Model.Query" placeholder="Search title, summary, content, or tags" />
+            </div>
+            <div class="col-lg-4">
+                <label class="form-label">Tag</label>
+                <input class="form-control" name="tag" value="@Model.Tag" placeholder="installer, architecture, frontend..." />
+            </div>
+            <div class="col-12">
+                <p class="memory-meta mb-1">Structured filters</p>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Wing</label>
+                <select class="form-select" name="wingId">
+                    <option value="">All wings</option>
+                    @foreach (var option in Model.WingOptions)
+                    {
+                        if (option.Value == Model.WingId?.ToString())
+                        {
+                            <option value="@option.Value" selected="selected">@option.Text</option>
+                        }
+                        else
+                        {
+                            <option value="@option.Value">@option.Text</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Room</label>
+                <select class="form-select" id="roomFilter" name="roomId" @(Model.WingId.HasValue ? null : "disabled")>
+                    <option value="">All rooms</option>
+                    @foreach (var option in Model.RoomOptions)
+                    {
+                        if (option.Value == Model.RoomId?.ToString())
+                        {
+                            <option value="@option.Value" selected="selected">@option.Text</option>
+                        }
+                        else
+                        {
+                            <option value="@option.Value">@option.Text</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Kind</label>
+                <select class="form-select" name="kind">
+                    <option value="">All kinds</option>
+                    @foreach (var kind in Enum.GetValues<MemoryKind>())
+                    {
+                        if (Model.Kind == kind)
+                        {
+                            <option value="@kind" selected="selected">@kind</option>
+                        }
+                        else
+                        {
+                            <option value="@kind">@kind</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="col-12">
+                <button class="btn btn-primary" type="submit">Search Palace</button>
+                <a class="btn btn-outline-secondary" asp-action="Explore">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="section-heading">
+    <h2>Results</h2>
+    <span>@Model.Memories.Count memory items</span>
+</div>
+
+@if (Model.Memories.Count == 0)
+{
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+            <div class="empty-state">
+                <h3>No matching memories</h3>
+                <p>Try broadening the filters, clearing the tag, or add a new memory to capture what you are looking for.</p>
+                <a class="btn btn-primary" asp-action="NewMemory">Add Memory</a>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var memory in Model.Memories)
+        {
+            <div class="col-lg-6">
+                <article class="card h-100 shadow-sm border-0">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between gap-2 align-items-start mb-2">
+                            <div>
+                                <div class="memory-meta">@memory.Kind • @memory.SourceKind</div>
+                                <h3 class="memory-title">
+                                    <a asp-action="Memory" asp-route-id="@memory.Id">@memory.Title</a>
+                                </h3>
+                            </div>
+                            @if (memory.IsPinned)
+                            {
+                                <span class="badge text-bg-warning">Pinned</span>
+                            }
+                        </div>
+                        <p class="memory-summary">@memory.Summary</p>
+                        <div class="memory-path">@memory.WingName / @memory.RoomName</div>
+                        <div class="tag-row">
+                            @foreach (var tag in memory.Tags)
+                            {
+                                <a class="tag-pill tag-link" asp-action="Explore" asp-route-tag="@tag">@tag</a>
+                            }
+                        </div>
+                    </div>
+                    <div class="card-footer bg-transparent border-0 pt-0 d-flex justify-content-between">
+                        <span class="text-secondary small">Importance @memory.Importance / 5</span>
+                        <span class="text-secondary small">@memory.UpdatedUtc.ToString("yyyy-MM-dd HH:mm") UTC</span>
+                    </div>
+                </article>
+            </div>
+        }
+    </div>
+}

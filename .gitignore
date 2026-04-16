@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+.vs/
+
+*.db
+*.db-shm
+*.db-wal
+*.suo
+*.user
+
+FocusLAIci.Web/focus-palace.dev.db

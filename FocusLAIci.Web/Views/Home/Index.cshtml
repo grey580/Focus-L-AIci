@@ -1,0 +1,171 @@
+﻿@model FocusLAIci.Web.Models.DashboardViewModel
+@{
+    ViewData["Title"] = "Dashboard";
+    var isEmpty = Model.Stats.MemoryCount == 0;
+}
+
+<section class="hero-panel mb-4">
+    <div>
+        <p class="eyebrow">MemPalace-inspired development memory</p>
+        <h1>Focus L-AIci</h1>
+        <p class="hero-copy">A local-first C# memory system for app development: wings, rooms, verbatim notes, searchable context, and an explorer UI for finding past reasoning fast.</p>
+        @if (isEmpty)
+        {
+            <div class="welcome-banner mt-3">
+                <strong>Start here:</strong> create a wing for your project, add a room for a topic, then capture the decisions, incidents, and patterns you want future sessions to remember.
+            </div>
+        }
+        <div class="d-flex gap-2 flex-wrap mt-3">
+            <a class="btn btn-primary" asp-controller="Palace" asp-action="Explore">Explore Palace</a>
+            <a class="btn btn-outline-primary" asp-controller="Palace" asp-action="NewMemory">Add Memory</a>
+        </div>
+    </div>
+    <div class="hero-aside">
+        <div class="stat-tile"><span>@Model.Stats.WingCount</span><small>Wings</small></div>
+        <div class="stat-tile"><span>@Model.Stats.RoomCount</span><small>Rooms</small></div>
+        <div class="stat-tile"><span>@Model.Stats.MemoryCount</span><small>Memories</small></div>
+        <div class="stat-tile"><span>@Model.Stats.TagCount</span><small>Tags</small></div>
+    </div>
+</section>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-7">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Wings</h2>
+                    <a asp-controller="Palace" asp-action="NewWing">Add Wing</a>
+                </div>
+                @if (Model.Wings.Count == 0)
+                {
+                    <div class="empty-state">
+                        <h3>No wings yet</h3>
+                        <p>Create a wing for a product, client, or long-running initiative to give the palace a top-level structure.</p>
+                        <a class="btn btn-primary" asp-controller="Palace" asp-action="NewWing">Add Wing</a>
+                    </div>
+                }
+                else
+                {
+                    <div class="row g-3">
+                        @foreach (var wing in Model.Wings)
+                        {
+                            <div class="col-md-6">
+                                <div class="wing-card">
+                                    <div class="memory-meta">@wing.RoomCount rooms • @wing.MemoryCount memories</div>
+                                    <h3><a asp-controller="Palace" asp-action="Wing" asp-route-slug="@wing.Slug">@wing.Name</a></h3>
+                                    <p>@wing.Description</p>
+                                    @if (wing.LatestActivityUtc.HasValue)
+                                    {
+                                        <div class="text-secondary small">Latest activity @wing.LatestActivityUtc.Value.ToString("yyyy-MM-dd HH:mm") UTC</div>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Pinned memories</h2>
+                    <a asp-controller="Palace" asp-action="Explore">View all</a>
+                </div>
+                @if (Model.PinnedMemories.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No pinned memories</h3>
+                        <p>Pin your highest-value notes so they stay near the top of the dashboard.</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var memory in Model.PinnedMemories)
+                    {
+                        <div class="compact-memory">
+                            <div class="memory-meta">@memory.Kind • @memory.WingName / @memory.RoomName</div>
+                            <a asp-controller="Palace" asp-action="Memory" asp-route-id="@memory.Id" class="compact-memory-title">@memory.Title</a>
+                            <div class="text-secondary small">@memory.Summary</div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Recent memories</h2>
+                    <a asp-controller="Palace" asp-action="NewMemory">Add Memory</a>
+                </div>
+                @if (Model.RecentMemories.Count == 0)
+                {
+                    <div class="empty-state">
+                        <h3>No memories yet</h3>
+                        <p>Capture your first note to start building durable project memory for future sessions.</p>
+                        <a class="btn btn-primary" asp-controller="Palace" asp-action="NewMemory">Add Memory</a>
+                    </div>
+                }
+                else
+                {
+                    <div class="row g-3">
+                        @foreach (var memory in Model.RecentMemories)
+                        {
+                            <div class="col-md-6">
+                                <article class="card shadow-sm border-0 h-100 inner-card">
+                                    <div class="card-body">
+                                        <div class="memory-meta">@memory.Kind • @memory.SourceKind</div>
+                                        <h3 class="memory-title"><a asp-controller="Palace" asp-action="Memory" asp-route-id="@memory.Id">@memory.Title</a></h3>
+                                        <p class="memory-summary">@memory.Summary</p>
+                                        <div class="memory-path">@memory.WingName / @memory.RoomName</div>
+                                        <div class="tag-row">
+                                            @foreach (var tag in memory.Tags)
+                                            {
+                                                <a class="tag-pill tag-link" asp-controller="Palace" asp-action="Explore" asp-route-tag="@tag">@tag</a>
+                                            }
+                                        </div>
+                                    </div>
+                                </article>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <h2 class="h5">Quick searches</h2>
+                <p class="text-secondary small">Click a suggestion to jump straight to related memories.</p>
+                <div class="tag-row">
+                    @foreach (var example in Model.SearchExamples)
+                    {
+                        <a class="tag-pill tag-link" asp-controller="Palace" asp-action="Explore" asp-route-query="@example">@example</a>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <details class="developer-panel">
+                    <summary>Developer API surface</summary>
+                    <p class="text-secondary small">Use these endpoints later to feed development decisions and debugging context into the palace programmatically.</p>
+                    <ul class="api-list">
+                        <li><code>GET /api/palace/summary</code></li>
+                        <li><code>GET /api/palace/memories?query=installer</code></li>
+                        <li><code>POST /api/palace/memories</code></li>
+                        <li><code>POST /api/palace/wings</code></li>
+                        <li><code>POST /api/palace/rooms</code></li>
+                    </ul>
+                </details>
+            </div>
+        </div>
+    </div>
+</div>

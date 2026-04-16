@@ -1,0 +1,92 @@
+@model FocusLAIci.Web.Models.WingDetailViewModel
+@{
+    ViewData["Title"] = Model.Name;
+}
+
+<nav aria-label="breadcrumb" class="breadcrumb-bar">
+    <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a asp-controller="Home" asp-action="Index">Dashboard</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@Model.Name</li>
+    </ol>
+</nav>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Wing view</p>
+        <h1>@Model.Name</h1>
+        <p class="page-copy">@Model.Description</p>
+    </div>
+    <a class="btn btn-primary" asp-action="NewMemory" asp-route-wingId="@Model.Id">Add Memory</a>
+</section>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <h2 class="h5">Rooms</h2>
+                @if (Model.Rooms.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No rooms yet</h3>
+                        <p>Add a room to break this wing into focused topics.</p>
+                        <a class="btn btn-outline-primary" asp-action="NewRoom">Add Room</a>
+                    </div>
+                }
+                else
+                {
+                    <ul class="list-unstyled mb-0">
+                        @foreach (var room in Model.Rooms)
+                        {
+                            <li class="room-card mb-3">
+                                <strong>@room.Name</strong><br />
+                                <span class="text-secondary">@room.Description</span><br />
+                                <span class="memory-meta">@room.MemoryCount memories</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="section-heading">
+            <h2>Memories in this wing</h2>
+            <span>@Model.Memories.Count entries</span>
+        </div>
+        @if (Model.Memories.Count == 0)
+        {
+            <div class="card shadow-sm border-0">
+                <div class="card-body">
+                    <div class="empty-state">
+                        <h3>No memories in this wing yet</h3>
+                        <p>Capture the key decisions, incidents, and reusable patterns tied to this wing.</p>
+                        <a class="btn btn-primary" asp-action="NewMemory">Add Memory</a>
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="row g-3">
+                @foreach (var memory in Model.Memories)
+                {
+                    <div class="col-12">
+                        <article class="card shadow-sm border-0">
+                            <div class="card-body">
+                                <div class="memory-meta">@memory.Kind • @memory.RoomName</div>
+                                <h3 class="memory-title"><a asp-action="Memory" asp-route-id="@memory.Id">@memory.Title</a></h3>
+                                <p class="memory-summary">@memory.Summary</p>
+                                <div class="tag-row">
+                                    @foreach (var tag in memory.Tags)
+                                    {
+                                        <a class="tag-pill tag-link" asp-action="Explore" asp-route-tag="@tag">@tag</a>
+                                    }
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>

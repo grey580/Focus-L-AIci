@@ -1,0 +1,55 @@
+@model FocusLAIci.Web.Models.RoomEditorViewModel
+@{
+    ViewData["Title"] = "New room";
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Add a topic room</p>
+        <h1>Create room</h1>
+        <p class="page-copy">Rooms group related memories within a wing so retrieval stays scoped and human-readable.</p>
+    </div>
+</section>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body">
+        <form method="post">
+            @Html.AntiForgeryToken()
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+            <div class="mb-3">
+                <label asp-for="Input.WingId" class="form-label"></label>
+                <select asp-for="Input.WingId" class="form-select">
+                    <option value="">Select a wing</option>
+                    @foreach (var option in Model.WingOptions)
+                    {
+                        if (option.Value == Model.Input.WingId.ToString())
+                        {
+                            <option value="@option.Value" selected="selected">@option.Text</option>
+                        }
+                        else
+                        {
+                            <option value="@option.Value">@option.Text</option>
+                        }
+                    }
+                </select>
+                <div class="form-text">Rooms always live inside a wing.</div>
+                <span asp-validation-for="Input.WingId" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.Name" class="form-label"></label>
+                <input asp-for="Input.Name" class="form-control" placeholder="Installer Reliability, API Auth, Admin UX..." />
+                <span asp-validation-for="Input.Name" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.Description" class="form-label"></label>
+                <textarea asp-for="Input.Description" rows="4" class="form-control" placeholder="What topic or concern does this room organize?"></textarea>
+                <span asp-validation-for="Input.Description" class="text-danger"></span>
+            </div>
+            <button type="submit" class="btn btn-primary submit-button">Add Room</button>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

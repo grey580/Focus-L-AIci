@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="FocusLAIci.Tests/FocusLAIci.Tests.csproj" />
+  <Project Path="FocusLAIci.Web/FocusLAIci.Web.csproj" />
+</Solution>

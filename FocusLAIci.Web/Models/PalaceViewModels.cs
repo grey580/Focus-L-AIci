@@ -1,0 +1,198 @@
+using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Mvc.Rendering;
+
+namespace FocusLAIci.Web.Models;
+
+public sealed class DashboardViewModel
+{
+    public PalaceStatsViewModel Stats { get; init; } = new();
+    public IReadOnlyCollection<WingSummaryViewModel> Wings { get; init; } = Array.Empty<WingSummaryViewModel>();
+    public IReadOnlyCollection<MemoryCardViewModel> RecentMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
+    public IReadOnlyCollection<MemoryCardViewModel> PinnedMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
+    public IReadOnlyCollection<string> SearchExamples { get; init; } = Array.Empty<string>();
+}
+
+public sealed class PalaceStatsViewModel
+{
+    public int WingCount { get; init; }
+    public int RoomCount { get; init; }
+    public int MemoryCount { get; init; }
+    public int PinnedCount { get; init; }
+    public int TagCount { get; init; }
+}
+
+public sealed class WingSummaryViewModel
+{
+    public Guid Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Slug { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public int RoomCount { get; init; }
+    public int MemoryCount { get; init; }
+    public DateTime? LatestActivityUtc { get; init; }
+}
+
+public sealed class MemoryCardViewModel
+{
+    public Guid Id { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public string Summary { get; init; } = string.Empty;
+    public string WingSlug { get; init; } = string.Empty;
+    public string WingName { get; init; } = "Unsorted";
+    public string RoomName { get; init; } = "General";
+    public MemoryKind Kind { get; init; }
+    public SourceKind SourceKind { get; init; }
+    public int Importance { get; init; }
+    public bool IsPinned { get; init; }
+    public DateTime UpdatedUtc { get; init; }
+    public IReadOnlyCollection<string> Tags { get; init; } = Array.Empty<string>();
+}
+
+public sealed class MemoryDetailViewModel
+{
+    public MemoryCardViewModel Memory { get; init; } = new();
+    public string Content { get; init; } = string.Empty;
+    public string SourceReference { get; init; } = string.Empty;
+    public DateTime CreatedUtc { get; init; }
+    public DateTime? OccurredUtc { get; init; }
+    public IReadOnlyCollection<MemoryRelationshipViewModel> OutgoingLinks { get; init; } = Array.Empty<MemoryRelationshipViewModel>();
+    public IReadOnlyCollection<MemoryRelationshipViewModel> IncomingLinks { get; init; } = Array.Empty<MemoryRelationshipViewModel>();
+}
+
+public sealed class MemoryRelationshipViewModel
+{
+    public Guid MemoryId { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public string Label { get; init; } = string.Empty;
+}
+
+public sealed class ExploreViewModel
+{
+    public string Query { get; init; } = string.Empty;
+    public Guid? WingId { get; init; }
+    public Guid? RoomId { get; init; }
+    public MemoryKind? Kind { get; init; }
+    public string Tag { get; init; } = string.Empty;
+    public IReadOnlyCollection<MemoryCardViewModel> Memories { get; init; } = Array.Empty<MemoryCardViewModel>();
+    public IReadOnlyCollection<SelectListItem> WingOptions { get; init; } = Array.Empty<SelectListItem>();
+    public IReadOnlyCollection<SelectListItem> RoomOptions { get; init; } = Array.Empty<SelectListItem>();
+}
+
+public sealed class WingDetailViewModel
+{
+    public Guid Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public IReadOnlyCollection<RoomSummaryViewModel> Rooms { get; init; } = Array.Empty<RoomSummaryViewModel>();
+    public IReadOnlyCollection<MemoryCardViewModel> Memories { get; init; } = Array.Empty<MemoryCardViewModel>();
+}
+
+public sealed class RoomSummaryViewModel
+{
+    public Guid Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public int MemoryCount { get; init; }
+}
+
+public sealed class MemoryEditorViewModel
+{
+    public string Heading { get; init; } = string.Empty;
+    public string SubmitLabel { get; init; } = string.Empty;
+    public MemoryEditorInput Input { get; init; } = new();
+    public IReadOnlyCollection<SelectListItem> WingOptions { get; init; } = Array.Empty<SelectListItem>();
+    public IReadOnlyCollection<SelectListItem> RoomOptions { get; init; } = Array.Empty<SelectListItem>();
+}
+
+public sealed class MemoryEditorInput
+{
+    public Guid? Id { get; set; }
+
+    [Required]
+    [StringLength(200)]
+    [Display(Name = "Memory title")]
+    public string Title { get; set; } = string.Empty;
+
+    [Required]
+    [StringLength(500)]
+    [Display(Name = "Summary")]
+    public string Summary { get; set; } = string.Empty;
+
+    [Required]
+    [Display(Name = "Verbatim content")]
+    public string Content { get; set; } = string.Empty;
+
+    [Required]
+    [Display(Name = "Memory kind")]
+    public MemoryKind Kind { get; set; } = MemoryKind.Decision;
+
+    [Required]
+    [Display(Name = "Source type")]
+    public SourceKind SourceKind { get; set; } = SourceKind.ManualNote;
+
+    [StringLength(260)]
+    [Display(Name = "Source reference")]
+    public string SourceReference { get; set; } = string.Empty;
+
+    [Range(1, 5)]
+    [Display(Name = "Importance")]
+    public int Importance { get; set; } = 3;
+
+    [Display(Name = "Pin this memory")]
+    public bool IsPinned { get; set; }
+
+    [Display(Name = "Occurred at")]
+    [DisplayFormat(DataFormatString = "{0:yyyy-MM-ddTHH:mm}", ApplyFormatInEditMode = true)]
+    public DateTime? OccurredUtc { get; set; }
+
+    [Display(Name = "Wing")]
+    public Guid? WingId { get; set; }
+
+    [Display(Name = "Room")]
+    public Guid? RoomId { get; set; }
+
+    [Display(Name = "Tags")]
+    public string TagsText { get; set; } = string.Empty;
+}
+
+public sealed class WingEditorInput
+{
+    [Required]
+    [StringLength(120)]
+    [Display(Name = "Wing name")]
+    public string Name { get; set; } = string.Empty;
+
+    [Required]
+    [StringLength(400)]
+    [Display(Name = "Wing description")]
+    public string Description { get; set; } = string.Empty;
+}
+
+public sealed class RoomEditorViewModel
+{
+    public RoomEditorInput Input { get; init; } = new();
+    public IReadOnlyCollection<SelectListItem> WingOptions { get; init; } = Array.Empty<SelectListItem>();
+}
+
+public sealed class RoomEditorInput
+{
+    [Required]
+    [Display(Name = "Wing")]
+    public Guid WingId { get; set; }
+
+    [Required]
+    [StringLength(120)]
+    [Display(Name = "Room name")]
+    public string Name { get; set; } = string.Empty;
+
+    [Required]
+    [StringLength(400)]
+    [Display(Name = "Room description")]
+    public string Description { get; set; } = string.Empty;
+}
+
+public sealed class PalaceApiSummaryViewModel
+{
+    public PalaceStatsViewModel Stats { get; init; } = new();
+    public IReadOnlyCollection<WingSummaryViewModel> Wings { get; init; } = Array.Empty<WingSummaryViewModel>();
+}
