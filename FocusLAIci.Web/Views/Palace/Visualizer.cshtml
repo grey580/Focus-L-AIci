@@ -1,0 +1,183 @@
+@model PalaceVisualizerViewModel
+@{
+    ViewData["Title"] = "Visualizer";
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Palace visualizer</p>
+        <h1>See the palace at a glance</h1>
+        <p class="page-copy">Browse wings and rooms as a simple map. Click any memory node to open it, or hover the tag cloud to transiently highlight related memories.</p>
+    </div>
+    <a class="btn btn-primary" asp-action="Explore">Open Explorer</a>
+</section>
+
+<div class="visualizer-layout">
+    <section>
+        @if (Model.Wings.Count == 0 && Model.UnsortedMemories.Count == 0)
+        {
+            <div class="card shadow-sm border-0">
+                <div class="card-body">
+                    <div class="empty-state">
+                        <h3>No palace structure yet</h3>
+                        <p>Create wings, rooms, and memories to see the visualizer come alive.</p>
+                        <a class="btn btn-primary" asp-action="NewWing">Add Wing</a>
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="visualizer-wing-grid">
+                @foreach (var wing in Model.Wings)
+                {
+                    <article class="visualizer-wing">
+                        <div class="visualizer-wing-header">
+                            <div>
+                                <div class="memory-meta">Wing</div>
+                                <h2><a asp-action="Wing" asp-route-slug="@wing.Slug">@wing.Name</a></h2>
+                            </div>
+                            <a class="btn btn-sm btn-outline-primary" asp-action="Wing" asp-route-slug="@wing.Slug">Open</a>
+                        </div>
+                        <p class="text-secondary mb-3">@wing.Description</p>
+
+                        @if (wing.GeneralMemories.Count > 0)
+                        {
+                            <div class="visualizer-room">
+                                <div class="visualizer-room-header">
+                                    <strong>General</strong>
+                                    <span class="text-secondary small">@wing.GeneralMemories.Count memories</span>
+                                </div>
+                                <div class="visualizer-memory-list">
+                                    @foreach (var memory in wing.GeneralMemories)
+                                    {
+                                        <a class="visualizer-memory-node" asp-action="Memory" asp-route-id="@memory.Id" data-tag-slugs="@string.Join("|", memory.TagSlugs)">
+                                            <span>@memory.Title</span>
+                                            <small>Importance @memory.Importance / 5@(memory.IsPinned ? " • pinned" : string.Empty)</small>
+                                        </a>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @foreach (var room in wing.Rooms)
+                        {
+                            <div class="visualizer-room">
+                                <div class="visualizer-room-header">
+                                    <div>
+                                        <strong>@room.Name</strong>
+                                        @if (!string.IsNullOrWhiteSpace(room.Description))
+                                        {
+                                            <div class="text-secondary small">@room.Description</div>
+                                        }
+                                    </div>
+                                    <span class="text-secondary small">@room.Memories.Count memories</span>
+                                </div>
+
+                                @if (room.Memories.Count == 0)
+                                {
+                                    <div class="text-secondary small">No memories in this room yet.</div>
+                                }
+                                else
+                                {
+                                    <div class="visualizer-memory-list">
+                                        @foreach (var memory in room.Memories)
+                                        {
+                                            <a class="visualizer-memory-node" asp-action="Memory" asp-route-id="@memory.Id" data-tag-slugs="@string.Join("|", memory.TagSlugs)">
+                                                <span>@memory.Title</span>
+                                                <small>Importance @memory.Importance / 5@(memory.IsPinned ? " • pinned" : string.Empty)</small>
+                                            </a>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </article>
+                }
+            </div>
+
+            @if (Model.UnsortedMemories.Count > 0)
+            {
+                <div class="card shadow-sm border-0 mt-4">
+                    <div class="card-body">
+                        <div class="section-heading">
+                            <h2>Unsorted memories</h2>
+                            <a asp-action="Explore">Open in explorer</a>
+                        </div>
+                        <div class="visualizer-memory-list">
+                            @foreach (var memory in Model.UnsortedMemories)
+                            {
+                                <a class="visualizer-memory-node" asp-action="Memory" asp-route-id="@memory.Id" data-tag-slugs="@string.Join("|", memory.TagSlugs)">
+                                    <span>@memory.Title</span>
+                                    <small>Importance @memory.Importance / 5@(memory.IsPinned ? " • pinned" : string.Empty)</small>
+                                </a>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    </section>
+
+    <aside class="visualizer-sidebar">
+        <div class="card shadow-sm border-0 sticky-lg-top">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Tag cloud</h2>
+                    <a asp-action="Tags">Browse tags</a>
+                </div>
+                <p class="text-secondary small">Hover or focus a tag to briefly light up related memories in the palace map.</p>
+
+                @if (Model.Tags.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No tags yet</h3>
+                        <p>Tag memories to create more cross-cutting relationships.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="visualizer-tag-cloud">
+                        @foreach (var tag in Model.Tags)
+                        {
+                            <a class="visualizer-tag tag-weight-@tag.Weight" asp-action="Explore" asp-route-tag="@tag.Slug" data-tag-slug="@tag.Slug" title="@tag.MemoryCount memories">
+                                @tag.Name
+                            </a>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </aside>
+</div>
+
+@section Scripts {
+    <script>
+        (() => {
+            const tags = document.querySelectorAll('[data-tag-slug]');
+            const memories = document.querySelectorAll('.visualizer-memory-node[data-tag-slugs]');
+
+            function clearHighlight() {
+                memories.forEach(memory => {
+                    memory.classList.remove('is-related');
+                    memory.classList.remove('is-muted');
+                });
+            }
+
+            function highlight(tagSlug) {
+                memories.forEach(memory => {
+                    const related = (memory.dataset.tagSlugs || '').split('|').includes(tagSlug);
+                    memory.classList.toggle('is-related', related);
+                    memory.classList.toggle('is-muted', !related);
+                });
+            }
+
+            tags.forEach(tag => {
+                tag.addEventListener('mouseenter', () => highlight(tag.dataset.tagSlug));
+                tag.addEventListener('focus', () => highlight(tag.dataset.tagSlug));
+                tag.addEventListener('mouseleave', clearHighlight);
+                tag.addEventListener('blur', clearHighlight);
+            });
+        })();
+    </script>
+}

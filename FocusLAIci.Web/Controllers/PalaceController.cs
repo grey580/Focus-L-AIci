@@ -40,6 +40,12 @@ public sealed class PalaceController : Controller
     }
 
     [HttpGet]
+    public async Task<IActionResult> Visualizer(CancellationToken cancellationToken)
+    {
+        return View(await _palaceService.GetVisualizerAsync(cancellationToken));
+    }
+
+    [HttpGet]
     public async Task<IActionResult> Wing(string slug, CancellationToken cancellationToken)
     {
         var model = await _palaceService.GetWingAsync(slug, cancellationToken);

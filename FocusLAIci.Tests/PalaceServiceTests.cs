@@ -141,6 +141,51 @@ public sealed class PalaceServiceTests
         Assert.Contains(byQuery, memory => memory.Id == memoryId);
     }
 
+    [Fact]
+    public async Task GetVisualizerAsync_GroupsMemoriesByWingRoomAndTag()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Architecture",
+            Description = "Cross-cutting design memory."
+        }, CancellationToken.None);
+
+        var roomId = await service.CreateRoomAsync(new RoomEditorInput
+        {
+            WingId = wingId,
+            Name = "Runtime",
+            Description = "Runtime behavior and operational notes."
+        }, CancellationToken.None);
+
+        var memoryId = await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Visualizer nodes should stay clickable",
+            Summary = "Map rooms to clickable memory nodes.",
+            Content = "The visualizer needs an obvious path from room nodes to memory detail pages.",
+            Kind = MemoryKind.Insight,
+            SourceKind = SourceKind.Architecture,
+            Importance = 4,
+            WingId = wingId,
+            RoomId = roomId,
+            TagsText = "visualizer, frontend"
+        }, CancellationToken.None);
+
+        var model = await service.GetVisualizerAsync(CancellationToken.None);
+
+        var wing = Assert.Single(model.Wings);
+        var room = Assert.Single(wing.Rooms);
+        var memory = Assert.Single(room.Memories);
+
+        Assert.Equal("Architecture", wing.Name);
+        Assert.Equal("Runtime", room.Name);
+        Assert.Equal(memoryId, memory.Id);
+        Assert.Contains(model.Tags, tag => tag.Slug == "visualizer" && tag.MemoryCount == 1);
+    }
+
     private sealed class TestHarness : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;

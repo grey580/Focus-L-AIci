@@ -99,11 +99,54 @@ public sealed class TagBrowseViewModel
     public IReadOnlyCollection<TagBrowseItemViewModel> Tags { get; init; } = Array.Empty<TagBrowseItemViewModel>();
 }
 
+public sealed class PalaceVisualizerViewModel
+{
+    public IReadOnlyCollection<PalaceVisualizerWingViewModel> Wings { get; init; } = Array.Empty<PalaceVisualizerWingViewModel>();
+    public IReadOnlyCollection<PalaceVisualizerMemoryViewModel> UnsortedMemories { get; init; } = Array.Empty<PalaceVisualizerMemoryViewModel>();
+    public IReadOnlyCollection<TagCloudItemViewModel> Tags { get; init; } = Array.Empty<TagCloudItemViewModel>();
+}
+
+public sealed class PalaceVisualizerWingViewModel
+{
+    public Guid WingId { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Slug { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public IReadOnlyCollection<PalaceVisualizerRoomViewModel> Rooms { get; init; } = Array.Empty<PalaceVisualizerRoomViewModel>();
+    public IReadOnlyCollection<PalaceVisualizerMemoryViewModel> GeneralMemories { get; init; } = Array.Empty<PalaceVisualizerMemoryViewModel>();
+}
+
+public sealed class PalaceVisualizerRoomViewModel
+{
+    public Guid RoomId { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public IReadOnlyCollection<PalaceVisualizerMemoryViewModel> Memories { get; init; } = Array.Empty<PalaceVisualizerMemoryViewModel>();
+}
+
+public sealed class PalaceVisualizerMemoryViewModel
+{
+    public Guid Id { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public int Importance { get; init; }
+    public bool IsPinned { get; init; }
+    public IReadOnlyCollection<string> TagNames { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<string> TagSlugs { get; init; } = Array.Empty<string>();
+}
+
 public sealed class TagBrowseItemViewModel
 {
     public string Name { get; init; } = string.Empty;
     public string Slug { get; init; } = string.Empty;
     public int MemoryCount { get; init; }
+}
+
+public sealed class TagCloudItemViewModel
+{
+    public string Name { get; init; } = string.Empty;
+    public string Slug { get; init; } = string.Empty;
+    public int MemoryCount { get; init; }
+    public int Weight { get; init; }
 }
 
 public sealed class MemoryCardViewModel

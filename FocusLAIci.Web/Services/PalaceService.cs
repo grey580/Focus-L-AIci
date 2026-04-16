@@ -100,6 +100,111 @@ public sealed class PalaceService
         };
     }
 
+    public async Task<PalaceVisualizerViewModel> GetVisualizerAsync(CancellationToken cancellationToken)
+    {
+        var wings = await _dbContext.Wings
+            .AsNoTracking()
+            .OrderBy(x => x.Name)
+            .ToListAsync(cancellationToken);
+
+        var rooms = await _dbContext.Rooms
+            .AsNoTracking()
+            .OrderBy(x => x.Name)
+            .ToListAsync(cancellationToken);
+
+        var memories = await _dbContext.Memories
+            .AsNoTracking()
+            .Include(x => x.MemoryTags)
+                .ThenInclude(x => x.Tag)
+            .OrderByDescending(x => x.IsPinned)
+            .ThenByDescending(x => x.UpdatedUtc)
+            .ToListAsync(cancellationToken);
+
+        var visualMemories = memories
+            .Select(memory => new
+            {
+                memory.WingId,
+                memory.RoomId,
+                Item = new PalaceVisualizerMemoryViewModel
+                {
+                    Id = memory.Id,
+                    Title = memory.Title,
+                    Importance = memory.Importance,
+                    IsPinned = memory.IsPinned,
+                    TagNames = memory.MemoryTags
+                        .Select(x => x.Tag!.Name)
+                        .OrderBy(x => x)
+                        .ToArray(),
+                    TagSlugs = memory.MemoryTags
+                        .Select(x => x.Tag!.Slug)
+                        .OrderBy(x => x)
+                        .ToArray()
+                }
+            })
+            .ToList();
+
+        var tagStats = await _dbContext.Tags
+            .AsNoTracking()
+            .Include(x => x.MemoryTags)
+            .OrderBy(x => x.Name)
+            .Select(x => new TagCloudItemViewModel
+            {
+                Name = x.Name,
+                Slug = x.Slug,
+                MemoryCount = x.MemoryTags.Count
+            })
+            .ToListAsync(cancellationToken);
+
+        var maxTagCount = tagStats.Count == 0 ? 1 : tagStats.Max(x => x.MemoryCount);
+        var minTagCount = tagStats.Count == 0 ? 1 : tagStats.Min(x => x.MemoryCount);
+
+        return new PalaceVisualizerViewModel
+        {
+            Wings = wings
+                .Select(wing => new PalaceVisualizerWingViewModel
+                {
+                    WingId = wing.Id,
+                    Name = wing.Name,
+                    Slug = wing.Slug,
+                    Description = wing.Description,
+                    Rooms = rooms
+                        .Where(room => room.WingId == wing.Id)
+                        .OrderBy(room => room.Name)
+                        .Select(room => new PalaceVisualizerRoomViewModel
+                        {
+                            RoomId = room.Id,
+                            Name = room.Name,
+                            Description = room.Description,
+                            Memories = visualMemories
+                                .Where(memory => memory.RoomId == room.Id)
+                                .Select(memory => memory.Item)
+                                .ToArray()
+                        })
+                        .ToArray(),
+                    GeneralMemories = visualMemories
+                        .Where(memory => memory.WingId == wing.Id && memory.RoomId is null)
+                        .Select(memory => memory.Item)
+                        .ToArray()
+                })
+                .ToArray(),
+            UnsortedMemories = visualMemories
+                .Where(memory => memory.WingId is null)
+                .Select(memory => memory.Item)
+                .ToArray(),
+            Tags = tagStats
+                .Select(tag => new TagCloudItemViewModel
+                {
+                    Name = tag.Name,
+                    Slug = tag.Slug,
+                    MemoryCount = tag.MemoryCount,
+                    Weight = maxTagCount == minTagCount
+                        ? 3
+                        : 1 + (int)Math.Round(((double)(tag.MemoryCount - minTagCount) / (maxTagCount - minTagCount)) * 4d, MidpointRounding.AwayFromZero)
+                })
+                .ToArray()
+        };
+    }
+
     public async Task<ExploreViewModel> GetExploreAsync(string? query, Guid? wingId, Guid? roomId, MemoryKind? kind, string? tag, CancellationToken cancellationToken)
     {
         var memories = await BuildMemoryQuery(query, wingId, roomId, kind, tag)
