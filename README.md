@@ -51,6 +51,7 @@ This makes the system much better than a basic note app for operational work, be
 - dashboard with palace stats and recent activity
 - wing and room browsing
 - memory creation and editing
+- todo tracking with large prompt-sized details
 - pinned memories for high-value knowledge
 - tag-based discovery
 - full-text style search flows across stored knowledge
@@ -75,6 +76,18 @@ These screenshots were captured from a live local Focus L-AIci instance. Memory 
 - **xUnit** test coverage for core service behavior
 
 The project is intentionally simple to run, easy to extend, and practical for local use.
+
+## New: prompt-friendly todo details
+
+Focus L-AIci's **Todos** page now supports **very large prompt bodies** in the details field.
+
+That means you can:
+
+- store full AI work prompts directly in a todo
+- keep long execution instructions attached to the task instead of splitting them across notes
+- use the todo list as a real work queue for complex implementation, research, or debugging sessions
+
+This is especially useful when you want a todo to carry the exact context or prompt that should be reused later.
 
 ## Quick start
 

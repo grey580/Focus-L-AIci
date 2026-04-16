@@ -89,6 +89,25 @@ When creating a memory:
 2. Open pinned memories and recent related entries.
 3. Review linked memories if the issue spans multiple areas.
 
+### Use todos for working prompts
+
+Focus L-AIci's todo details field supports **large prompt-sized content**.
+
+Use that space for:
+
+- implementation prompts you want to reuse
+- agent instructions tied to a specific task
+- multi-step execution context
+- long-form acceptance criteria or handoff notes
+
+This makes the todo list useful as an **active execution queue**, not just a short reminder list.
+
+Recommended pattern:
+
+1. Keep the todo title short and action-oriented.
+2. Put the full working prompt or instructions in the todo details field.
+3. Move the durable outcome into a memory after the work is complete.
+
 ### During work
 
 1. Capture decisions when they become clear.
@@ -164,6 +183,19 @@ This helps the model:
 After a long session, ask the model to convert the session into one or more Focus-ready memories.
 
 This helps you turn raw conversation into structured, reusable knowledge.
+
+### Use the todo list to store reusable prompts
+
+If you have prompts that are tied to a specific piece of active work, store them in **Todos** instead of burying them in a transient chat.
+
+Good examples:
+
+- a full implementation prompt for a feature
+- a debugging checklist for a flaky subsystem
+- a deployment handoff prompt
+- a research prompt with constraints and expected outputs
+
+Then, once the work is done, keep the lasting knowledge in memories and keep the todo focused on execution.
 
 ## Prompt patterns for AI models
 
