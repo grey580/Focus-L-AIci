@@ -85,6 +85,10 @@ To run the tests:
 dotnet test .\FocusLAIci.slnx
 ```
 
+## Usage guide
+
+For practical instructions on organizing knowledge, capturing better memories, and getting AI models to work effectively with Focus L-AIci, see [docs/USING-FOCUS-L-AICI.md](docs/USING-FOCUS-L-AICI.md).
+
 ## Demo data
 
 In development, Focus L-AIci can seed starter content automatically so you can explore the experience immediately. The included sample data demonstrates:
