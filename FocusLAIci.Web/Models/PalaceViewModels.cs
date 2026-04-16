@@ -94,7 +94,7 @@ public sealed class TodoEditorInput
     [Display(Name = "Todo title")]
     public string Title { get; set; } = string.Empty;
 
-    [StringLength(2000)]
+    [DataType(DataType.MultilineText)]
     [Display(Name = "Details")]
     public string Details { get; set; } = string.Empty;
 

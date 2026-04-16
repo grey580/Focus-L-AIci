@@ -447,6 +447,11 @@ body {
   white-space: pre-wrap;
 }
 
+.todo-details-editor {
+  min-height: 18rem;
+  resize: vertical;
+}
+
 .room-card {
   background: #f7f9fc;
   border: 1px solid #e0e8f3;

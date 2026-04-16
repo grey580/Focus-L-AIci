@@ -230,6 +230,30 @@ public sealed class PalaceServiceTests
         Assert.Contains(dashboard.CurrentTodos, todo => todo.Id == inProgressId);
     }
 
+    [Fact]
+    public async Task CreateTodoAsync_PersistsVeryLargeDetails()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+        var largePrompt = string.Join(
+            Environment.NewLine,
+            Enumerable.Range(1, 600).Select(index => $"Line {index:D3}: preserve the full prompt and implementation context."));
+
+        var todoId = await service.CreateTodoAsync(new TodoEditorInput
+        {
+            Title = "Store a large handoff prompt",
+            Details = largePrompt,
+            Status = TodoStatus.Pending
+        }, CancellationToken.None);
+
+        var board = await service.GetTodoBoardAsync(CancellationToken.None);
+        var todo = Assert.Single(board.PendingTodos, x => x.Id == todoId);
+
+        Assert.Equal(largePrompt, todo.Details);
+        Assert.True(todo.Details.Length > 2000);
+    }
+
     private sealed class TestHarness : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;

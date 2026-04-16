@@ -127,7 +127,8 @@
                     </div>
                     <div class="mb-3">
                         <label asp-for="Input.Details" class="form-label"></label>
-                        <textarea asp-for="Input.Details" class="form-control" rows="5"></textarea>
+                        <textarea asp-for="Input.Details" class="form-control memory-editor todo-details-editor" rows="14" placeholder="Paste the full prompt, implementation notes, or handoff context here."></textarea>
+                        <div class="form-text">Large prompts are supported here, so keep the full working context when it matters.</div>
                         <span asp-validation-for="Input.Details" class="text-danger"></span>
                     </div>
                     <div class="mb-3">

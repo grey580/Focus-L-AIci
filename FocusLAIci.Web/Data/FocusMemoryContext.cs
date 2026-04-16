@@ -61,7 +61,7 @@ public sealed class FocusMemoryContext : DbContext
         {
             entity.HasIndex(x => x.Status);
             entity.Property(x => x.Title).HasMaxLength(180);
-            entity.Property(x => x.Details).HasMaxLength(2000);
+            entity.Property(x => x.Details).HasColumnType("TEXT");
         });
 
         builder.Entity<MemoryEntry>(entity =>

@@ -78,7 +78,6 @@ public sealed class TodoEntry
     [MaxLength(180)]
     public string Title { get; set; } = string.Empty;
 
-    [MaxLength(2000)]
     public string Details { get; set; } = string.Empty;
 
     public TodoStatus Status { get; set; } = TodoStatus.Pending;
