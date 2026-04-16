@@ -186,6 +186,50 @@ public sealed class PalaceServiceTests
         Assert.Contains(model.Tags, tag => tag.Slug == "visualizer" && tag.MemoryCount == 1);
     }
 
+    [Fact]
+    public async Task TodoBoardAndDashboard_SurfaceVisibleWorkState()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var pendingId = await service.CreateTodoAsync(new TodoEditorInput
+        {
+            Title = "Capture next interruption-safe step",
+            Details = "Leave enough detail that the next session can resume without guesswork.",
+            Status = TodoStatus.Pending
+        }, CancellationToken.None);
+
+        var inProgressId = await service.CreateTodoAsync(new TodoEditorInput
+        {
+            Title = "Implement the visible Focus workboard",
+            Details = "Add a page and dashboard preview for todos.",
+            Status = TodoStatus.InProgress
+        }, CancellationToken.None);
+
+        var doneId = await service.CreateTodoAsync(new TodoEditorInput
+        {
+            Title = "Ship clickable dashboard cards",
+            Status = TodoStatus.Done
+        }, CancellationToken.None);
+
+        await service.UpdateTodoStatusAsync(pendingId, TodoStatus.Blocked, CancellationToken.None);
+
+        var board = await service.GetTodoBoardAsync(CancellationToken.None);
+        var dashboard = await service.GetDashboardAsync(CancellationToken.None);
+
+        Assert.Single(board.InProgressTodos);
+        Assert.Single(board.BlockedTodos);
+        Assert.Single(board.DoneTodos);
+        Assert.Equal(inProgressId, board.InProgressTodos.Single().Id);
+        Assert.Equal(pendingId, board.BlockedTodos.Single().Id);
+        Assert.Equal(doneId, board.DoneTodos.Single().Id);
+        Assert.Equal(2, dashboard.Stats.OpenTodoCount);
+        Assert.Equal(1, dashboard.Stats.CompletedTodoCount);
+        Assert.DoesNotContain(dashboard.CurrentTodos, todo => todo.Id == doneId);
+        Assert.Contains(dashboard.CurrentTodos, todo => todo.Id == inProgressId);
+    }
+
     private sealed class TestHarness : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;

@@ -9,6 +9,7 @@ public sealed class DashboardViewModel
     public IReadOnlyCollection<WingSummaryViewModel> Wings { get; init; } = Array.Empty<WingSummaryViewModel>();
     public IReadOnlyCollection<MemoryCardViewModel> RecentMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
     public IReadOnlyCollection<MemoryCardViewModel> PinnedMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
+    public IReadOnlyCollection<TodoItemViewModel> CurrentTodos { get; init; } = Array.Empty<TodoItemViewModel>();
     public IReadOnlyCollection<string> SearchExamples { get; init; } = Array.Empty<string>();
 }
 
@@ -60,6 +61,46 @@ public sealed class PalaceStatsViewModel
     public int MemoryCount { get; init; }
     public int PinnedCount { get; init; }
     public int TagCount { get; init; }
+    public int OpenTodoCount { get; init; }
+    public int CompletedTodoCount { get; init; }
+}
+
+public sealed class TodoBoardViewModel
+{
+    public PalaceStatsViewModel Stats { get; init; } = new();
+    public TodoEditorInput Input { get; init; } = new();
+    public IReadOnlyCollection<TodoItemViewModel> InProgressTodos { get; init; } = Array.Empty<TodoItemViewModel>();
+    public IReadOnlyCollection<TodoItemViewModel> PendingTodos { get; init; } = Array.Empty<TodoItemViewModel>();
+    public IReadOnlyCollection<TodoItemViewModel> BlockedTodos { get; init; } = Array.Empty<TodoItemViewModel>();
+    public IReadOnlyCollection<TodoItemViewModel> DoneTodos { get; init; } = Array.Empty<TodoItemViewModel>();
+}
+
+public sealed class TodoItemViewModel
+{
+    public Guid Id { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public string Details { get; init; } = string.Empty;
+    public TodoStatus Status { get; init; }
+    public string StatusLabel { get; init; } = string.Empty;
+    public DateTime CreatedUtc { get; init; }
+    public DateTime UpdatedUtc { get; init; }
+    public DateTime? CompletedUtc { get; init; }
+}
+
+public sealed class TodoEditorInput
+{
+    [Required]
+    [StringLength(180)]
+    [Display(Name = "Todo title")]
+    public string Title { get; set; } = string.Empty;
+
+    [StringLength(2000)]
+    [Display(Name = "Details")]
+    public string Details { get; set; } = string.Empty;
+
+    [Required]
+    [Display(Name = "Starting status")]
+    public TodoStatus Status { get; set; } = TodoStatus.Pending;
 }
 
 public sealed class WingSummaryViewModel

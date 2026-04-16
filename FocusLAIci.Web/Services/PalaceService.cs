@@ -21,28 +21,39 @@ public sealed class PalaceService
             .ThenByDescending(x => x.UpdatedUtc)
             .Take(12)
             .ToListAsync(cancellationToken);
+        var currentTodos = await BuildTodoQuery(includeDone: false)
+            .Take(5)
+            .ToListAsync(cancellationToken);
 
         var wings = await BuildWingSummariesAsync(cancellationToken);
 
         return new DashboardViewModel
         {
-            Stats = new PalaceStatsViewModel
-            {
-                WingCount = await _dbContext.Wings.CountAsync(cancellationToken),
-                RoomCount = await _dbContext.Rooms.CountAsync(cancellationToken),
-                MemoryCount = await _dbContext.Memories.CountAsync(cancellationToken),
-                PinnedCount = await _dbContext.Memories.CountAsync(x => x.IsPinned, cancellationToken),
-                TagCount = await _dbContext.Tags.CountAsync(cancellationToken)
-            },
+            Stats = await BuildStatsAsync(cancellationToken),
             Wings = wings,
             RecentMemories = memories.Select(MapCard).ToArray(),
             PinnedMemories = memories.Where(x => x.IsPinned).Select(MapCard).ToArray(),
+            CurrentTodos = currentTodos.Select(MapTodo).ToArray(),
             SearchExamples =
             [
                 "installer reliability",
                 "why did we choose local-first memory",
                 "frontend browse patterns"
             ]
+        };
+    }
+
+    public async Task<TodoBoardViewModel> GetTodoBoardAsync(CancellationToken cancellationToken)
+    {
+        var todos = await BuildTodoQuery(includeDone: true).ToListAsync(cancellationToken);
+
+        return new TodoBoardViewModel
+        {
+            Stats = await BuildStatsAsync(cancellationToken),
+            InProgressTodos = todos.Where(x => x.Status == TodoStatus.InProgress).Select(MapTodo).ToArray(),
+            PendingTodos = todos.Where(x => x.Status == TodoStatus.Pending).Select(MapTodo).ToArray(),
+            BlockedTodos = todos.Where(x => x.Status == TodoStatus.Blocked).Select(MapTodo).ToArray(),
+            DoneTodos = todos.Where(x => x.Status == TodoStatus.Done).Select(MapTodo).ToArray()
         };
     }
 
@@ -423,8 +434,10 @@ public sealed class PalaceService
         memory.RoomId = room?.Id;
         memory.UpdatedUtc = DateTime.UtcNow;
 
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
         var tagNames = ParseTags(input.TagsText);
-        await SyncTagsAsync(memory, tagNames, cancellationToken);
+        await SyncTagsAsync(memory.Id, tagNames, cancellationToken);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         return memory.Id;
@@ -477,6 +490,37 @@ public sealed class PalaceService
         _dbContext.Rooms.Add(room);
         await _dbContext.SaveChangesAsync(cancellationToken);
         return room.Id;
+    }
+
+    public async Task<Guid> CreateTodoAsync(TodoEditorInput input, CancellationToken cancellationToken)
+    {
+        var todo = new TodoEntry
+        {
+            Title = input.Title.Trim(),
+            Details = input.Details.Trim(),
+            Status = input.Status,
+            CreatedUtc = DateTime.UtcNow,
+            UpdatedUtc = DateTime.UtcNow,
+            CompletedUtc = input.Status == TodoStatus.Done ? DateTime.UtcNow : null
+        };
+
+        _dbContext.Todos.Add(todo);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return todo.Id;
+    }
+
+    public async Task UpdateTodoStatusAsync(Guid id, TodoStatus status, CancellationToken cancellationToken)
+    {
+        var todo = await _dbContext.Todos.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (todo is null)
+        {
+            throw new InvalidOperationException("That todo no longer exists.");
+        }
+
+        todo.Status = status;
+        todo.UpdatedUtc = DateTime.UtcNow;
+        todo.CompletedUtc = status == TodoStatus.Done ? DateTime.UtcNow : null;
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<string?> GetWingSlugAsync(Guid wingId, CancellationToken cancellationToken)
@@ -566,6 +610,37 @@ public sealed class PalaceService
         return memories;
     }
 
+    private IQueryable<TodoEntry> BuildTodoQuery(bool includeDone)
+    {
+        var todos = _dbContext.Todos
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (!includeDone)
+        {
+            todos = todos.Where(x => x.Status != TodoStatus.Done);
+        }
+
+        return todos
+            .OrderBy(x => x.Status == TodoStatus.InProgress ? 0 : x.Status == TodoStatus.Pending ? 1 : x.Status == TodoStatus.Blocked ? 2 : 3)
+            .ThenByDescending(x => x.UpdatedUtc)
+            .ThenByDescending(x => x.CreatedUtc);
+    }
+
+    private async Task<PalaceStatsViewModel> BuildStatsAsync(CancellationToken cancellationToken)
+    {
+        return new PalaceStatsViewModel
+        {
+            WingCount = await _dbContext.Wings.CountAsync(cancellationToken),
+            RoomCount = await _dbContext.Rooms.CountAsync(cancellationToken),
+            MemoryCount = await _dbContext.Memories.CountAsync(cancellationToken),
+            PinnedCount = await _dbContext.Memories.CountAsync(x => x.IsPinned, cancellationToken),
+            TagCount = await _dbContext.Tags.CountAsync(cancellationToken),
+            OpenTodoCount = await _dbContext.Todos.CountAsync(x => x.Status != TodoStatus.Done, cancellationToken),
+            CompletedTodoCount = await _dbContext.Todos.CountAsync(x => x.Status == TodoStatus.Done, cancellationToken)
+        };
+    }
+
     private async Task<IReadOnlyCollection<SelectListItem>> BuildWingOptionsAsync(CancellationToken cancellationToken)
     {
         return await _dbContext.Wings
@@ -614,6 +689,28 @@ public sealed class PalaceService
             .ToListAsync(cancellationToken);
     }
 
+    private static TodoItemViewModel MapTodo(TodoEntry todo)
+    {
+        return new TodoItemViewModel
+        {
+            Id = todo.Id,
+            Title = todo.Title,
+            Details = todo.Details,
+            Status = todo.Status,
+            StatusLabel = todo.Status switch
+            {
+                TodoStatus.InProgress => "In progress",
+                TodoStatus.Pending => "Pending",
+                TodoStatus.Blocked => "Blocked",
+                TodoStatus.Done => "Done",
+                _ => todo.Status.ToString()
+            },
+            CreatedUtc = todo.CreatedUtc,
+            UpdatedUtc = todo.UpdatedUtc,
+            CompletedUtc = todo.CompletedUtc
+        };
+    }
+
     private static async Task<MemoryEntry?> FindMemoryAsync(IQueryable<MemoryEntry> query, Guid id, CancellationToken cancellationToken)
     {
         var memory = await query.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
@@ -626,7 +723,7 @@ public sealed class PalaceService
         return candidates.FirstOrDefault(x => x.Id == id);
     }
 
-    private async Task SyncTagsAsync(MemoryEntry memory, IReadOnlyCollection<string> tagNames, CancellationToken cancellationToken)
+    private async Task SyncTagsAsync(Guid memoryId, IReadOnlyCollection<string> tagNames, CancellationToken cancellationToken)
     {
         var desiredSlugs = tagNames.Select(SlugUtility.CreateSlug).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var existingTags = await _dbContext.Tags
@@ -650,13 +747,23 @@ public sealed class PalaceService
             existingTags.Add(tag);
         }
 
-        memory.MemoryTags.Clear();
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var existingMemoryTags = await _dbContext.MemoryTags
+            .Where(x => x.MemoryEntryId == memoryId)
+            .ToListAsync(cancellationToken);
+
+        if (existingMemoryTags.Count > 0)
+        {
+            _dbContext.MemoryTags.RemoveRange(existingMemoryTags);
+        }
+
         foreach (var tag in existingTags.OrderBy(x => x.Name))
         {
-            memory.MemoryTags.Add(new MemoryEntryTag
+            _dbContext.MemoryTags.Add(new MemoryEntryTag
             {
-                MemoryEntry = memory,
-                Tag = tag
+                MemoryEntryId = memoryId,
+                TagId = tag.Id
             });
         }
     }

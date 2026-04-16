@@ -24,6 +24,19 @@ public static class MemorySeeder
             cancellationToken);
         await dbContext.Database.ExecuteSqlRawAsync(
             """
+            CREATE TABLE IF NOT EXISTS Todos (
+                Id TEXT NOT NULL CONSTRAINT PK_Todos PRIMARY KEY,
+                Title TEXT NOT NULL,
+                Details TEXT NOT NULL,
+                Status INTEGER NOT NULL,
+                CreatedUtc TEXT NOT NULL,
+                UpdatedUtc TEXT NOT NULL,
+                CompletedUtc TEXT NULL
+            );
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
             INSERT OR IGNORE INTO SiteSettings (Id, DisplayName, HomeHeroCopy, TimeZoneId, ShowUtcTimestamps, DefaultMemoryImportance)
             VALUES (1, 'Focus L-AIci', 'A local-first C# memory system for app development: wings, rooms, verbatim notes, searchable context, and an explorer UI for finding past reasoning fast.', 'UTC', 0, 3);
             """,
@@ -41,6 +54,12 @@ public static class MemorySeeder
             """
             CREATE UNIQUE INDEX IF NOT EXISTS IX_Wings_Name_NoCase
             ON Wings(Name COLLATE NOCASE);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_Todos_Status_UpdatedUtc
+            ON Todos(Status, UpdatedUtc DESC);
             """,
             cancellationToken);
     }

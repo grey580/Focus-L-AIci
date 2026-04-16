@@ -1,0 +1,175 @@
+@inject SiteSettingsService SiteSettingsService
+@model FocusLAIci.Web.Models.TodoBoardViewModel
+@{
+    ViewData["Title"] = "Todos";
+    var siteSettings = await SiteSettingsService.GetSettingsAsync();
+}
+
+<section class="page-header">
+    <div>
+        <h1 class="mb-2">Todos</h1>
+        <p class="page-copy">Keep active work visible inside Focus so you can recover quickly after interruptions, pivots, or long implementation runs.</p>
+    </div>
+    <div class="todo-summary">
+        <div class="todo-summary-card">
+            <span>@Model.Stats.OpenTodoCount</span>
+            <small>Open</small>
+        </div>
+        <div class="todo-summary-card">
+            <span>@Model.Stats.CompletedTodoCount</span>
+            <small>Done</small>
+        </div>
+    </div>
+</section>
+
+@if (TempData["TodoError"] is string errorMessage)
+{
+    <div class="alert alert-danger shadow-sm border-0">@errorMessage</div>
+}
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Workboard</h2>
+                    <span class="text-secondary small">Visible project state for future sessions</span>
+                </div>
+                <div class="todo-board">
+                    <section class="todo-column">
+                        <div class="todo-column-heading">
+                            <h3>In progress</h3>
+                            <span>@Model.InProgressTodos.Count</span>
+                        </div>
+                        @if (Model.InProgressTodos.Count == 0)
+                        {
+                            <div class="empty-state compact-empty-state">
+                                <h3>Nothing active</h3>
+                                <p>Move an item here when you start working it.</p>
+                            </div>
+                        }
+                        else
+                        {
+                            @foreach (var todo in Model.InProgressTodos)
+                            {
+                                @await Html.PartialAsync("_TodoCard", todo, new ViewDataDictionary(ViewData)
+                                {
+                                    ["SiteSettings"] = siteSettings
+                                })
+                            }
+                        }
+                    </section>
+
+                    <section class="todo-column">
+                        <div class="todo-column-heading">
+                            <h3>Pending</h3>
+                            <span>@Model.PendingTodos.Count</span>
+                        </div>
+                        @if (Model.PendingTodos.Count == 0)
+                        {
+                            <div class="empty-state compact-empty-state">
+                                <h3>No backlog items</h3>
+                                <p>Add pending work here before it slips out of context.</p>
+                            </div>
+                        }
+                        else
+                        {
+                            @foreach (var todo in Model.PendingTodos)
+                            {
+                                @await Html.PartialAsync("_TodoCard", todo, new ViewDataDictionary(ViewData)
+                                {
+                                    ["SiteSettings"] = siteSettings
+                                })
+                            }
+                        }
+                    </section>
+
+                    <section class="todo-column">
+                        <div class="todo-column-heading">
+                            <h3>Blocked</h3>
+                            <span>@Model.BlockedTodos.Count</span>
+                        </div>
+                        @if (Model.BlockedTodos.Count == 0)
+                        {
+                            <div class="empty-state compact-empty-state">
+                                <h3>No blocked work</h3>
+                                <p>Use this lane when a task is waiting on something external.</p>
+                            </div>
+                        }
+                        else
+                        {
+                            @foreach (var todo in Model.BlockedTodos)
+                            {
+                                @await Html.PartialAsync("_TodoCard", todo, new ViewDataDictionary(ViewData)
+                                {
+                                    ["SiteSettings"] = siteSettings
+                                })
+                            }
+                        }
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Add todo</h2>
+                    <span class="text-secondary small">Capture the next step before switching gears.</span>
+                </div>
+                <form asp-action="Create" method="post" class="todo-form">
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Title" class="form-label"></label>
+                        <input asp-for="Input.Title" class="form-control" />
+                        <span asp-validation-for="Input.Title" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Details" class="form-label"></label>
+                        <textarea asp-for="Input.Details" class="form-control" rows="5"></textarea>
+                        <span asp-validation-for="Input.Details" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Status" class="form-label"></label>
+                        <select asp-for="Input.Status" class="form-select" asp-items="Html.GetEnumSelectList<TodoStatus>()"></select>
+                        <span asp-validation-for="Input.Status" class="text-danger"></span>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Add Todo</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body">
+        <div class="section-heading">
+            <h2>Recently completed</h2>
+            <span class="text-secondary small">@Model.DoneTodos.Count total</span>
+        </div>
+        @if (Model.DoneTodos.Count == 0)
+        {
+            <div class="empty-state compact-empty-state">
+                <h3>No completed todos yet</h3>
+                <p>Finished items stay here as a quick handoff trail.</p>
+            </div>
+        }
+        else
+        {
+            <div class="todo-done-list">
+                @foreach (var todo in Model.DoneTodos.Take(12))
+                {
+                    @await Html.PartialAsync("_TodoCard", todo, new ViewDataDictionary(ViewData)
+                    {
+                        ["SiteSettings"] = siteSettings
+                    })
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

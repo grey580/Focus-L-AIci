@@ -19,6 +19,7 @@
         }
         <div class="d-flex gap-2 flex-wrap mt-3">
             <a class="btn btn-primary" asp-controller="Palace" asp-action="Explore">Explore Palace</a>
+            <a class="btn btn-outline-light" asp-controller="Todos" asp-action="Index">View Todos</a>
             <a class="btn btn-outline-primary" asp-controller="Palace" asp-action="NewMemory">Add Memory</a>
         </div>
     </div>
@@ -154,6 +155,39 @@
         </div>
     </div>
     <div class="col-lg-4">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2 class="h5">Current todos</h2>
+                    <a asp-controller="Todos" asp-action="Index">Open board</a>
+                </div>
+                @if (Model.CurrentTodos.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No open todos</h3>
+                        <p>Add a todo in Focus when work splits or gets interrupted so the next session has a clear re-entry point.</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var todo in Model.CurrentTodos)
+                    {
+                        <div class="todo-preview-item">
+                            <div class="d-flex justify-content-between align-items-start gap-3">
+                                <div>
+                                    <a class="todo-title-link" asp-controller="Todos" asp-action="Index" asp-fragment="todo-@todo.Id">@todo.Title</a>
+                                    @if (!string.IsNullOrWhiteSpace(todo.Details))
+                                    {
+                                        <div class="text-secondary small">@todo.Details</div>
+                                    }
+                                </div>
+                                <span class="todo-status todo-status-@todo.Status.ToString().ToLowerInvariant()">@todo.StatusLabel</span>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
         <div class="card shadow-sm border-0 mb-4">
             <div class="card-body">
                 <h2 class="h5">Quick searches</h2>

@@ -1,0 +1,66 @@
+@inject SiteSettingsService SiteSettingsService
+@model FocusLAIci.Web.Models.TodoItemViewModel
+@{
+    var siteSettings = ViewData["SiteSettings"] as SiteSettingsSnapshot ?? await SiteSettingsService.GetSettingsAsync();
+}
+
+<article id="todo-@Model.Id" class="todo-card todo-card-@Model.Status.ToString().ToLowerInvariant()">
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
+        <div>
+            <h4 class="todo-card-title">@Model.Title</h4>
+            <span class="todo-status todo-status-@Model.Status.ToString().ToLowerInvariant()">@Model.StatusLabel</span>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Model.Details))
+    {
+        <p class="todo-card-details">@Model.Details</p>
+    }
+
+    <dl class="meta-grid todo-meta-grid">
+        <dt>Created</dt>
+        <dd>@SiteSettingsService.FormatUtc(Model.CreatedUtc, siteSettings)</dd>
+        <dt>Updated</dt>
+        <dd>@SiteSettingsService.FormatUtc(Model.UpdatedUtc, siteSettings)</dd>
+        @if (Model.CompletedUtc.HasValue)
+        {
+            <dt>Completed</dt>
+            <dd>@SiteSettingsService.FormatUtc(Model.CompletedUtc.Value, siteSettings)</dd>
+        }
+    </dl>
+
+    <div class="todo-actions">
+        @if (Model.Status != TodoStatus.InProgress)
+        {
+            <form asp-controller="Todos" asp-action="UpdateStatus" method="post">
+                <input type="hidden" name="id" value="@Model.Id" />
+                <input type="hidden" name="status" value="@TodoStatus.InProgress" />
+                <button type="submit" class="btn btn-sm btn-outline-primary">@((Model.Status == TodoStatus.Done) ? "Reopen" : "Start")</button>
+            </form>
+        }
+        @if (Model.Status != TodoStatus.Pending)
+        {
+            <form asp-controller="Todos" asp-action="UpdateStatus" method="post">
+                <input type="hidden" name="id" value="@Model.Id" />
+                <input type="hidden" name="status" value="@TodoStatus.Pending" />
+                <button type="submit" class="btn btn-sm btn-outline-secondary">Backlog</button>
+            </form>
+        }
+        @if (Model.Status != TodoStatus.Blocked)
+        {
+            <form asp-controller="Todos" asp-action="UpdateStatus" method="post">
+                <input type="hidden" name="id" value="@Model.Id" />
+                <input type="hidden" name="status" value="@TodoStatus.Blocked" />
+                <button type="submit" class="btn btn-sm btn-outline-warning">Block</button>
+            </form>
+        }
+        @if (Model.Status != TodoStatus.Done)
+        {
+            <form asp-controller="Todos" asp-action="UpdateStatus" method="post">
+                <input type="hidden" name="id" value="@Model.Id" />
+                <input type="hidden" name="status" value="@TodoStatus.Done" />
+                <button type="submit" class="btn btn-sm btn-success">Done</button>
+            </form>
+        }
+    </div>
+</article>

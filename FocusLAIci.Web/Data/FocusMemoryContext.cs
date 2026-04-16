@@ -14,6 +14,7 @@ public sealed class FocusMemoryContext : DbContext
     public DbSet<SiteSettings> SiteSettings => Set<SiteSettings>();
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<Tag> Tags => Set<Tag>();
+    public DbSet<TodoEntry> Todos => Set<TodoEntry>();
     public DbSet<MemoryEntry> Memories => Set<MemoryEntry>();
     public DbSet<MemoryEntryTag> MemoryTags => Set<MemoryEntryTag>();
     public DbSet<MemoryLink> MemoryLinks => Set<MemoryLink>();
@@ -54,6 +55,13 @@ public sealed class FocusMemoryContext : DbContext
             entity.HasIndex(x => x.Slug).IsUnique();
             entity.Property(x => x.Name).HasMaxLength(80);
             entity.Property(x => x.Slug).HasMaxLength(120);
+        });
+
+        builder.Entity<TodoEntry>(entity =>
+        {
+            entity.HasIndex(x => x.Status);
+            entity.Property(x => x.Title).HasMaxLength(180);
+            entity.Property(x => x.Details).HasMaxLength(2000);
         });
 
         builder.Entity<MemoryEntry>(entity =>

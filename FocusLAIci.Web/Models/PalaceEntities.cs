@@ -71,6 +71,22 @@ public sealed class Tag
     public ICollection<MemoryEntryTag> MemoryTags { get; set; } = new List<MemoryEntryTag>();
 }
 
+public sealed class TodoEntry
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    [MaxLength(180)]
+    public string Title { get; set; } = string.Empty;
+
+    [MaxLength(2000)]
+    public string Details { get; set; } = string.Empty;
+
+    public TodoStatus Status { get; set; } = TodoStatus.Pending;
+    public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? CompletedUtc { get; set; }
+}
+
 public sealed class MemoryEntry
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -132,6 +148,21 @@ public enum MemoryKind
     Reference = 5,
     Conversation = 6,
     Task = 7
+}
+
+public enum TodoStatus
+{
+    [Display(Name = "Pending")]
+    Pending = 1,
+
+    [Display(Name = "In progress")]
+    InProgress = 2,
+
+    [Display(Name = "Blocked")]
+    Blocked = 3,
+
+    [Display(Name = "Done")]
+    Done = 4
 }
 
 public enum SourceKind

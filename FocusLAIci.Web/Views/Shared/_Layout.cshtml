@@ -20,6 +20,7 @@
         var dashboardActive = currentController == "Home" ? "active" : string.Empty;
         var exploreActive = currentController == "Palace" && (currentAction == "Explore" || currentAction == "Wing" || currentAction == "Memory") ? "active" : string.Empty;
         var visualizerActive = currentController == "Palace" && currentAction == "Visualizer" ? "active" : string.Empty;
+        var todosActive = currentController == "Todos" ? "active" : string.Empty;
         var settingsActive = currentController == "Admin" ? "active" : string.Empty;
     }
     <header>
@@ -40,6 +41,9 @@
                         </li>
                         <li class="nav-item">
                             <a class="nav-link @visualizerActive" asp-area="" asp-controller="Palace" asp-action="Visualizer">Visualizer</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link @todosActive" asp-area="" asp-controller="Todos" asp-action="Index">Todos</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link @settingsActive" asp-area="" asp-controller="Admin" asp-action="Settings">Settings</a>
