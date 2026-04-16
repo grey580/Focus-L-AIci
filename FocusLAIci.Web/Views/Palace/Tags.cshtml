@@ -1,0 +1,42 @@
+@model FocusLAIci.Web.Models.TagBrowseViewModel
+@{
+    ViewData["Title"] = "Tags";
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Palace structure</p>
+        <h1>Tags</h1>
+        <p class="page-copy">Browse every tag in the palace and click through to the memories attached to each one.</p>
+    </div>
+    <a class="btn btn-primary" asp-action="Explore">Open Explorer</a>
+</section>
+
+@if (Model.Tags.Count == 0)
+{
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+            <div class="empty-state">
+                <h3>No tags yet</h3>
+                <p>Tags appear as you add memories and help you retrieve related work faster.</p>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-3">
+                @foreach (var tag in Model.Tags)
+                {
+                    <a class="wing-card text-decoration-none d-inline-flex flex-column gap-2" asp-action="Explore" asp-route-tag="@tag.Slug" style="min-width: 220px;">
+                        <div class="memory-meta">@tag.MemoryCount memories</div>
+                        <strong>@tag.Name</strong>
+                        <span class="text-secondary small">Open tagged memories</span>
+                    </a>
+                }
+            </div>
+        </div>
+    </div>
+}

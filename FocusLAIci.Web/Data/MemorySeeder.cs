@@ -10,6 +10,39 @@ public static class MemorySeeder
         await using var scope = services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<FocusMemoryContext>();
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS SiteSettings (
+                Id INTEGER NOT NULL CONSTRAINT PK_SiteSettings PRIMARY KEY,
+                DisplayName TEXT NOT NULL,
+                HomeHeroCopy TEXT NOT NULL,
+                TimeZoneId TEXT NOT NULL,
+                ShowUtcTimestamps INTEGER NOT NULL DEFAULT 0,
+                DefaultMemoryImportance INTEGER NOT NULL DEFAULT 3
+            );
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            INSERT OR IGNORE INTO SiteSettings (Id, DisplayName, HomeHeroCopy, TimeZoneId, ShowUtcTimestamps, DefaultMemoryImportance)
+            VALUES (1, 'Focus L-AIci', 'A local-first C# memory system for app development: wings, rooms, verbatim notes, searchable context, and an explorer UI for finding past reasoning fast.', 'UTC', 0, 3);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            DELETE FROM Wings
+            WHERE Name = 'Concurrent Wing'
+              AND Description = 'race'
+              AND NOT EXISTS (SELECT 1 FROM Rooms WHERE Rooms.WingId = Wings.Id)
+              AND NOT EXISTS (SELECT 1 FROM Memories WHERE Memories.WingId = Wings.Id);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_Wings_Name_NoCase
+            ON Wings(Name COLLATE NOCASE);
+            """,
+            cancellationToken);
     }
 
     public static async Task SeedSampleDataAsync(IServiceProvider services, CancellationToken cancellationToken = default)

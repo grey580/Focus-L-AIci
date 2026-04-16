@@ -57,6 +57,16 @@ This makes the system much better than a basic note app for operational work, be
 - linked-memory relationships for context tracing
 - sample data seeding for quick onboarding
 
+## Dashboard preview
+
+These screenshots were captured from a live local Focus L-AIci instance. Memory content, wing names, and other user-authored details are intentionally blurred.
+
+![Focus L-AIci dashboard overview](images/dashboard-overview.png)
+
+![Focus L-AIci dashboard wings and pinned memories](images/dashboard-wings-pinned.png)
+
+![Focus L-AIci dashboard recent memories](images/dashboard-recent-memories.png)
+
 ## Technology
 
 - **ASP.NET Core MVC**

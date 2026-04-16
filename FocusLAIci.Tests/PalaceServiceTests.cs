@@ -35,32 +35,64 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
-    public async Task CreateWingAsync_AppendsSuffixForDuplicateNames()
+    public async Task CreateWingAsync_RejectsDuplicateNames()
     {
         await using var harness = await TestHarness.CreateAsync();
         await using var serviceContext = harness.CreateDbContext();
         var service = new PalaceService(serviceContext);
 
-        var firstWingId = await service.CreateWingAsync(new WingEditorInput
+        await service.CreateWingAsync(new WingEditorInput
         {
             Name = "Release Knowledge",
             Description = "Primary release wing."
         }, CancellationToken.None);
 
-        var secondWingId = await service.CreateWingAsync(new WingEditorInput
-        {
-            Name = "Release Knowledge",
-            Description = "Duplicate display name."
-        }, CancellationToken.None);
-
         await using var dbContext = harness.CreateDbContext();
-        var slugs = await dbContext.Wings
-            .Where(x => x.Id == firstWingId || x.Id == secondWingId)
-            .OrderBy(x => x.Slug)
-            .Select(x => x.Slug)
-            .ToListAsync();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "release knowledge",
+            Description = "Duplicate display name."
+        }, CancellationToken.None));
 
-        Assert.Equal(["release-knowledge", "release-knowledge-2"], slugs);
+        Assert.Equal("A wing with that name already exists.", exception.Message);
+        Assert.Equal(1, await dbContext.Wings.CountAsync());
+    }
+
+    [Fact]
+    public async Task CleanupConcurrentTestWingsAsync_RemovesOnlyEmptyRaceArtifacts()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+        dbContext.Wings.AddRange(
+            new Wing
+            {
+                Name = "Concurrent Wing",
+                Slug = "concurrent-wing",
+                Description = "race"
+            },
+            new Wing
+            {
+                Name = "Concurrent Wing",
+                Slug = "concurrent-wing-2",
+                Description = "race"
+            },
+            new Wing
+            {
+                Name = "Concurrent Wing",
+                Slug = "concurrent-wing-keeper",
+                Description = "real"
+            });
+        await dbContext.SaveChangesAsync();
+
+        await using var settingsContext = harness.CreateDbContext();
+        var settingsService = new SiteSettingsService(settingsContext);
+        var removedCount = await settingsService.CleanupConcurrentTestWingsAsync(CancellationToken.None);
+
+        await using var verifyContext = harness.CreateDbContext();
+        var remainingSlugs = await verifyContext.Wings.OrderBy(x => x.Slug).Select(x => x.Slug).ToListAsync();
+
+        Assert.Equal(2, removedCount);
+        Assert.Equal(["concurrent-wing-keeper"], remainingSlugs);
     }
 
     [Fact]
@@ -129,6 +161,7 @@ public sealed class PalaceServiceTests
             var serviceCollection = new ServiceCollection();
             serviceCollection.AddDbContext<FocusMemoryContext>(options => options.UseSqlite(connection));
             serviceCollection.AddScoped<PalaceService>();
+            serviceCollection.AddScoped<SiteSettingsService>();
 
             var services = serviceCollection.BuildServiceProvider();
 

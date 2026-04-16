@@ -12,6 +12,47 @@ public sealed class DashboardViewModel
     public IReadOnlyCollection<string> SearchExamples { get; init; } = Array.Empty<string>();
 }
 
+public sealed class SiteSettingsSnapshot
+{
+    public string DisplayName { get; init; } = "Focus L-AIci";
+    public string HomeHeroCopy { get; init; } = "A local-first C# memory system for app development: wings, rooms, verbatim notes, searchable context, and an explorer UI for finding past reasoning fast.";
+    public string TimeZoneId { get; init; } = "UTC";
+    public bool ShowUtcTimestamps { get; init; }
+    public int DefaultMemoryImportance { get; init; } = 3;
+}
+
+public sealed class AdminSettingsViewModel
+{
+    public AdminSettingsInput Input { get; init; } = new();
+    public IReadOnlyCollection<SelectListItem> TimeZoneOptions { get; init; } = Array.Empty<SelectListItem>();
+    public string ActiveTimeZoneLabel { get; init; } = "UTC";
+}
+
+public sealed class AdminSettingsInput
+{
+    [Required]
+    [StringLength(80)]
+    [Display(Name = "Site display name")]
+    public string DisplayName { get; set; } = "Focus L-AIci";
+
+    [Required]
+    [StringLength(400)]
+    [Display(Name = "Dashboard hero copy")]
+    public string HomeHeroCopy { get; set; } = "A local-first C# memory system for app development: wings, rooms, verbatim notes, searchable context, and an explorer UI for finding past reasoning fast.";
+
+    [Required]
+    [StringLength(120)]
+    [Display(Name = "Preferred time zone")]
+    public string TimeZoneId { get; set; } = "UTC";
+
+    [Display(Name = "Also show UTC beside localized timestamps")]
+    public bool ShowUtcTimestamps { get; set; }
+
+    [Range(1, 5)]
+    [Display(Name = "Default memory importance")]
+    public int DefaultMemoryImportance { get; set; } = 3;
+}
+
 public sealed class PalaceStatsViewModel
 {
     public int WingCount { get; init; }
@@ -30,6 +71,39 @@ public sealed class WingSummaryViewModel
     public int RoomCount { get; init; }
     public int MemoryCount { get; init; }
     public DateTime? LatestActivityUtc { get; init; }
+}
+
+public sealed class WingBrowseViewModel
+{
+    public IReadOnlyCollection<WingSummaryViewModel> Wings { get; init; } = Array.Empty<WingSummaryViewModel>();
+}
+
+public sealed class RoomBrowseViewModel
+{
+    public IReadOnlyCollection<RoomBrowseItemViewModel> Rooms { get; init; } = Array.Empty<RoomBrowseItemViewModel>();
+}
+
+public sealed class RoomBrowseItemViewModel
+{
+    public Guid RoomId { get; init; }
+    public Guid WingId { get; init; }
+    public string WingName { get; init; } = string.Empty;
+    public string WingSlug { get; init; } = string.Empty;
+    public string RoomName { get; init; } = string.Empty;
+    public string RoomDescription { get; init; } = string.Empty;
+    public int MemoryCount { get; init; }
+}
+
+public sealed class TagBrowseViewModel
+{
+    public IReadOnlyCollection<TagBrowseItemViewModel> Tags { get; init; } = Array.Empty<TagBrowseItemViewModel>();
+}
+
+public sealed class TagBrowseItemViewModel
+{
+    public string Name { get; init; } = string.Empty;
+    public string Slug { get; init; } = string.Empty;
+    public int MemoryCount { get; init; }
 }
 
 public sealed class MemoryCardViewModel

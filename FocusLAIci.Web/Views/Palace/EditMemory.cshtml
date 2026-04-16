@@ -1,7 +1,9 @@
+﻿@inject SiteSettingsService SiteSettingsService
 @using FocusLAIci.Web.Models
 @model MemoryEditorViewModel
 @{
     ViewData["Title"] = Model.Heading;
+    var siteSettings = await SiteSettingsService.GetSettingsAsync();
 }
 
 <section class="page-header">
@@ -47,11 +49,12 @@
                 <div class="col-md-4">
                     <label asp-for="Input.Importance" class="form-label"></label>
                     <input asp-for="Input.Importance" class="form-control" />
-                    <div class="form-text">Rate from 1 to 5.</div>
+                    <div class="form-text">Rate from 1 to 5. Default comes from Settings.</div>
                 </div>
                 <div class="col-md-4">
                     <label asp-for="Input.OccurredUtc" class="form-label"></label>
-                    <input class="form-control" id="Input_OccurredUtc" name="Input.OccurredUtc" type="datetime-local" value="@(Model.Input.OccurredUtc?.ToString("yyyy-MM-ddTHH:mm"))" />
+                    <input class="form-control" id="Input_OccurredUtc" name="Input.OccurredUtc" type="datetime-local" value="@SiteSettingsService.FormatDateTimeLocal(Model.Input.OccurredUtc, siteSettings)" />
+                    <div class="form-text">Shown in @siteSettings.TimeZoneId and stored as UTC.</div>
                 </div>
                 <div class="col-md-6">
                     <label asp-for="Input.WingId" class="form-label"></label>

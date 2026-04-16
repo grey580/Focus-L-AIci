@@ -87,8 +87,18 @@ public sealed class PalaceApiController : ControllerBase
     [HttpPost("wings")]
     public async Task<ActionResult<object>> CreateWing([FromBody] WingEditorInput input, CancellationToken cancellationToken)
     {
-        var id = await _palaceService.CreateWingAsync(input, cancellationToken);
-        return Ok(new { id });
+        try
+        {
+            var id = await _palaceService.CreateWingAsync(input, cancellationToken);
+            return Ok(new { id });
+        }
+        catch (InvalidOperationException exception)
+        {
+            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                [nameof(WingEditorInput.Name)] = [exception.Message]
+            }));
+        }
     }
 
     [HttpPost("rooms")]

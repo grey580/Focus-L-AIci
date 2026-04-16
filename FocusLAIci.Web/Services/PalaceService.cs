@@ -22,22 +22,7 @@ public sealed class PalaceService
             .Take(12)
             .ToListAsync(cancellationToken);
 
-        var wings = await _dbContext.Wings
-            .AsNoTracking()
-            .Include(x => x.Rooms)
-            .Include(x => x.Memories)
-            .OrderBy(x => x.Name)
-            .Select(x => new WingSummaryViewModel
-            {
-                Id = x.Id,
-                Name = x.Name,
-                Slug = x.Slug,
-                Description = x.Description,
-                RoomCount = x.Rooms.Count,
-                MemoryCount = x.Memories.Count,
-                LatestActivityUtc = x.Memories.OrderByDescending(m => m.UpdatedUtc).Select(m => m.UpdatedUtc).FirstOrDefault()
-            })
-            .ToListAsync(cancellationToken);
+        var wings = await BuildWingSummariesAsync(cancellationToken);
 
         return new DashboardViewModel
         {
@@ -58,6 +43,60 @@ public sealed class PalaceService
                 "why did we choose local-first memory",
                 "frontend browse patterns"
             ]
+        };
+    }
+
+    public async Task<WingBrowseViewModel> GetWingCatalogAsync(CancellationToken cancellationToken)
+    {
+        return new WingBrowseViewModel
+        {
+            Wings = await BuildWingSummariesAsync(cancellationToken)
+        };
+    }
+
+    public async Task<RoomBrowseViewModel> GetRoomCatalogAsync(CancellationToken cancellationToken)
+    {
+        var rooms = await _dbContext.Rooms
+            .AsNoTracking()
+            .Include(x => x.Wing)
+            .Include(x => x.Memories)
+            .OrderBy(x => x.Wing!.Name)
+            .ThenBy(x => x.Name)
+            .Select(x => new RoomBrowseItemViewModel
+            {
+                RoomId = x.Id,
+                WingId = x.WingId,
+                WingName = x.Wing!.Name,
+                WingSlug = x.Wing.Slug,
+                RoomName = x.Name,
+                RoomDescription = x.Description,
+                MemoryCount = x.Memories.Count
+            })
+            .ToListAsync(cancellationToken);
+
+        return new RoomBrowseViewModel
+        {
+            Rooms = rooms
+        };
+    }
+
+    public async Task<TagBrowseViewModel> GetTagCatalogAsync(CancellationToken cancellationToken)
+    {
+        var tags = await _dbContext.Tags
+            .AsNoTracking()
+            .Include(x => x.MemoryTags)
+            .OrderBy(x => x.Name)
+            .Select(x => new TagBrowseItemViewModel
+            {
+                Name = x.Name,
+                Slug = x.Slug,
+                MemoryCount = x.MemoryTags.Count
+            })
+            .ToListAsync(cancellationToken);
+
+        return new TagBrowseViewModel
+        {
+            Tags = tags
         };
     }
 
@@ -122,7 +161,7 @@ public sealed class PalaceService
 
     public async Task<MemoryDetailViewModel?> GetMemoryAsync(Guid id, CancellationToken cancellationToken)
     {
-        var memory = await _dbContext.Memories
+        var query = _dbContext.Memories
             .AsNoTracking()
             .Include(x => x.Wing)
             .Include(x => x.Room)
@@ -131,8 +170,9 @@ public sealed class PalaceService
             .Include(x => x.OutgoingLinks)
                 .ThenInclude(x => x.ToMemoryEntry)
             .Include(x => x.IncomingLinks)
-                .ThenInclude(x => x.FromMemoryEntry)
-            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+                .ThenInclude(x => x.FromMemoryEntry);
+
+        var memory = await FindMemoryAsync(query, id, cancellationToken);
 
         if (memory is null)
         {
@@ -184,11 +224,12 @@ public sealed class PalaceService
             };
         }
 
-        var memory = await _dbContext.Memories
+        var query = _dbContext.Memories
             .AsNoTracking()
             .Include(x => x.MemoryTags)
-                .ThenInclude(x => x.Tag)
-            .FirstOrDefaultAsync(x => x.Id == id.Value, cancellationToken)
+                .ThenInclude(x => x.Tag);
+
+        var memory = await FindMemoryAsync(query, id.Value, cancellationToken)
             ?? throw new InvalidOperationException("Memory entry not found.");
 
         return new MemoryEditorViewModel
@@ -286,15 +327,30 @@ public sealed class PalaceService
 
     public async Task<Guid> CreateWingAsync(WingEditorInput input, CancellationToken cancellationToken)
     {
+        var trimmedName = input.Name.Trim();
+        var normalizedName = trimmedName.ToLowerInvariant();
+        if (await _dbContext.Wings.AnyAsync(x => x.Name.ToLower() == normalizedName, cancellationToken))
+        {
+            throw new InvalidOperationException("A wing with that name already exists.");
+        }
+
         var wing = new Wing
         {
-            Name = input.Name.Trim(),
+            Name = trimmedName,
             Description = input.Description.Trim(),
-            Slug = await BuildUniqueWingSlugAsync(input.Name, cancellationToken)
+            Slug = await BuildUniqueWingSlugAsync(trimmedName, cancellationToken)
         };
 
         _dbContext.Wings.Add(wing);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            throw new InvalidOperationException("A wing with that name already exists.");
+        }
+
         return wing.Id;
     }
 
@@ -431,6 +487,38 @@ public sealed class PalaceService
             .ThenBy(x => x.Name)
             .Select(x => new SelectListItem($"{x.Wing!.Name} / {x.Name}", x.Id.ToString()))
             .ToListAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<WingSummaryViewModel>> BuildWingSummariesAsync(CancellationToken cancellationToken)
+    {
+        return await _dbContext.Wings
+            .AsNoTracking()
+            .Include(x => x.Rooms)
+            .Include(x => x.Memories)
+            .OrderBy(x => x.Name)
+            .Select(x => new WingSummaryViewModel
+            {
+                Id = x.Id,
+                Name = x.Name,
+                Slug = x.Slug,
+                Description = x.Description,
+                RoomCount = x.Rooms.Count,
+                MemoryCount = x.Memories.Count,
+                LatestActivityUtc = x.Memories.OrderByDescending(m => m.UpdatedUtc).Select(m => m.UpdatedUtc).FirstOrDefault()
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    private static async Task<MemoryEntry?> FindMemoryAsync(IQueryable<MemoryEntry> query, Guid id, CancellationToken cancellationToken)
+    {
+        var memory = await query.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (memory is not null)
+        {
+            return memory;
+        }
+
+        var candidates = await query.ToListAsync(cancellationToken);
+        return candidates.FirstOrDefault(x => x.Id == id);
     }
 
     private async Task SyncTagsAsync(MemoryEntry memory, IReadOnlyCollection<string> tagNames, CancellationToken cancellationToken)

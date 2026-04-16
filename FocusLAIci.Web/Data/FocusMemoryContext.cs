@@ -11,6 +11,7 @@ public sealed class FocusMemoryContext : DbContext
     }
 
     public DbSet<Wing> Wings => Set<Wing>();
+    public DbSet<SiteSettings> SiteSettings => Set<SiteSettings>();
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<MemoryEntry> Memories => Set<MemoryEntry>();
@@ -25,6 +26,15 @@ public sealed class FocusMemoryContext : DbContext
             entity.Property(x => x.Name).HasMaxLength(120);
             entity.Property(x => x.Slug).HasMaxLength(160);
             entity.Property(x => x.Description).HasMaxLength(400);
+        });
+
+        builder.Entity<SiteSettings>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Id).ValueGeneratedNever();
+            entity.Property(x => x.DisplayName).HasMaxLength(80);
+            entity.Property(x => x.HomeHeroCopy).HasMaxLength(400);
+            entity.Property(x => x.TimeZoneId).HasMaxLength(120);
         });
 
         builder.Entity<Room>(entity =>

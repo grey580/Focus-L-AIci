@@ -1,6 +1,8 @@
+@inject SiteSettingsService SiteSettingsService
 @model FocusLAIci.Web.Models.MemoryDetailViewModel
 @{
     ViewData["Title"] = Model.Memory.Title;
+    var siteSettings = await SiteSettingsService.GetSettingsAsync();
 }
 
 <nav aria-label="breadcrumb" class="breadcrumb-bar">
@@ -50,13 +52,13 @@
                     <dt>Pinned</dt>
                     <dd>@(Model.Memory.IsPinned ? "Yes" : "No")</dd>
                     <dt>Created</dt>
-                    <dd>@Model.CreatedUtc.ToString("yyyy-MM-dd HH:mm") UTC</dd>
+                    <dd>@SiteSettingsService.FormatUtc(Model.CreatedUtc, siteSettings)</dd>
                     <dt>Updated</dt>
-                    <dd>@Model.Memory.UpdatedUtc.ToString("yyyy-MM-dd HH:mm") UTC</dd>
+                    <dd>@SiteSettingsService.FormatUtc(Model.Memory.UpdatedUtc, siteSettings)</dd>
                     @if (Model.OccurredUtc.HasValue)
                     {
                         <dt>Occurred</dt>
-                        <dd>@Model.OccurredUtc.Value.ToString("yyyy-MM-dd HH:mm") UTC</dd>
+                        <dd>@SiteSettingsService.FormatUtc(Model.OccurredUtc.Value, siteSettings)</dd>
                     }
                     @if (!string.IsNullOrWhiteSpace(Model.SourceReference))
                     {

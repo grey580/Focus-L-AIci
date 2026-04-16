@@ -20,6 +20,25 @@ public sealed class Wing
     public ICollection<MemoryEntry> Memories { get; set; } = new List<MemoryEntry>();
 }
 
+public sealed class SiteSettings
+{
+    public int Id { get; set; } = 1;
+
+    [MaxLength(80)]
+    public string DisplayName { get; set; } = "Focus L-AIci";
+
+    [MaxLength(400)]
+    public string HomeHeroCopy { get; set; } = "A local-first C# memory system for app development: wings, rooms, verbatim notes, searchable context, and an explorer UI for finding past reasoning fast.";
+
+    [MaxLength(120)]
+    public string TimeZoneId { get; set; } = "UTC";
+
+    public bool ShowUtcTimestamps { get; set; }
+
+    [Range(1, 5)]
+    public int DefaultMemoryImportance { get; set; } = 3;
+}
+
 public sealed class Room
 {
     public Guid Id { get; set; } = Guid.NewGuid();

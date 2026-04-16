@@ -1,0 +1,47 @@
+@inject SiteSettingsService SiteSettingsService
+@model FocusLAIci.Web.Models.WingBrowseViewModel
+@{
+    ViewData["Title"] = "Wings";
+    var siteSettings = await SiteSettingsService.GetSettingsAsync();
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Palace structure</p>
+        <h1>Wings</h1>
+        <p class="page-copy">Browse the top-level palace structure and click through to each wing's rooms and memories.</p>
+    </div>
+    <a class="btn btn-primary" asp-action="NewWing">Add Wing</a>
+</section>
+
+@if (Model.Wings.Count == 0)
+{
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+            <div class="empty-state">
+                <h3>No wings yet</h3>
+                <p>Create a wing for a product, client, or initiative to start shaping the palace.</p>
+                <a class="btn btn-primary" asp-action="NewWing">Add Wing</a>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var wing in Model.Wings)
+        {
+            <div class="col-lg-4 col-md-6">
+                <div class="wing-card">
+                    <div class="memory-meta">@wing.RoomCount rooms • @wing.MemoryCount memories</div>
+                    <h3><a asp-action="Wing" asp-route-slug="@wing.Slug">@wing.Name</a></h3>
+                    <p>@wing.Description</p>
+                    @if (wing.LatestActivityUtc.HasValue)
+                    {
+                        <div class="text-secondary small">Latest activity @SiteSettingsService.FormatUtc(wing.LatestActivityUtc.Value, siteSettings)</div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}

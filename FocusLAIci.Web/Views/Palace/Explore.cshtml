@@ -1,7 +1,9 @@
-﻿@using FocusLAIci.Web.Models
+﻿@inject SiteSettingsService SiteSettingsService
+@using FocusLAIci.Web.Models
 @model ExploreViewModel
 @{
     ViewData["Title"] = "Explore";
+    var siteSettings = await SiteSettingsService.GetSettingsAsync();
 }
 
 <section class="page-header">
@@ -137,7 +139,7 @@ else
                     </div>
                     <div class="card-footer bg-transparent border-0 pt-0 d-flex justify-content-between">
                         <span class="text-secondary small">Importance @memory.Importance / 5</span>
-                        <span class="text-secondary small">@memory.UpdatedUtc.ToString("yyyy-MM-dd HH:mm") UTC</span>
+                        <span class="text-secondary small">@SiteSettingsService.FormatUtc(memory.UpdatedUtc, siteSettings)</span>
                     </div>
                 </article>
             </div>

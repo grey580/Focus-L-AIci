@@ -1,0 +1,45 @@
+@model FocusLAIci.Web.Models.RoomBrowseViewModel
+@{
+    ViewData["Title"] = "Rooms";
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Palace structure</p>
+        <h1>Rooms</h1>
+        <p class="page-copy">Browse rooms across the palace and jump straight into the memories captured for each one.</p>
+    </div>
+    <a class="btn btn-primary" asp-action="NewRoom">Add Room</a>
+</section>
+
+@if (Model.Rooms.Count == 0)
+{
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+            <div class="empty-state">
+                <h3>No rooms yet</h3>
+                <p>Add a room under a wing to organize a focused area of knowledge.</p>
+                <a class="btn btn-primary" asp-action="NewRoom">Add Room</a>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var room in Model.Rooms)
+        {
+            <div class="col-lg-4 col-md-6">
+                <div class="wing-card">
+                    <div class="memory-meta">@room.WingName • @room.MemoryCount memories</div>
+                    <h3><a asp-action="Explore" asp-route-roomId="@room.RoomId">@room.RoomName</a></h3>
+                    <p>@room.RoomDescription</p>
+                    <div class="d-flex justify-content-between align-items-center gap-2">
+                        <a class="text-decoration-none" asp-action="Wing" asp-route-slug="@room.WingSlug">@room.WingName</a>
+                        <a class="btn btn-sm btn-outline-primary" asp-action="Explore" asp-route-roomId="@room.RoomId">View memories</a>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}

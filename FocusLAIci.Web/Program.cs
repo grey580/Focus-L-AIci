@@ -17,6 +17,7 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddDbContext<FocusMemoryContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("FocusPalace")));
 builder.Services.AddScoped<PalaceService>();
+builder.Services.AddScoped<SiteSettingsService>();
 
 var app = builder.Build();
 

@@ -7,16 +7,36 @@ namespace FocusLAIci.Web.Controllers;
 public sealed class PalaceController : Controller
 {
     private readonly PalaceService _palaceService;
+    private readonly SiteSettingsService _siteSettingsService;
 
-    public PalaceController(PalaceService palaceService)
+    public PalaceController(PalaceService palaceService, SiteSettingsService siteSettingsService)
     {
         _palaceService = palaceService;
+        _siteSettingsService = siteSettingsService;
     }
 
     [HttpGet]
     public async Task<IActionResult> Explore(string? query, Guid? wingId, Guid? roomId, MemoryKind? kind, string? tag, CancellationToken cancellationToken)
     {
         return View(await _palaceService.GetExploreAsync(query, wingId, roomId, kind, tag, cancellationToken));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Wings(CancellationToken cancellationToken)
+    {
+        return View(await _palaceService.GetWingCatalogAsync(cancellationToken));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Rooms(CancellationToken cancellationToken)
+    {
+        return View(await _palaceService.GetRoomCatalogAsync(cancellationToken));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Tags(CancellationToken cancellationToken)
+    {
+        return View(await _palaceService.GetTagCatalogAsync(cancellationToken));
     }
 
     [HttpGet]
@@ -36,13 +56,17 @@ public sealed class PalaceController : Controller
     [HttpGet]
     public async Task<IActionResult> NewMemory(Guid? wingId, CancellationToken cancellationToken)
     {
-        return View("EditMemory", await _palaceService.BuildMemoryEditorAsync(null, wingId, cancellationToken));
+        var model = await _palaceService.BuildMemoryEditorAsync(null, wingId, cancellationToken);
+        var settings = await _siteSettingsService.GetSettingsAsync(cancellationToken);
+        model.Input.Importance = settings.DefaultMemoryImportance;
+        return View("EditMemory", model);
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> NewMemory(MemoryEditorInput input, CancellationToken cancellationToken)
     {
+        var settings = await _siteSettingsService.GetSettingsAsync(cancellationToken);
         if (!ModelState.IsValid)
         {
             var editor = await _palaceService.BuildMemoryEditorAsync(null, input.WingId, cancellationToken);
@@ -58,6 +82,7 @@ public sealed class PalaceController : Controller
 
         try
         {
+            input.OccurredUtc = _siteSettingsService.ConvertLocalToUtc(input.OccurredUtc, settings);
             var id = await _palaceService.SaveMemoryAsync(input, cancellationToken);
             return RedirectToAction(nameof(Memory), new { id });
         }
@@ -82,6 +107,8 @@ public sealed class PalaceController : Controller
         try
         {
             var model = await _palaceService.BuildMemoryEditorAsync(id, null, cancellationToken);
+            var settings = await _siteSettingsService.GetSettingsAsync(cancellationToken);
+            model.Input.OccurredUtc = _siteSettingsService.ConvertUtcToLocal(model.Input.OccurredUtc, settings);
             return View(model);
         }
         catch (InvalidOperationException)
@@ -95,6 +122,7 @@ public sealed class PalaceController : Controller
     public async Task<IActionResult> EditMemory(Guid id, MemoryEditorInput input, CancellationToken cancellationToken)
     {
         input.Id = id;
+        var settings = await _siteSettingsService.GetSettingsAsync(cancellationToken);
         if (!ModelState.IsValid)
         {
             var editor = await _palaceService.BuildMemoryEditorAsync(id, input.WingId, cancellationToken);
@@ -110,6 +138,7 @@ public sealed class PalaceController : Controller
 
         try
         {
+            input.OccurredUtc = _siteSettingsService.ConvertLocalToUtc(input.OccurredUtc, settings);
             await _palaceService.SaveMemoryAsync(input, cancellationToken);
             return RedirectToAction(nameof(Memory), new { id });
         }
@@ -143,9 +172,17 @@ public sealed class PalaceController : Controller
             return View(input);
         }
 
-        var wingId = await _palaceService.CreateWingAsync(input, cancellationToken);
-        var wingSlug = await _palaceService.GetWingSlugAsync(wingId, cancellationToken);
-        return RedirectToAction(nameof(Wing), new { slug = wingSlug });
+        try
+        {
+            var wingId = await _palaceService.CreateWingAsync(input, cancellationToken);
+            var wingSlug = await _palaceService.GetWingSlugAsync(wingId, cancellationToken);
+            return RedirectToAction(nameof(Wing), new { slug = wingSlug });
+        }
+        catch (InvalidOperationException exception)
+        {
+            ModelState.AddModelError(string.Empty, exception.Message);
+            return View(input);
+        }
     }
 
     [HttpGet]

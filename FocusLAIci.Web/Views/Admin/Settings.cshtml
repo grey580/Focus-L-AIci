@@ -1,0 +1,95 @@
+@model AdminSettingsViewModel
+@{
+    ViewData["Title"] = "Settings";
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Website administration</p>
+        <h1>Settings</h1>
+        <p class="page-copy">Control the site label, dashboard messaging, memory defaults, and how timestamps are presented across the palace.</p>
+    </div>
+</section>
+
+@if (TempData["SettingsMessage"] is string message)
+{
+    <div class="alert alert-success shadow-sm border-0" role="alert">
+        @message
+    </div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <form method="post">
+                    @Html.AntiForgeryToken()
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+                    <div class="settings-grid">
+                        <div>
+                            <label asp-for="Input.DisplayName" class="form-label"></label>
+                            <input asp-for="Input.DisplayName" class="form-control" />
+                            <div class="form-text">Used in the navbar, browser title, and footer.</div>
+                            <span asp-validation-for="Input.DisplayName" class="text-danger"></span>
+                        </div>
+                        <div>
+                            <label asp-for="Input.DefaultMemoryImportance" class="form-label"></label>
+                            <input asp-for="Input.DefaultMemoryImportance" class="form-control" />
+                            <div class="form-text">New memory forms start with this importance value.</div>
+                            <span asp-validation-for="Input.DefaultMemoryImportance" class="text-danger"></span>
+                        </div>
+                        <div class="settings-span-2">
+                            <label asp-for="Input.HomeHeroCopy" class="form-label"></label>
+                            <textarea asp-for="Input.HomeHeroCopy" class="form-control" rows="4"></textarea>
+                            <div class="form-text">This appears on the dashboard hero panel.</div>
+                            <span asp-validation-for="Input.HomeHeroCopy" class="text-danger"></span>
+                        </div>
+                        <div class="settings-span-2">
+                            <label asp-for="Input.TimeZoneId" class="form-label"></label>
+                            <select asp-for="Input.TimeZoneId" asp-items="Model.TimeZoneOptions" class="form-select"></select>
+                            <div class="form-text">Current selection: @Model.ActiveTimeZoneLabel</div>
+                            <span asp-validation-for="Input.TimeZoneId" class="text-danger"></span>
+                        </div>
+                        <div class="settings-span-2">
+                            <div class="form-check">
+                                <input asp-for="Input.ShowUtcTimestamps" class="form-check-input" />
+                                <label asp-for="Input.ShowUtcTimestamps" class="form-check-label"></label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <button type="submit" class="btn btn-primary">Save Settings</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <h2 class="h5">What these settings affect</h2>
+                <ul class="api-list">
+                    <li>Navbar, footer, and browser title branding</li>
+                    <li>Dashboard hero messaging</li>
+                    <li>Default importance on new memories</li>
+                    <li>Displayed timestamps across dashboard, explorer, and memory pages</li>
+                    <li>The datetime-local input used for Occurred timestamps</li>
+                </ul>
+            </div>
+        </div>
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <h2 class="h5">Maintenance</h2>
+                <p class="text-secondary small">Use this cleanup if stray Concurrent Wing test entries reappear after local testing.</p>
+                <form method="post" asp-action="CleanupConcurrentWings">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="btn btn-outline-danger">Remove stray Concurrent Wing test data</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

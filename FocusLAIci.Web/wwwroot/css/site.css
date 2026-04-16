@@ -95,6 +95,21 @@ body {
   padding: 1rem;
 }
 
+.stat-tile-link {
+  color: inherit;
+  display: block;
+  text-decoration: none;
+  transition: transform 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.stat-tile-link:hover,
+.stat-tile-link:focus {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: inherit;
+  transform: translateY(-1px);
+}
+
 .stat-tile span {
   display: block;
   font-size: 1.8rem;
@@ -292,6 +307,16 @@ body {
   opacity: 0.75;
 }
 
+.settings-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-span-2 {
+  grid-column: 1 / -1;
+}
+
 .footer {
   border-top: 1px solid #d9e1ec;
   bottom: 0;
@@ -311,6 +336,10 @@ body {
   .page-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
   }
 
   .hero-aside {
