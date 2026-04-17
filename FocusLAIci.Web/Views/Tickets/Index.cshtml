@@ -118,12 +118,12 @@
                 <form asp-action="Create" method="post" class="ticket-form">
                     <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
                     <div class="mb-3">
-                        <label asp-for="CreateInput.Title" class="form-label"></label>
+                        <label asp-for="CreateInput.Title" class="form-label">Ticket title <span class="required-asterisk">*</span></label>
                         <input asp-for="CreateInput.Title" class="form-control" required />
                         <span asp-validation-for="CreateInput.Title" class="text-danger"></span>
                     </div>
                     <div class="mb-3">
-                        <label asp-for="CreateInput.Description" class="form-label"></label>
+                        <label asp-for="CreateInput.Description" class="form-label">Description <span class="required-asterisk">*</span></label>
                         <textarea asp-for="CreateInput.Description" class="form-control memory-editor" rows="9" placeholder="Capture the full implementation brief, acceptance criteria, or step-by-step breakdown." required></textarea>
                         <span asp-validation-for="CreateInput.Description" class="text-danger"></span>
                     </div>
@@ -137,21 +137,26 @@
                             <select asp-for="CreateInput.Priority" class="form-select" asp-items="Html.GetEnumSelectList<TicketPriority>()"></select>
                         </div>
                         <div class="col-12">
-                            <label asp-for="CreateInput.Assignee" class="form-label"></label>
+                            <label asp-for="CreateInput.Assignee" class="form-label">Assignee <span class="required-asterisk">*</span></label>
                             <input asp-for="CreateInput.Assignee" class="form-control" />
                             <div class="form-text">Assign to Copilot or any other model/operator label you use locally.</div>
                         </div>
                         <div class="col-12">
                             <label asp-for="CreateInput.TagsText" class="form-label"></label>
                             <input asp-for="CreateInput.TagsText" class="form-control" placeholder="focus, automation, github" />
+                            <div class="form-text">Optional.</div>
                         </div>
                         <div class="col-md-6">
                             <label asp-for="CreateInput.GitBranch" class="form-label"></label>
                             <input asp-for="CreateInput.GitBranch" class="form-control" />
+                            <div class="form-text">Optional.</div>
                         </div>
                         <div class="col-md-6">
-                            <label asp-for="CreateInput.GitCommit" class="form-label"></label>
-                            <input asp-for="CreateInput.GitCommit" class="form-control" />
+                            <label asp-for="CreateInput.HasGitCommit" class="form-label"></label>
+                            <select asp-for="CreateInput.HasGitCommit" class="form-select">
+                                <option value="false">No</option>
+                                <option value="true">Yes</option>
+                            </select>
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary w-100 mt-3">Create ticket</button>

@@ -121,7 +121,7 @@ public sealed class TicketingService
                 Assignee = ticket.Assignee,
                 Tags = ParseTags(ticket.TagsText).ToArray(),
                 GitBranch = ticket.GitBranch,
-                GitCommit = ticket.GitCommit,
+                HasGitCommit = HasGitCommit(ticket.GitCommit),
                 CreatedUtc = ticket.CreatedUtc,
                 UpdatedUtc = ticket.UpdatedUtc,
                 CompletedUtc = ticket.CompletedUtc,
@@ -139,7 +139,7 @@ public sealed class TicketingService
                 Assignee = ticket.Assignee,
                 TagsText = ticket.TagsText,
                 GitBranch = ticket.GitBranch,
-                GitCommit = ticket.GitCommit
+                HasGitCommit = HasGitCommit(ticket.GitCommit)
             },
             SubTicketInput = new TicketSubTicketInput(),
             NoteInput = new TicketNoteInput(),
@@ -164,7 +164,7 @@ public sealed class TicketingService
             Assignee = input.Assignee.Trim(),
             TagsText = NormalizeTagText(input.TagsText),
             GitBranch = input.GitBranch.Trim(),
-            GitCommit = input.GitCommit.Trim(),
+            GitCommit = input.HasGitCommit ? "Yes" : "No",
             CreatedUtc = now,
             UpdatedUtc = now,
             CompletedUtc = input.Status == TicketStatus.Completed ? now : null
@@ -233,7 +233,7 @@ public sealed class TicketingService
         TrackChange(changes, "assignee", ticket.Assignee, input.Assignee.Trim());
         TrackChange(changes, "tags", ticket.TagsText, NormalizeTagText(input.TagsText));
         TrackChange(changes, "branch", ticket.GitBranch, input.GitBranch.Trim());
-        TrackChange(changes, "commit", ticket.GitCommit, input.GitCommit.Trim());
+        TrackChange(changes, "git commit", ticket.GitCommit, input.HasGitCommit ? "Yes" : "No");
 
         var wasCompleted = ticket.Status == TicketStatus.Completed;
         ticket.Title = input.Title.Trim();
@@ -243,7 +243,7 @@ public sealed class TicketingService
         ticket.Assignee = input.Assignee.Trim();
         ticket.TagsText = NormalizeTagText(input.TagsText);
         ticket.GitBranch = input.GitBranch.Trim();
-        ticket.GitCommit = input.GitCommit.Trim();
+        ticket.GitCommit = input.HasGitCommit ? "Yes" : "No";
         ticket.UpdatedUtc = DateTime.UtcNow;
         ticket.CompletedUtc = ticket.Status == TicketStatus.Completed ? ticket.CompletedUtc ?? ticket.UpdatedUtc : null;
 
@@ -453,7 +453,7 @@ public sealed class TicketingService
             .AppendLine($"Priority: {MapPriorityLabel(ticket.Priority)}")
             .AppendLine($"Assignee: {ticket.Assignee}")
             .AppendLine($"Git branch: {ticket.GitBranch}")
-            .AppendLine($"Git commit: {ticket.GitCommit}")
+            .AppendLine($"Git commit: {(HasGitCommit(ticket.GitCommit) ? "Yes" : "No")}")
             .AppendLine($"Completed UTC: {ticket.CompletedUtc:O}")
             .AppendLine()
             .AppendLine("Description")
@@ -494,9 +494,7 @@ public sealed class TicketingService
         memory.Content = content.ToString().Trim();
         memory.Kind = MemoryKind.Task;
         memory.SourceKind = SourceKind.ManualNote;
-        memory.SourceReference = string.IsNullOrWhiteSpace(ticket.GitCommit)
-            ? ticket.TicketNumber
-            : $"{ticket.TicketNumber} {ticket.GitCommit}".Trim();
+        memory.SourceReference = ticket.TicketNumber;
         memory.Importance = ticket.Priority switch
         {
             TicketPriority.Critical => 5,
@@ -785,6 +783,12 @@ public sealed class TicketingService
         return string.IsNullOrWhiteSpace(value) ? "(empty)" : value.Trim();
     }
 
+    private static bool HasGitCommit(string gitCommitValue)
+    {
+        return !string.IsNullOrWhiteSpace(gitCommitValue)
+            && !string.Equals(gitCommitValue.Trim(), "No", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static TicketSummaryViewModel MapTicketSummary(TicketEntry ticket)
     {
         return new TicketSummaryViewModel
@@ -801,7 +805,7 @@ public sealed class TicketingService
             Assignee = ticket.Assignee,
             Tags = ParseTags(ticket.TagsText).ToArray(),
             GitBranch = ticket.GitBranch,
-            GitCommit = ticket.GitCommit,
+            HasGitCommit = HasGitCommit(ticket.GitCommit),
             CreatedUtc = ticket.CreatedUtc,
             UpdatedUtc = ticket.UpdatedUtc,
             CompletedUtc = ticket.CompletedUtc,

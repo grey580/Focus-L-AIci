@@ -277,7 +277,7 @@ public sealed class PalaceServiceTests
             Assignee = "Copilot",
             TagsText = "focus, ticketing",
             GitBranch = "main",
-            GitCommit = "abc1234"
+            HasGitCommit = true
         }, CancellationToken.None);
 
         var createdCount = await service.GenerateSubTicketsAsync(ticketId, CancellationToken.None);
@@ -291,7 +291,7 @@ public sealed class PalaceServiceTests
             Assert.Equal("Copilot", subTicket.Assignee);
             Assert.Contains("focus", subTicket.Tags);
             Assert.Equal("main", subTicket.GitBranch);
-            Assert.Equal("abc1234", subTicket.GitCommit);
+            Assert.True(subTicket.HasGitCommit);
             Assert.Equal(TicketStatus.New, subTicket.Status);
         });
     }
@@ -343,7 +343,7 @@ public sealed class PalaceServiceTests
             Assignee = "Copilot",
             TagsText = "automation, focus",
             GitBranch = "main",
-            GitCommit = "def5678"
+            HasGitCommit = true
         }, CancellationToken.None);
 
         await using var verifyContext = harness.CreateDbContext();

@@ -58,11 +58,11 @@
                 <form asp-action="Update" asp-route-id="@Model.Ticket.Id" method="post">
                     <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
                     <div class="mb-3">
-                        <label asp-for="EditInput.Title" class="form-label"></label>
+                        <label asp-for="EditInput.Title" class="form-label">Ticket title <span class="required-asterisk">*</span></label>
                         <input asp-for="EditInput.Title" class="form-control" />
                     </div>
                     <div class="mb-3">
-                        <label asp-for="EditInput.Description" class="form-label"></label>
+                        <label asp-for="EditInput.Description" class="form-label">Description <span class="required-asterisk">*</span></label>
                         <textarea asp-for="EditInput.Description" class="form-control memory-editor" rows="8"></textarea>
                     </div>
                     <div class="row g-3">
@@ -75,20 +75,25 @@
                             <select asp-for="EditInput.Priority" class="form-select" asp-items="Html.GetEnumSelectList<TicketPriority>()"></select>
                         </div>
                         <div class="col-md-6">
-                            <label asp-for="EditInput.Assignee" class="form-label"></label>
+                            <label asp-for="EditInput.Assignee" class="form-label">Assignee <span class="required-asterisk">*</span></label>
                             <input asp-for="EditInput.Assignee" class="form-control" />
                         </div>
                         <div class="col-md-6">
                             <label asp-for="EditInput.TagsText" class="form-label"></label>
                             <input asp-for="EditInput.TagsText" class="form-control" />
+                            <div class="form-text">Optional.</div>
                         </div>
                         <div class="col-md-6">
                             <label asp-for="EditInput.GitBranch" class="form-label"></label>
                             <input asp-for="EditInput.GitBranch" class="form-control" />
+                            <div class="form-text">Optional.</div>
                         </div>
                         <div class="col-md-6">
-                            <label asp-for="EditInput.GitCommit" class="form-label"></label>
-                            <input asp-for="EditInput.GitCommit" class="form-control" />
+                            <label asp-for="EditInput.HasGitCommit" class="form-label"></label>
+                            <select asp-for="EditInput.HasGitCommit" class="form-select">
+                                <option value="false">No</option>
+                                <option value="true">Yes</option>
+                            </select>
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary mt-3">Save ticket</button>
@@ -219,6 +224,7 @@
                     <div><dt>Status</dt><dd>@Model.Ticket.StatusLabel</dd></div>
                     <div><dt>Priority</dt><dd>@Model.Ticket.PriorityLabel</dd></div>
                     <div><dt>Assignee</dt><dd>@Model.Ticket.Assignee</dd></div>
+                    <div><dt>Git commit</dt><dd>@(Model.Ticket.HasGitCommit ? "Yes" : "No")</dd></div>
                     <div><dt>Subtickets</dt><dd>@Model.Ticket.CompletedSubTicketCount/@Model.Ticket.SubTicketCount</dd></div>
                     <div><dt>Tracked time</dt><dd>@Model.Ticket.TotalMinutesSpent minutes</dd></div>
                     <div><dt>Created</dt><dd>@SiteSettingsService.FormatUtc(Model.Ticket.CreatedUtc, siteSettings)</dd></div>

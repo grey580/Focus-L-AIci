@@ -162,7 +162,7 @@ public class TicketSummaryViewModel
     public string Assignee { get; init; } = string.Empty;
     public IReadOnlyCollection<string> Tags { get; init; } = Array.Empty<string>();
     public string GitBranch { get; init; } = string.Empty;
-    public string GitCommit { get; init; } = string.Empty;
+    public bool HasGitCommit { get; init; }
     public DateTime CreatedUtc { get; init; }
     public DateTime UpdatedUtc { get; init; }
     public DateTime? CompletedUtc { get; init; }
@@ -241,9 +241,8 @@ public sealed class TicketEditorInput
     [Display(Name = "Git branch")]
     public string GitBranch { get; set; } = string.Empty;
 
-    [StringLength(80)]
     [Display(Name = "Git commit")]
-    public string GitCommit { get; set; } = string.Empty;
+    public bool HasGitCommit { get; set; }
 }
 
 public sealed class TicketSubTicketInput

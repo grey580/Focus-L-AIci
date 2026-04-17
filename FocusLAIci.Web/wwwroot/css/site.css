@@ -725,6 +725,11 @@ body {
 .tag-weight-4 { font-size: 1.22rem; }
 .tag-weight-5 { font-size: 1.35rem; font-weight: 700; }
 
+.required-asterisk {
+  color: #c81e1e;
+  font-weight: 700;
+}
+
 .footer {
   border-top: 1px solid #d9e1ec;
   bottom: 0;
