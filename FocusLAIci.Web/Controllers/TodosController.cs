@@ -24,7 +24,7 @@ public sealed class TodosController : Controller
     {
         try
         {
-            return View(await _palaceService.GetTodoDetailsAsync(id, markAsInProgress: true, cancellationToken));
+            return View(await _palaceService.GetTodoDetailsAsync(id, cancellationToken));
         }
         catch (InvalidOperationException exception)
         {
@@ -79,7 +79,7 @@ public sealed class TodosController : Controller
         {
             try
             {
-                var model = await _palaceService.GetTodoDetailsAsync(id, markAsInProgress: false, cancellationToken);
+                var model = await _palaceService.GetTodoDetailsAsync(id, cancellationToken);
                 return View("Details", new TodoDetailsViewModel
                 {
                     Todo = model.Todo,

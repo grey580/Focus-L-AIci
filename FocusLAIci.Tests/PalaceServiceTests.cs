@@ -260,7 +260,7 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
-    public async Task TodoDetailsFlow_AdvancesPendingTodoAndSupportsEditDelete()
+    public async Task TodoDetailsFlow_PreservesStoredStatusAndSupportsEditDelete()
     {
         await using var harness = await TestHarness.CreateAsync();
         await using var serviceContext = harness.CreateDbContext();
@@ -273,9 +273,10 @@ public sealed class PalaceServiceTests
             Status = TodoStatus.Pending
         }, CancellationToken.None);
 
-        var detail = await service.GetTodoDetailsAsync(todoId, markAsInProgress: true, CancellationToken.None);
+        var detail = await service.GetTodoDetailsAsync(todoId, CancellationToken.None);
 
-        Assert.Equal(TodoStatus.InProgress, detail.Todo.Status);
+        Assert.Equal(TodoStatus.Pending, detail.Todo.Status);
+        Assert.Equal(TodoStatus.Pending, detail.Input.Status);
         Assert.True(detail.Todo.HasMoreDetails);
         Assert.EndsWith("...", detail.Todo.PreviewDetails);
         Assert.Equal(243, detail.Todo.PreviewDetails.Length);
@@ -287,10 +288,11 @@ public sealed class PalaceServiceTests
             Status = TodoStatus.Blocked
         }, CancellationToken.None);
 
-        var updated = await service.GetTodoDetailsAsync(todoId, markAsInProgress: false, CancellationToken.None);
+        var updated = await service.GetTodoDetailsAsync(todoId, CancellationToken.None);
 
         Assert.Equal("Implement todo details page", updated.Todo.Title);
         Assert.Equal(TodoStatus.Blocked, updated.Todo.Status);
+        Assert.Equal(TodoStatus.Blocked, updated.Input.Status);
         Assert.Equal("Keep the full prompt here.", updated.Todo.Details);
         Assert.False(updated.Todo.HasMoreDetails);
 

@@ -57,20 +57,12 @@ public sealed class PalaceService
         };
     }
 
-    public async Task<TodoDetailsViewModel> GetTodoDetailsAsync(Guid id, bool markAsInProgress, CancellationToken cancellationToken)
+    public async Task<TodoDetailsViewModel> GetTodoDetailsAsync(Guid id, CancellationToken cancellationToken)
     {
         var todo = await _dbContext.Todos.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (todo is null)
         {
             throw new InvalidOperationException("That todo no longer exists.");
-        }
-
-        if (markAsInProgress && todo.Status == TodoStatus.Pending)
-        {
-            todo.Status = TodoStatus.InProgress;
-            todo.UpdatedUtc = DateTime.UtcNow;
-            todo.CompletedUtc = null;
-            await _dbContext.SaveChangesAsync(cancellationToken);
         }
 
         return new TodoDetailsViewModel
