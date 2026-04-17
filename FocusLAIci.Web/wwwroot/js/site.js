@@ -15,7 +15,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     document.querySelectorAll("form").forEach(form => {
-        form.addEventListener("submit", () => {
+        form.addEventListener("submit", event => {
+            const jquery = window.jQuery;
+            if (jquery && jquery.validator && !jquery(form).valid()) {
+                return;
+            }
+
+            if (!form.checkValidity()) {
+                return;
+            }
+
             const submitButton = form.querySelector("button[type='submit']");
             if (!submitButton) {
                 return;

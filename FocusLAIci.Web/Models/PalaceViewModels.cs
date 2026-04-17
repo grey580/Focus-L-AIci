@@ -210,12 +210,12 @@ public sealed class TicketEditorInput
 {
     public Guid? Id { get; set; }
 
-    [Required]
+    [Required(ErrorMessage = "Ticket title is required.")]
     [StringLength(180)]
     [Display(Name = "Ticket title")]
     public string Title { get; set; } = string.Empty;
 
-    [Required]
+    [Required(ErrorMessage = "Ticket description is required.")]
     [DataType(DataType.MultilineText)]
     [Display(Name = "Description")]
     public string Description { get; set; } = string.Empty;

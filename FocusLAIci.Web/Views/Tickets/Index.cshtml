@@ -119,12 +119,12 @@
                     <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
                     <div class="mb-3">
                         <label asp-for="CreateInput.Title" class="form-label"></label>
-                        <input asp-for="CreateInput.Title" class="form-control" />
+                        <input asp-for="CreateInput.Title" class="form-control" required />
                         <span asp-validation-for="CreateInput.Title" class="text-danger"></span>
                     </div>
                     <div class="mb-3">
                         <label asp-for="CreateInput.Description" class="form-label"></label>
-                        <textarea asp-for="CreateInput.Description" class="form-control memory-editor" rows="9" placeholder="Capture the full implementation brief, acceptance criteria, or step-by-step breakdown."></textarea>
+                        <textarea asp-for="CreateInput.Description" class="form-control memory-editor" rows="9" placeholder="Capture the full implementation brief, acceptance criteria, or step-by-step breakdown." required></textarea>
                         <span asp-validation-for="CreateInput.Description" class="text-danger"></span>
                     </div>
                     <div class="row g-3">
