@@ -529,6 +529,7 @@ body {
   background: #f7f9fc;
   border: 1px solid #e0e8f3;
   border-radius: 1rem;
+  min-width: 0;
   padding: 0.9rem 1rem;
 }
 
@@ -544,8 +545,12 @@ body {
   font-family: Consolas, "Courier New", monospace;
   font-size: 0.82rem;
   margin: 0.55rem 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-wrap: anywhere;
   padding: 0.75rem;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .meta-grid {

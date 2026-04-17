@@ -52,6 +52,39 @@
         <div class="card shadow-sm border-0 mb-4">
             <div class="card-body">
                 <div class="section-heading">
+                    <h2>Activity</h2>
+                    <span class="text-secondary small">@Model.Activities.Count events</span>
+                </div>
+                @if (Model.Activities.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No activity yet</h3>
+                        <p>Ticket actions are recorded here automatically.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="ticket-activity-list">
+                        @foreach (var activity in Model.Activities)
+                        {
+                            <article class="ticket-activity">
+                                <div class="memory-meta">@activity.ActivityType</div>
+                                <div>@activity.Message</div>
+                                @if (!string.IsNullOrWhiteSpace(activity.Metadata))
+                                {
+                                    <pre class="ticket-activity-meta">@activity.Metadata</pre>
+                                }
+                                <div class="text-secondary small">@SiteSettingsService.FormatUtc(activity.CreatedUtc, siteSettings)</div>
+                            </article>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
                     <h2>Edit ticket</h2>
                     <span class="text-secondary small">Track status, assignee, Git context, and tags in one place.</span>
                 </div>
@@ -297,38 +330,6 @@
             </div>
         </div>
 
-        <div class="card shadow-sm border-0">
-            <div class="card-body">
-                <div class="section-heading">
-                    <h2>Activity</h2>
-                    <span class="text-secondary small">@Model.Activities.Count events</span>
-                </div>
-                @if (Model.Activities.Count == 0)
-                {
-                    <div class="empty-state compact-empty-state">
-                        <h3>No activity yet</h3>
-                        <p>Ticket actions are recorded here automatically.</p>
-                    </div>
-                }
-                else
-                {
-                    <div class="ticket-activity-list">
-                        @foreach (var activity in Model.Activities)
-                        {
-                            <article class="ticket-activity">
-                                <div class="memory-meta">@activity.ActivityType</div>
-                                <div>@activity.Message</div>
-                                @if (!string.IsNullOrWhiteSpace(activity.Metadata))
-                                {
-                                    <pre class="ticket-activity-meta">@activity.Metadata</pre>
-                                }
-                                <div class="text-secondary small">@SiteSettingsService.FormatUtc(activity.CreatedUtc, siteSettings)</div>
-                            </article>
-                        }
-                    </div>
-                }
-            </div>
-        </div>
     </div>
 </div>
 
