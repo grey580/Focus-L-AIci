@@ -408,6 +408,47 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task TicketingService_BoardSearchAndPagination_FilterCompletedTicketsAndSummarizeDescriptions()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new TicketingService(serviceContext);
+
+        for (var index = 1; index <= 7; index++)
+        {
+            await service.CreateTicketAsync(new TicketEditorInput
+            {
+                Title = $"Completed ticket {index}",
+                Description = index == 3
+                    ? new string('A', 320) + " release search target"
+                    : $"Routine completed work item {index}.",
+                Status = TicketStatus.Completed,
+                Priority = TicketPriority.Medium,
+                Assignee = index == 3 ? "ReleaseBot" : "Copilot",
+                TagsText = index == 3 ? "release, search" : "focus"
+            }, CancellationToken.None);
+        }
+
+        var firstPage = await service.GetBoardAsync(null, 1, CancellationToken.None);
+        var secondPage = await service.GetBoardAsync(null, 2, CancellationToken.None);
+        var searched = await service.GetBoardAsync("release", 1, CancellationToken.None);
+
+        Assert.Equal(TicketBoardViewModel.DefaultCompletedPageSize, firstPage.CompletedTickets.Count);
+        Assert.Equal(2, firstPage.CompletedTotalPages);
+        Assert.Equal(7, firstPage.CompletedFilteredCount);
+        Assert.Equal(2, secondPage.CompletedTickets.Count);
+        Assert.Single(searched.CompletedTickets);
+        Assert.Equal(1, searched.CompletedTotalPages);
+        Assert.Equal(1, searched.CompletedFilteredCount);
+
+        var summarized = searched.CompletedTickets.Single();
+        Assert.Equal("Completed ticket 3", summarized.Title);
+        Assert.True(summarized.HasMoreDescription);
+        Assert.Equal(243, summarized.PreviewDescription.Length);
+        Assert.EndsWith("...", summarized.PreviewDescription);
+    }
+
+    [Fact]
     public async Task DatabaseTargetService_SwitchesToCustomDatabaseAndInitializesSchema()
     {
         var contentRoot = Path.Combine(Path.GetTempPath(), $"focus-db-target-{Guid.NewGuid():N}");

@@ -13,9 +13,9 @@
         <span class="todo-status todo-status-@Model.Status.ToString().ToLowerInvariant()">@Model.StatusLabel</span>
     </div>
 
-    @if (!string.IsNullOrWhiteSpace(Model.Description))
+    @if (!string.IsNullOrWhiteSpace(Model.PreviewDescription))
     {
-        <p class="ticket-card-copy">@Model.Description</p>
+        <p class="ticket-card-copy">@Model.PreviewDescription</p>
     }
 
     @if (Model.Tags.Count > 0)

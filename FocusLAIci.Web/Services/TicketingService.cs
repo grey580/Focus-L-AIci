@@ -17,26 +17,56 @@ public sealed class TicketingService
         _dbContext = dbContext;
     }
 
-    public async Task<TicketBoardViewModel> GetBoardAsync(CancellationToken cancellationToken)
+    public async Task<TicketBoardViewModel> GetBoardAsync(string? completedSearch, int completedPage, CancellationToken cancellationToken)
     {
-        var tickets = await _dbContext.Tickets
+        var activeTickets = await BuildTopLevelTicketQuery(includeCompleted: false)
             .AsNoTracking()
             .Include(x => x.SubTickets)
             .Include(x => x.TimeLogs)
-            .Where(x => x.ParentTicketId == null)
-            .OrderBy(x => x.Status == TicketStatus.InProgress ? 0 : x.Status == TicketStatus.New ? 1 : x.Status == TicketStatus.Blocked ? 2 : 3)
-            .ThenByDescending(x => x.UpdatedUtc)
-            .ThenByDescending(x => x.CreatedUtc)
+            .ToListAsync(cancellationToken);
+
+        var normalizedSearch = completedSearch?.Trim() ?? string.Empty;
+        var completedQuery = BuildTopLevelTicketQuery(includeCompleted: true)
+            .AsNoTracking()
+            .Include(x => x.SubTickets)
+            .Include(x => x.TimeLogs)
+            .Where(x => x.Status == TicketStatus.Completed);
+
+        if (!string.IsNullOrWhiteSpace(normalizedSearch))
+        {
+            completedQuery = completedQuery.Where(x =>
+                x.TicketNumber.Contains(normalizedSearch) ||
+                x.Title.Contains(normalizedSearch) ||
+                x.Description.Contains(normalizedSearch) ||
+                x.Assignee.Contains(normalizedSearch) ||
+                x.TagsText.Contains(normalizedSearch));
+        }
+
+        var filteredCompletedCount = await completedQuery.CountAsync(cancellationToken);
+        var completedTotalPages = filteredCompletedCount == 0
+            ? 0
+            : (int)Math.Ceiling(filteredCompletedCount / (double)TicketBoardViewModel.DefaultCompletedPageSize);
+        var safeCompletedPage = completedTotalPages == 0
+            ? 1
+            : Math.Min(Math.Max(completedPage, 1), completedTotalPages);
+        var completedTickets = await completedQuery
+            .Skip((safeCompletedPage - 1) * TicketBoardViewModel.DefaultCompletedPageSize)
+            .Take(TicketBoardViewModel.DefaultCompletedPageSize)
             .ToListAsync(cancellationToken);
 
         return new TicketBoardViewModel
         {
             Stats = await BuildStatsAsync(cancellationToken),
             CreateInput = new TicketEditorInput(),
-            NewTickets = tickets.Where(x => x.Status == TicketStatus.New).Select(MapTicketSummary).ToArray(),
-            InProgressTickets = tickets.Where(x => x.Status == TicketStatus.InProgress).Select(MapTicketSummary).ToArray(),
-            BlockedTickets = tickets.Where(x => x.Status == TicketStatus.Blocked).Select(MapTicketSummary).ToArray(),
-            CompletedTickets = tickets.Where(x => x.Status == TicketStatus.Completed).Select(MapTicketSummary).ToArray()
+            NewTickets = activeTickets.Where(x => x.Status == TicketStatus.New).Select(MapTicketSummary).ToArray(),
+            InProgressTickets = activeTickets.Where(x => x.Status == TicketStatus.InProgress).Select(MapTicketSummary).ToArray(),
+            BlockedTickets = activeTickets.Where(x => x.Status == TicketStatus.Blocked).Select(MapTicketSummary).ToArray(),
+            CompletedTickets = completedTickets.Select(MapTicketSummary).ToArray(),
+            CompletedSearch = normalizedSearch,
+            CompletedPage = safeCompletedPage,
+            CompletedPageSize = TicketBoardViewModel.DefaultCompletedPageSize,
+            CompletedFilteredCount = filteredCompletedCount,
+            CompletedTotalPages = completedTotalPages
         };
     }
 
@@ -791,6 +821,7 @@ public sealed class TicketingService
 
     private static TicketSummaryViewModel MapTicketSummary(TicketEntry ticket)
     {
+        var preview = BuildTicketPreview(ticket.Description);
         return new TicketSummaryViewModel
         {
             Id = ticket.Id,
@@ -798,6 +829,8 @@ public sealed class TicketingService
             TicketNumber = ticket.TicketNumber,
             Title = ticket.Title,
             Description = ticket.Description,
+            PreviewDescription = preview,
+            HasMoreDescription = !string.Equals(preview, ticket.Description, StringComparison.Ordinal),
             Status = ticket.Status,
             StatusLabel = MapStatusLabel(ticket.Status),
             Priority = ticket.Priority,
@@ -813,6 +846,37 @@ public sealed class TicketingService
             CompletedSubTicketCount = ticket.SubTickets.Count(x => x.Status == TicketStatus.Completed),
             TotalMinutesSpent = ticket.TimeLogs.Sum(x => x.MinutesSpent)
         };
+    }
+
+    private IQueryable<TicketEntry> BuildTopLevelTicketQuery(bool includeCompleted)
+    {
+        var tickets = _dbContext.Tickets
+            .Where(x => x.ParentTicketId == null)
+            .AsQueryable();
+
+        if (!includeCompleted)
+        {
+            tickets = tickets.Where(x => x.Status != TicketStatus.Completed);
+        }
+
+        return tickets
+            .OrderBy(x => x.Status == TicketStatus.InProgress ? 0 : x.Status == TicketStatus.New ? 1 : x.Status == TicketStatus.Blocked ? 2 : 3)
+            .ThenByDescending(x => x.UpdatedUtc)
+            .ThenByDescending(x => x.CreatedUtc);
+    }
+
+    private static string BuildTicketPreview(string description)
+    {
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            return string.Empty;
+        }
+
+        const int maxLength = 240;
+        var normalized = description.Replace("\r\n", "\n").Trim();
+        return normalized.Length <= maxLength
+            ? normalized
+            : $"{normalized[..maxLength].TrimEnd()}...";
     }
 
     private static string MapStatusLabel(TicketStatus status)

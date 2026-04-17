@@ -14,9 +14,9 @@ public sealed class TicketsController : Controller
     }
 
     [HttpGet]
-    public async Task<IActionResult> Index(CancellationToken cancellationToken)
+    public async Task<IActionResult> Index(string? completedSearch, int completedPage = 1, CancellationToken cancellationToken = default)
     {
-        return View(await _ticketingService.GetBoardAsync(cancellationToken));
+        return View(await _ticketingService.GetBoardAsync(completedSearch, completedPage, cancellationToken));
     }
 
     [HttpPost]
@@ -25,7 +25,7 @@ public sealed class TicketsController : Controller
     {
         if (!ModelState.IsValid)
         {
-            var model = await _ticketingService.GetBoardAsync(cancellationToken);
+            var model = await _ticketingService.GetBoardAsync(null, 1, cancellationToken);
             return View("Index", new TicketBoardViewModel
             {
                 Stats = model.Stats,
@@ -33,7 +33,12 @@ public sealed class TicketsController : Controller
                 NewTickets = model.NewTickets,
                 InProgressTickets = model.InProgressTickets,
                 BlockedTickets = model.BlockedTickets,
-                CompletedTickets = model.CompletedTickets
+                CompletedTickets = model.CompletedTickets,
+                CompletedSearch = model.CompletedSearch,
+                CompletedPage = model.CompletedPage,
+                CompletedPageSize = model.CompletedPageSize,
+                CompletedFilteredCount = model.CompletedFilteredCount,
+                CompletedTotalPages = model.CompletedTotalPages
             });
         }
 

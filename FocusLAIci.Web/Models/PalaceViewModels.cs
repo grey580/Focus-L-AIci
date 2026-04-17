@@ -135,12 +135,19 @@ public sealed class TodoEditorInput
 
 public sealed class TicketBoardViewModel
 {
+    public const int DefaultCompletedPageSize = 5;
+
     public PalaceStatsViewModel Stats { get; init; } = new();
     public TicketEditorInput CreateInput { get; init; } = new();
     public IReadOnlyCollection<TicketSummaryViewModel> NewTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
     public IReadOnlyCollection<TicketSummaryViewModel> InProgressTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
     public IReadOnlyCollection<TicketSummaryViewModel> BlockedTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
     public IReadOnlyCollection<TicketSummaryViewModel> CompletedTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
+    public string CompletedSearch { get; init; } = string.Empty;
+    public int CompletedPage { get; init; } = 1;
+    public int CompletedPageSize { get; init; } = DefaultCompletedPageSize;
+    public int CompletedFilteredCount { get; init; }
+    public int CompletedTotalPages { get; init; }
 }
 
 public sealed class TicketDetailsViewModel
@@ -163,6 +170,8 @@ public class TicketSummaryViewModel
     public string TicketNumber { get; init; } = string.Empty;
     public string Title { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
+    public string PreviewDescription { get; init; } = string.Empty;
+    public bool HasMoreDescription { get; init; }
     public TicketStatus Status { get; init; }
     public string StatusLabel { get; init; } = string.Empty;
     public TicketPriority Priority { get; init; }

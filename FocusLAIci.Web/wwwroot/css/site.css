@@ -486,6 +486,34 @@ body {
   gap: 1rem;
 }
 
+.ticket-filter-bar {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  justify-content: space-between;
+}
+
+.ticket-filter-search {
+  flex: 1 1 320px;
+}
+
+.ticket-filter-actions,
+.ticket-pagination-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.ticket-pagination {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  justify-content: space-between;
+  margin-top: 1rem;
+}
+
 .ticket-header-actions {
   align-items: flex-end;
   display: flex;
@@ -756,6 +784,12 @@ body {
   .todo-board,
   .todo-done-list {
     grid-template-columns: 1fr;
+  }
+
+  .ticket-filter-bar,
+  .ticket-pagination {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .ticket-header-actions,

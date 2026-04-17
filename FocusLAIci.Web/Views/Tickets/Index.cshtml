@@ -32,137 +32,131 @@
     <div class="alert alert-danger shadow-sm border-0">@error</div>
 }
 
-<div class="row g-4 mb-4">
-    <div class="col-xl-8">
-        <div class="card shadow-sm border-0">
-            <div class="card-body">
-                <div class="section-heading">
-                    <h2>Active board</h2>
-                    <span class="text-secondary small">Top-level tickets only; subtickets live inside each ticket.</span>
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <div class="section-heading">
+            <h2>Active board</h2>
+            <span class="text-secondary small">Top-level tickets only; subtickets live inside each ticket.</span>
+        </div>
+        <div class="ticket-board">
+            <section class="todo-column">
+                <div class="todo-column-heading">
+                    <h3>In progress</h3>
+                    <span>@Model.InProgressTickets.Count</span>
                 </div>
-                <div class="ticket-board">
-                    <section class="todo-column">
-                        <div class="todo-column-heading">
-                            <h3>In progress</h3>
-                            <span>@Model.InProgressTickets.Count</span>
-                        </div>
-                        @if (Model.InProgressTickets.Count == 0)
-                        {
-                            <div class="empty-state compact-empty-state">
-                                <h3>No active tickets</h3>
-                                <p>Move a ticket here when work begins.</p>
-                            </div>
-                        }
-                        else
-                        {
-                            @foreach (var ticket in Model.InProgressTickets)
-                            {
-                                @await Html.PartialAsync("_TicketCard", ticket, new ViewDataDictionary(ViewData) { ["SiteSettings"] = siteSettings })
-                            }
-                        }
-                    </section>
+                @if (Model.InProgressTickets.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No active tickets</h3>
+                        <p>Move a ticket here when work begins.</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var ticket in Model.InProgressTickets)
+                    {
+                        @await Html.PartialAsync("_TicketCard", ticket, new ViewDataDictionary(ViewData) { ["SiteSettings"] = siteSettings })
+                    }
+                }
+            </section>
 
-                    <section class="todo-column">
-                        <div class="todo-column-heading">
-                            <h3>New</h3>
-                            <span>@Model.NewTickets.Count</span>
-                        </div>
-                        @if (Model.NewTickets.Count == 0)
-                        {
-                            <div class="empty-state compact-empty-state">
-                                <h3>No new tickets</h3>
-                                <p>Create a ticket to start a larger autonomous workstream.</p>
-                            </div>
-                        }
-                        else
-                        {
-                            @foreach (var ticket in Model.NewTickets)
-                            {
-                                @await Html.PartialAsync("_TicketCard", ticket, new ViewDataDictionary(ViewData) { ["SiteSettings"] = siteSettings })
-                            }
-                        }
-                    </section>
-
-                    <section class="todo-column">
-                        <div class="todo-column-heading">
-                            <h3>Blocked</h3>
-                            <span>@Model.BlockedTickets.Count</span>
-                        </div>
-                        @if (Model.BlockedTickets.Count == 0)
-                        {
-                            <div class="empty-state compact-empty-state">
-                                <h3>No blocked tickets</h3>
-                                <p>Use this lane when work is waiting on external input or an upstream fix.</p>
-                            </div>
-                        }
-                        else
-                        {
-                            @foreach (var ticket in Model.BlockedTickets)
-                            {
-                                @await Html.PartialAsync("_TicketCard", ticket, new ViewDataDictionary(ViewData) { ["SiteSettings"] = siteSettings })
-                            }
-                        }
-                    </section>
+            <section class="todo-column">
+                <div class="todo-column-heading">
+                    <h3>New</h3>
+                    <span>@Model.NewTickets.Count</span>
                 </div>
-            </div>
+                @if (Model.NewTickets.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No new tickets</h3>
+                        <p>Create a ticket to start a larger autonomous workstream.</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var ticket in Model.NewTickets)
+                    {
+                        @await Html.PartialAsync("_TicketCard", ticket, new ViewDataDictionary(ViewData) { ["SiteSettings"] = siteSettings })
+                    }
+                }
+            </section>
+
+            <section class="todo-column">
+                <div class="todo-column-heading">
+                    <h3>Blocked</h3>
+                    <span>@Model.BlockedTickets.Count</span>
+                </div>
+                @if (Model.BlockedTickets.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No blocked tickets</h3>
+                        <p>Use this lane when work is waiting on external input or an upstream fix.</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var ticket in Model.BlockedTickets)
+                    {
+                        @await Html.PartialAsync("_TicketCard", ticket, new ViewDataDictionary(ViewData) { ["SiteSettings"] = siteSettings })
+                    }
+                }
+            </section>
         </div>
     </div>
+</div>
 
-    <div class="col-xl-4">
-        <div class="card shadow-sm border-0">
-            <div class="card-body">
-                <div class="section-heading">
-                    <h2>Create ticket</h2>
-                    <span class="text-secondary small">Break down complex work without losing context.</span>
-                </div>
-                <form asp-action="Create" method="post" class="ticket-form">
-                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
-                    <div class="mb-3">
-                        <label asp-for="CreateInput.Title" class="form-label">Ticket title <span class="required-asterisk">*</span></label>
-                        <input asp-for="CreateInput.Title" class="form-control" required />
-                        <span asp-validation-for="CreateInput.Title" class="text-danger"></span>
-                    </div>
-                    <div class="mb-3">
-                        <label asp-for="CreateInput.Description" class="form-label">Description <span class="required-asterisk">*</span></label>
-                        <textarea asp-for="CreateInput.Description" class="form-control memory-editor" rows="9" placeholder="Capture the full implementation brief, acceptance criteria, or step-by-step breakdown." required></textarea>
-                        <span asp-validation-for="CreateInput.Description" class="text-danger"></span>
-                    </div>
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label asp-for="CreateInput.Status" class="form-label"></label>
-                            <select asp-for="CreateInput.Status" class="form-select" asp-items="Html.GetEnumSelectList<TicketStatus>()"></select>
-                        </div>
-                        <div class="col-md-6">
-                            <label asp-for="CreateInput.Priority" class="form-label"></label>
-                            <select asp-for="CreateInput.Priority" class="form-select" asp-items="Html.GetEnumSelectList<TicketPriority>()"></select>
-                        </div>
-                        <div class="col-12">
-                            <label asp-for="CreateInput.Assignee" class="form-label">Assignee <span class="required-asterisk">*</span></label>
-                            <input asp-for="CreateInput.Assignee" class="form-control" />
-                            <div class="form-text">Assign to Copilot or any other model/operator label you use locally.</div>
-                        </div>
-                        <div class="col-12">
-                            <label asp-for="CreateInput.TagsText" class="form-label"></label>
-                            <input asp-for="CreateInput.TagsText" class="form-control" placeholder="focus, automation, github" />
-                            <div class="form-text">Optional.</div>
-                        </div>
-                        <div class="col-md-6">
-                            <label asp-for="CreateInput.GitBranch" class="form-label"></label>
-                            <input asp-for="CreateInput.GitBranch" class="form-control" />
-                            <div class="form-text">Optional.</div>
-                        </div>
-                        <div class="col-md-6">
-                            <label asp-for="CreateInput.HasGitCommit" class="form-label"></label>
-                            <select asp-for="CreateInput.HasGitCommit" class="form-select">
-                                <option value="false">No</option>
-                                <option value="true">Yes</option>
-                            </select>
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100 mt-3">Create ticket</button>
-                </form>
-            </div>
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <div class="section-heading">
+            <h2>Create ticket</h2>
+            <span class="text-secondary small">Break down complex work without losing context.</span>
         </div>
+        <form asp-action="Create" method="post" class="ticket-form">
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+            <div class="mb-3">
+                <label asp-for="CreateInput.Title" class="form-label">Ticket title <span class="required-asterisk">*</span></label>
+                <input asp-for="CreateInput.Title" class="form-control" required />
+                <span asp-validation-for="CreateInput.Title" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="CreateInput.Description" class="form-label">Description <span class="required-asterisk">*</span></label>
+                <textarea asp-for="CreateInput.Description" class="form-control memory-editor" rows="9" placeholder="Capture the full implementation brief, acceptance criteria, or step-by-step breakdown." required></textarea>
+                <span asp-validation-for="CreateInput.Description" class="text-danger"></span>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label asp-for="CreateInput.Status" class="form-label"></label>
+                    <select asp-for="CreateInput.Status" class="form-select" asp-items="Html.GetEnumSelectList<TicketStatus>()"></select>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="CreateInput.Priority" class="form-label"></label>
+                    <select asp-for="CreateInput.Priority" class="form-select" asp-items="Html.GetEnumSelectList<TicketPriority>()"></select>
+                </div>
+                <div class="col-12">
+                    <label asp-for="CreateInput.Assignee" class="form-label">Assignee <span class="required-asterisk">*</span></label>
+                    <input asp-for="CreateInput.Assignee" class="form-control" />
+                    <div class="form-text">Assign to Copilot or any other model/operator label you use locally.</div>
+                </div>
+                <div class="col-12">
+                    <label asp-for="CreateInput.TagsText" class="form-label"></label>
+                    <input asp-for="CreateInput.TagsText" class="form-control" placeholder="focus, automation, github" />
+                    <div class="form-text">Optional.</div>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="CreateInput.GitBranch" class="form-label"></label>
+                    <input asp-for="CreateInput.GitBranch" class="form-control" />
+                    <div class="form-text">Optional.</div>
+                </div>
+                <div class="col-md-6">
+                    <label asp-for="CreateInput.HasGitCommit" class="form-label"></label>
+                    <select asp-for="CreateInput.HasGitCommit" class="form-select">
+                        <option value="false">No</option>
+                        <option value="true">Yes</option>
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary w-100 mt-3">Create ticket</button>
+        </form>
     </div>
 </div>
 
@@ -170,23 +164,59 @@
     <div class="card-body">
         <div class="section-heading">
             <h2>Completed tickets</h2>
-            <span class="text-secondary small">@Model.CompletedTickets.Count total</span>
+            <span class="text-secondary small">@Model.CompletedFilteredCount of @Model.Stats.CompletedTicketCount total</span>
         </div>
+        <form asp-action="Index" method="get" class="ticket-filter-bar mb-3">
+            <div class="ticket-filter-search">
+                <label for="completedSearch" class="form-label mb-1">Search completed tickets</label>
+                <input id="completedSearch" name="completedSearch" value="@Model.CompletedSearch" class="form-control" placeholder="Search by number, title, assignee, tags, or description" />
+            </div>
+            <div class="ticket-filter-actions">
+                <button type="submit" class="btn btn-primary">Search</button>
+                @if (!string.IsNullOrWhiteSpace(Model.CompletedSearch))
+                {
+                    <a asp-action="Index" class="btn btn-outline-secondary">Clear</a>
+                }
+            </div>
+        </form>
         @if (Model.CompletedTickets.Count == 0)
         {
             <div class="empty-state compact-empty-state">
-                <h3>No completed tickets yet</h3>
+                <h3>No completed tickets found</h3>
                 <p>Completed tickets automatically create durable summary memories for future sessions.</p>
             </div>
         }
         else
         {
             <div class="ticket-done-list">
-                @foreach (var ticket in Model.CompletedTickets.Take(12))
+                @foreach (var ticket in Model.CompletedTickets)
                 {
                     @await Html.PartialAsync("_TicketCard", ticket, new ViewDataDictionary(ViewData) { ["SiteSettings"] = siteSettings })
                 }
             </div>
+            @if (Model.CompletedTotalPages > 1)
+            {
+                <nav class="ticket-pagination" aria-label="Completed ticket pages">
+                    <span class="text-secondary small">Page @Model.CompletedPage of @Model.CompletedTotalPages</span>
+                    <div class="ticket-pagination-links">
+                        @if (Model.CompletedPage > 1)
+                        {
+                            <a asp-action="Index" asp-route-completedSearch="@Model.CompletedSearch" asp-route-completedPage="@(Model.CompletedPage - 1)" class="btn btn-outline-secondary">Previous</a>
+                        }
+                        @for (var pageNumber = 1; pageNumber <= Model.CompletedTotalPages; pageNumber++)
+                        {
+                            <a asp-action="Index"
+                               asp-route-completedSearch="@Model.CompletedSearch"
+                               asp-route-completedPage="@pageNumber"
+                               class="btn @(pageNumber == Model.CompletedPage ? "btn-primary" : "btn-outline-secondary")">@pageNumber</a>
+                        }
+                        @if (Model.CompletedPage < Model.CompletedTotalPages)
+                        {
+                            <a asp-action="Index" asp-route-completedSearch="@Model.CompletedSearch" asp-route-completedPage="@(Model.CompletedPage + 1)" class="btn btn-outline-secondary">Next</a>
+                        }
+                    </div>
+                </nav>
+            }
         }
     </div>
 </div>
