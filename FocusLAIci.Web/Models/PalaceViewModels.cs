@@ -235,11 +235,11 @@ public sealed class TicketEditorInput
 
     [StringLength(400)]
     [Display(Name = "Tags")]
-    public string TagsText { get; set; } = string.Empty;
+    public string? TagsText { get; set; } = string.Empty;
 
     [StringLength(120)]
     [Display(Name = "Git branch")]
-    public string GitBranch { get; set; } = string.Empty;
+    public string? GitBranch { get; set; } = string.Empty;
 
     [Display(Name = "Git commit")]
     public bool HasGitCommit { get; set; }

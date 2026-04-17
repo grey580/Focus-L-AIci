@@ -163,7 +163,7 @@ public sealed class TicketingService
             Priority = input.Priority,
             Assignee = input.Assignee.Trim(),
             TagsText = NormalizeTagText(input.TagsText),
-            GitBranch = input.GitBranch.Trim(),
+            GitBranch = input.GitBranch?.Trim() ?? string.Empty,
             GitCommit = input.HasGitCommit ? "Yes" : "No",
             CreatedUtc = now,
             UpdatedUtc = now,
@@ -232,7 +232,7 @@ public sealed class TicketingService
         TrackChange(changes, "priority", MapPriorityLabel(ticket.Priority), MapPriorityLabel(input.Priority));
         TrackChange(changes, "assignee", ticket.Assignee, input.Assignee.Trim());
         TrackChange(changes, "tags", ticket.TagsText, NormalizeTagText(input.TagsText));
-        TrackChange(changes, "branch", ticket.GitBranch, input.GitBranch.Trim());
+        TrackChange(changes, "branch", ticket.GitBranch, input.GitBranch?.Trim() ?? string.Empty);
         TrackChange(changes, "git commit", ticket.GitCommit, input.HasGitCommit ? "Yes" : "No");
 
         var wasCompleted = ticket.Status == TicketStatus.Completed;
@@ -242,7 +242,7 @@ public sealed class TicketingService
         ticket.Priority = input.Priority;
         ticket.Assignee = input.Assignee.Trim();
         ticket.TagsText = NormalizeTagText(input.TagsText);
-        ticket.GitBranch = input.GitBranch.Trim();
+        ticket.GitBranch = input.GitBranch?.Trim() ?? string.Empty;
         ticket.GitCommit = input.HasGitCommit ? "Yes" : "No";
         ticket.UpdatedUtc = DateTime.UtcNow;
         ticket.CompletedUtc = ticket.Status == TicketStatus.Completed ? ticket.CompletedUtc ?? ticket.UpdatedUtc : null;
@@ -753,7 +753,7 @@ public sealed class TicketingService
             .ToArray();
     }
 
-    private static string NormalizeTagText(string tagsText)
+    private static string NormalizeTagText(string? tagsText)
     {
         return string.Join(", ", ParseTags(tagsText));
     }
