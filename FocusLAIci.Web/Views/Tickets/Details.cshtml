@@ -1,0 +1,331 @@
+@inject SiteSettingsService SiteSettingsService
+@model FocusLAIci.Web.Models.TicketDetailsViewModel
+@{
+    ViewData["Title"] = $"{Model.Ticket.TicketNumber} - {Model.Ticket.Title}";
+    var siteSettings = await SiteSettingsService.GetSettingsAsync();
+}
+
+<div class="breadcrumb-bar">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a asp-controller="Home" asp-action="Index">Dashboard</a></li>
+            <li class="breadcrumb-item"><a asp-controller="Tickets" asp-action="Index">Tickets</a></li>
+            <li class="breadcrumb-item active" aria-current="page">@Model.Ticket.TicketNumber</li>
+        </ol>
+    </nav>
+</div>
+
+@if (TempData["TicketMessage"] is string message)
+{
+    <div class="alert alert-success shadow-sm border-0">@message</div>
+}
+
+@if (TempData["TicketError"] is string error)
+{
+    <div class="alert alert-danger shadow-sm border-0">@error</div>
+}
+
+<section class="page-header">
+    <div>
+        <div class="memory-meta">@Model.Ticket.TicketNumber • @Model.Ticket.PriorityLabel • @Model.Ticket.Assignee</div>
+        <h1 class="mb-2">@Model.Ticket.Title</h1>
+        <p class="page-copy">@Model.Ticket.Description</p>
+        @if (Model.Ticket.ParentTicketId.HasValue)
+        {
+            <div class="text-secondary small mt-2">
+                Parent ticket:
+                <a asp-controller="Tickets" asp-action="Details" asp-route-id="@Model.Ticket.ParentTicketId.Value">@Model.Ticket.ParentTicketNumber - @Model.Ticket.ParentTicketTitle</a>
+            </div>
+        }
+    </div>
+    <div class="ticket-header-actions">
+        <span class="todo-status todo-status-@Model.Ticket.Status.ToString().ToLowerInvariant()">@Model.Ticket.StatusLabel</span>
+        @if (Model.Ticket.SummaryMemoryId.HasValue)
+        {
+            <a class="btn btn-outline-primary" asp-controller="Palace" asp-action="Memory" asp-route-id="@Model.Ticket.SummaryMemoryId.Value">Open completion memory</a>
+        }
+    </div>
+</section>
+
+<div class="row g-4">
+    <div class="col-xl-8">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Edit ticket</h2>
+                    <span class="text-secondary small">Track status, assignee, Git context, and tags in one place.</span>
+                </div>
+                <form asp-action="Update" asp-route-id="@Model.Ticket.Id" method="post">
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+                    <div class="mb-3">
+                        <label asp-for="EditInput.Title" class="form-label"></label>
+                        <input asp-for="EditInput.Title" class="form-control" />
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="EditInput.Description" class="form-label"></label>
+                        <textarea asp-for="EditInput.Description" class="form-control memory-editor" rows="8"></textarea>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label asp-for="EditInput.Status" class="form-label"></label>
+                            <select asp-for="EditInput.Status" class="form-select" asp-items="Html.GetEnumSelectList<TicketStatus>()"></select>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="EditInput.Priority" class="form-label"></label>
+                            <select asp-for="EditInput.Priority" class="form-select" asp-items="Html.GetEnumSelectList<TicketPriority>()"></select>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="EditInput.Assignee" class="form-label"></label>
+                            <input asp-for="EditInput.Assignee" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="EditInput.TagsText" class="form-label"></label>
+                            <input asp-for="EditInput.TagsText" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="EditInput.GitBranch" class="form-label"></label>
+                            <input asp-for="EditInput.GitBranch" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="EditInput.GitCommit" class="form-label"></label>
+                            <input asp-for="EditInput.GitCommit" class="form-control" />
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary mt-3">Save ticket</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Subtickets</h2>
+                    <form asp-action="GenerateSubTickets" asp-route-id="@Model.Ticket.Id" method="post">
+                        <button type="submit" class="btn btn-sm btn-outline-primary">Generate from description</button>
+                    </form>
+                </div>
+                @if (Model.SubTickets.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state mb-3">
+                        <h3>No subtickets yet</h3>
+                        <p>Add them manually below or auto-generate them from bullet points in the description.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="ticket-subticket-list mb-4">
+                        @foreach (var subTicket in Model.SubTickets)
+                        {
+                            @await Html.PartialAsync("_TicketCard", subTicket, new ViewDataDictionary(ViewData) { ["SiteSettings"] = siteSettings })
+                        }
+                    </div>
+                }
+
+                <form asp-action="CreateSubTicket" asp-route-id="@Model.Ticket.Id" method="post">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label asp-for="SubTicketInput.Title" class="form-label"></label>
+                            <input asp-for="SubTicketInput.Title" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="SubTicketInput.Status" class="form-label"></label>
+                            <select asp-for="SubTicketInput.Status" class="form-select" asp-items="Html.GetEnumSelectList<TicketStatus>()"></select>
+                        </div>
+                        <div class="col-12">
+                            <label asp-for="SubTicketInput.Description" class="form-label"></label>
+                            <textarea asp-for="SubTicketInput.Description" class="form-control" rows="4" placeholder="Priority, assignee, tags, and Git context inherit from the parent ticket."></textarea>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-outline-primary mt-3">Add subticket</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Notes</h2>
+                    <span class="text-secondary small">@Model.Notes.Count total</span>
+                </div>
+                <form asp-action="AddNote" asp-route-id="@Model.Ticket.Id" method="post" class="mb-4">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label asp-for="NoteInput.Author" class="form-label"></label>
+                            <input asp-for="NoteInput.Author" class="form-control" />
+                        </div>
+                        <div class="col-md-8">
+                            <label asp-for="NoteInput.Content" class="form-label"></label>
+                            <textarea asp-for="NoteInput.Content" class="form-control" rows="3"></textarea>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-outline-primary mt-3">Add note</button>
+                </form>
+
+                @if (Model.Notes.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No notes yet</h3>
+                        <p>Use notes for investigation updates, blockers, and handoffs.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="ticket-note-list">
+                        @foreach (var note in Model.Notes)
+                        {
+                            <article class="ticket-note">
+                                <div class="d-flex justify-content-between gap-3 align-items-start">
+                                    <div>
+                                        <div class="memory-meta">@note.Author</div>
+                                        <div class="ticket-note-content">@note.Content</div>
+                                        <div class="text-secondary small">Updated @SiteSettingsService.FormatUtc(note.UpdatedUtc, siteSettings)</div>
+                                    </div>
+                                    <form asp-action="DeleteNote" asp-route-id="@Model.Ticket.Id" asp-route-noteId="@note.Id" method="post">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                    </form>
+                                </div>
+                                <details class="mt-3">
+                                    <summary>Edit note</summary>
+                                    <form asp-action="UpdateNote" asp-route-id="@Model.Ticket.Id" asp-route-noteId="@note.Id" method="post" class="mt-3">
+                                        <div class="row g-3">
+                                            <div class="col-md-4">
+                                                <label class="form-label">Author</label>
+                                                <input class="form-control" name="Author" value="@note.Author" />
+                                            </div>
+                                            <div class="col-md-8">
+                                                <label class="form-label">Note</label>
+                                                <textarea class="form-control" name="Content" rows="3">@note.Content</textarea>
+                                            </div>
+                                        </div>
+                                        <button type="submit" class="btn btn-sm btn-outline-primary mt-3">Save note</button>
+                                    </form>
+                                </details>
+                            </article>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-4">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Ticket snapshot</h2>
+                    <span class="text-secondary small">Current state</span>
+                </div>
+                <dl class="ticket-facts">
+                    <div><dt>Status</dt><dd>@Model.Ticket.StatusLabel</dd></div>
+                    <div><dt>Priority</dt><dd>@Model.Ticket.PriorityLabel</dd></div>
+                    <div><dt>Assignee</dt><dd>@Model.Ticket.Assignee</dd></div>
+                    <div><dt>Subtickets</dt><dd>@Model.Ticket.CompletedSubTicketCount/@Model.Ticket.SubTicketCount</dd></div>
+                    <div><dt>Tracked time</dt><dd>@Model.Ticket.TotalMinutesSpent minutes</dd></div>
+                    <div><dt>Created</dt><dd>@SiteSettingsService.FormatUtc(Model.Ticket.CreatedUtc, siteSettings)</dd></div>
+                    <div><dt>Updated</dt><dd>@SiteSettingsService.FormatUtc(Model.Ticket.UpdatedUtc, siteSettings)</dd></div>
+                    @if (Model.Ticket.CompletedUtc.HasValue)
+                    {
+                        <div><dt>Completed</dt><dd>@SiteSettingsService.FormatUtc(Model.Ticket.CompletedUtc.Value, siteSettings)</dd></div>
+                    }
+                </dl>
+                @if (Model.Ticket.Tags.Count > 0)
+                {
+                    <div class="tag-row">
+                        @foreach (var tag in Model.Ticket.Tags)
+                        {
+                            <span class="tag-pill">@tag</span>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Time logs</h2>
+                    <span class="text-secondary small">@Model.TimeLogs.Count entries</span>
+                </div>
+                <form asp-action="LogTime" asp-route-id="@Model.Ticket.Id" method="post" class="mb-4">
+                    <div class="mb-3">
+                        <label asp-for="TimeLogInput.ModelName" class="form-label"></label>
+                        <input asp-for="TimeLogInput.ModelName" class="form-control" />
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="TimeLogInput.Summary" class="form-label"></label>
+                        <input asp-for="TimeLogInput.Summary" class="form-control" />
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-5">
+                            <label asp-for="TimeLogInput.MinutesSpent" class="form-label"></label>
+                            <input asp-for="TimeLogInput.MinutesSpent" class="form-control" />
+                        </div>
+                        <div class="col-md-7">
+                            <label asp-for="TimeLogInput.LoggedUtc" class="form-label"></label>
+                            <input asp-for="TimeLogInput.LoggedUtc" class="form-control" />
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-outline-primary mt-3">Log time</button>
+                </form>
+
+                @if (Model.TimeLogs.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No time logged yet</h3>
+                        <p>Track work by model or operator so future billing or reporting exports have structured data.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="ticket-time-list">
+                        @foreach (var timeLog in Model.TimeLogs)
+                        {
+                            <article class="ticket-time-entry">
+                                <div class="memory-meta">@timeLog.ModelName • @timeLog.MinutesSpent min</div>
+                                <div>@timeLog.Summary</div>
+                                <div class="text-secondary small">@SiteSettingsService.FormatUtc(timeLog.LoggedUtc, siteSettings)</div>
+                            </article>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Activity</h2>
+                    <span class="text-secondary small">@Model.Activities.Count events</span>
+                </div>
+                @if (Model.Activities.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No activity yet</h3>
+                        <p>Ticket actions are recorded here automatically.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="ticket-activity-list">
+                        @foreach (var activity in Model.Activities)
+                        {
+                            <article class="ticket-activity">
+                                <div class="memory-meta">@activity.ActivityType</div>
+                                <div>@activity.Message</div>
+                                @if (!string.IsNullOrWhiteSpace(activity.Metadata))
+                                {
+                                    <pre class="ticket-activity-meta">@activity.Metadata</pre>
+                                }
+                                <div class="text-secondary small">@SiteSettingsService.FormatUtc(activity.CreatedUtc, siteSettings)</div>
+                            </article>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

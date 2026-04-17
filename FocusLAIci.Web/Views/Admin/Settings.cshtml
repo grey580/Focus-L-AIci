@@ -79,6 +79,32 @@
         </div>
         <div class="card shadow-sm border-0">
             <div class="card-body">
+                <h2 class="h5">Database target</h2>
+                <p class="text-secondary small">Switch Focus L-AIci to a different SQLite file without editing appsettings manually. The new target takes effect on the next request.</p>
+                <form method="post" asp-action="UpdateDatabaseTarget" class="mb-3">
+                    @Html.AntiForgeryToken()
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+                    <div class="mb-3">
+                        <label asp-for="DatabaseInput.DatabasePath" class="form-label"></label>
+                        <input asp-for="DatabaseInput.DatabasePath" class="form-control" />
+                        <div class="form-text">Current database: @Model.DatabaseTarget.DatabasePath</div>
+                        <span asp-validation-for="DatabaseInput.DatabasePath" class="text-danger"></span>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input asp-for="DatabaseInput.UseDefaultDatabase" class="form-check-input" />
+                        <label asp-for="DatabaseInput.UseDefaultDatabase" class="form-check-label"></label>
+                    </div>
+                    <div class="form-text mb-3">Default database path: @Model.DatabaseTarget.DefaultDatabasePath</div>
+                    <button type="submit" class="btn btn-outline-primary">Switch Database</button>
+                </form>
+                <ul class="api-list mb-0">
+                    <li>Override file: @Model.DatabaseTarget.OverrideFilePath</li>
+                    <li>Mode: @(Model.DatabaseTarget.UsesDefaultDatabase ? "Default database" : "Custom database override")</li>
+                </ul>
+            </div>
+        </div>
+        <div class="card shadow-sm border-0 mt-4">
+            <div class="card-body">
                 <h2 class="h5">Maintenance</h2>
                 <p class="text-secondary small">Use this cleanup if stray Concurrent Wing test entries reappear after local testing.</p>
                 <form method="post" asp-action="CleanupConcurrentWings">

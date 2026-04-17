@@ -86,6 +86,92 @@ public sealed class TodoEntry
     public DateTime? CompletedUtc { get; set; }
 }
 
+public sealed class TicketEntry
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid? ParentTicketId { get; set; }
+    public Guid? SummaryMemoryId { get; set; }
+
+    [MaxLength(24)]
+    public string TicketNumber { get; set; } = string.Empty;
+
+    [MaxLength(180)]
+    public string Title { get; set; } = string.Empty;
+
+    public string Description { get; set; } = string.Empty;
+    public TicketStatus Status { get; set; } = TicketStatus.New;
+    public TicketPriority Priority { get; set; } = TicketPriority.Medium;
+
+    [MaxLength(120)]
+    public string Assignee { get; set; } = string.Empty;
+
+    [MaxLength(400)]
+    public string TagsText { get; set; } = string.Empty;
+
+    [MaxLength(120)]
+    public string GitBranch { get; set; } = string.Empty;
+
+    [MaxLength(80)]
+    public string GitCommit { get; set; } = string.Empty;
+
+    public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? CompletedUtc { get; set; }
+    public TicketEntry? ParentTicket { get; set; }
+    public MemoryEntry? SummaryMemory { get; set; }
+    public ICollection<TicketEntry> SubTickets { get; set; } = new List<TicketEntry>();
+    public ICollection<TicketNoteEntry> Notes { get; set; } = new List<TicketNoteEntry>();
+    public ICollection<TicketActivityEntry> Activities { get; set; } = new List<TicketActivityEntry>();
+    public ICollection<TicketTimeLogEntry> TimeLogs { get; set; } = new List<TicketTimeLogEntry>();
+}
+
+public sealed class TicketNoteEntry
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TicketId { get; set; }
+
+    [MaxLength(120)]
+    public string Author { get; set; } = string.Empty;
+
+    public string Content { get; set; } = string.Empty;
+    public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
+    public TicketEntry? Ticket { get; set; }
+}
+
+public sealed class TicketActivityEntry
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TicketId { get; set; }
+
+    [MaxLength(60)]
+    public string ActivityType { get; set; } = string.Empty;
+
+    [MaxLength(500)]
+    public string Message { get; set; } = string.Empty;
+
+    public string Metadata { get; set; } = string.Empty;
+    public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
+    public TicketEntry? Ticket { get; set; }
+}
+
+public sealed class TicketTimeLogEntry
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TicketId { get; set; }
+
+    [MaxLength(120)]
+    public string ModelName { get; set; } = string.Empty;
+
+    [MaxLength(260)]
+    public string Summary { get; set; } = string.Empty;
+
+    public int MinutesSpent { get; set; }
+    public DateTime LoggedUtc { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
+    public TicketEntry? Ticket { get; set; }
+}
+
 public sealed class MemoryEntry
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -173,4 +259,34 @@ public enum SourceKind
     Meeting = 5,
     Import = 6,
     Research = 7
+}
+
+public enum TicketStatus
+{
+    [Display(Name = "New")]
+    New = 1,
+
+    [Display(Name = "In progress")]
+    InProgress = 2,
+
+    [Display(Name = "Blocked")]
+    Blocked = 3,
+
+    [Display(Name = "Completed")]
+    Completed = 4
+}
+
+public enum TicketPriority
+{
+    [Display(Name = "Low")]
+    Low = 1,
+
+    [Display(Name = "Medium")]
+    Medium = 2,
+
+    [Display(Name = "High")]
+    High = 3,
+
+    [Display(Name = "Critical")]
+    Critical = 4
 }

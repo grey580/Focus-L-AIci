@@ -8,11 +8,13 @@ namespace FocusLAIci.Web.Services;
 public sealed class SiteSettingsService
 {
     private readonly FocusMemoryContext _dbContext;
+    private readonly FocusDatabaseTargetService _databaseTargetService;
     private SiteSettingsSnapshot? _cached;
 
-    public SiteSettingsService(FocusMemoryContext dbContext)
+    public SiteSettingsService(FocusMemoryContext dbContext, FocusDatabaseTargetService databaseTargetService)
     {
         _dbContext = dbContext;
+        _databaseTargetService = databaseTargetService;
     }
 
     public async Task<SiteSettingsSnapshot> GetSettingsAsync(CancellationToken cancellationToken = default)
@@ -50,8 +52,10 @@ public sealed class SiteSettingsService
                 ShowUtcTimestamps = settings.ShowUtcTimestamps,
                 DefaultMemoryImportance = settings.DefaultMemoryImportance
             },
+            DatabaseInput = BuildDatabaseInput(_databaseTargetService.GetCurrentTarget()),
             TimeZoneOptions = BuildTimeZoneOptions(settings.TimeZoneId),
-            ActiveTimeZoneLabel = ResolveTimeZone(settings.TimeZoneId).DisplayName
+            ActiveTimeZoneLabel = ResolveTimeZone(settings.TimeZoneId).DisplayName,
+            DatabaseTarget = _databaseTargetService.GetCurrentTarget()
         };
     }
 
@@ -138,8 +142,19 @@ public sealed class SiteSettingsService
         return new AdminSettingsViewModel
         {
             Input = input,
+            DatabaseInput = BuildDatabaseInput(_databaseTargetService.GetCurrentTarget()),
             TimeZoneOptions = BuildTimeZoneOptions(resolved.Id),
-            ActiveTimeZoneLabel = resolved.DisplayName
+            ActiveTimeZoneLabel = resolved.DisplayName,
+            DatabaseTarget = _databaseTargetService.GetCurrentTarget()
+        };
+    }
+
+    private static DatabaseTargetInput BuildDatabaseInput(FocusDatabaseTargetSnapshot snapshot)
+    {
+        return new DatabaseTargetInput
+        {
+            UseDefaultDatabase = snapshot.UsesDefaultDatabase,
+            DatabasePath = snapshot.UsesDefaultDatabase ? snapshot.DefaultDatabasePath : snapshot.DatabasePath
         };
     }
 

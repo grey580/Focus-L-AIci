@@ -25,8 +25,10 @@ public sealed class SiteSettingsSnapshot
 public sealed class AdminSettingsViewModel
 {
     public AdminSettingsInput Input { get; init; } = new();
+    public DatabaseTargetInput DatabaseInput { get; init; } = new();
     public IReadOnlyCollection<SelectListItem> TimeZoneOptions { get; init; } = Array.Empty<SelectListItem>();
     public string ActiveTimeZoneLabel { get; init; } = "UTC";
+    public FocusDatabaseTargetSnapshot DatabaseTarget { get; init; } = new();
 }
 
 public sealed class AdminSettingsInput
@@ -54,6 +56,24 @@ public sealed class AdminSettingsInput
     public int DefaultMemoryImportance { get; set; } = 3;
 }
 
+public sealed class DatabaseTargetInput
+{
+    [Display(Name = "Use the default app database target")]
+    public bool UseDefaultDatabase { get; set; }
+
+    [Display(Name = "Database file path")]
+    public string DatabasePath { get; set; } = string.Empty;
+}
+
+public sealed class FocusDatabaseTargetSnapshot
+{
+    public string ConnectionString { get; init; } = "Data Source=focus-palace.db";
+    public string DatabasePath { get; init; } = string.Empty;
+    public string DefaultDatabasePath { get; init; } = string.Empty;
+    public bool UsesDefaultDatabase { get; init; }
+    public string OverrideFilePath { get; init; } = string.Empty;
+}
+
 public sealed class PalaceStatsViewModel
 {
     public int WingCount { get; init; }
@@ -63,6 +83,8 @@ public sealed class PalaceStatsViewModel
     public int TagCount { get; init; }
     public int OpenTodoCount { get; init; }
     public int CompletedTodoCount { get; init; }
+    public int OpenTicketCount { get; init; }
+    public int CompletedTicketCount { get; init; }
 }
 
 public sealed class TodoBoardViewModel
@@ -101,6 +123,178 @@ public sealed class TodoEditorInput
     [Required]
     [Display(Name = "Starting status")]
     public TodoStatus Status { get; set; } = TodoStatus.Pending;
+}
+
+public sealed class TicketBoardViewModel
+{
+    public PalaceStatsViewModel Stats { get; init; } = new();
+    public TicketEditorInput CreateInput { get; init; } = new();
+    public IReadOnlyCollection<TicketSummaryViewModel> NewTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
+    public IReadOnlyCollection<TicketSummaryViewModel> InProgressTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
+    public IReadOnlyCollection<TicketSummaryViewModel> BlockedTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
+    public IReadOnlyCollection<TicketSummaryViewModel> CompletedTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
+}
+
+public sealed class TicketDetailsViewModel
+{
+    public TicketDetailViewModel Ticket { get; init; } = new();
+    public TicketEditorInput EditInput { get; init; } = new();
+    public TicketSubTicketInput SubTicketInput { get; init; } = new();
+    public TicketNoteInput NoteInput { get; init; } = new();
+    public TicketTimeLogInput TimeLogInput { get; init; } = new();
+    public IReadOnlyCollection<TicketSummaryViewModel> SubTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
+    public IReadOnlyCollection<TicketNoteViewModel> Notes { get; init; } = Array.Empty<TicketNoteViewModel>();
+    public IReadOnlyCollection<TicketTimeLogViewModel> TimeLogs { get; init; } = Array.Empty<TicketTimeLogViewModel>();
+    public IReadOnlyCollection<TicketActivityViewModel> Activities { get; init; } = Array.Empty<TicketActivityViewModel>();
+}
+
+public class TicketSummaryViewModel
+{
+    public Guid Id { get; init; }
+    public Guid? ParentTicketId { get; init; }
+    public string TicketNumber { get; init; } = string.Empty;
+    public string Title { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public TicketStatus Status { get; init; }
+    public string StatusLabel { get; init; } = string.Empty;
+    public TicketPriority Priority { get; init; }
+    public string PriorityLabel { get; init; } = string.Empty;
+    public string Assignee { get; init; } = string.Empty;
+    public IReadOnlyCollection<string> Tags { get; init; } = Array.Empty<string>();
+    public string GitBranch { get; init; } = string.Empty;
+    public string GitCommit { get; init; } = string.Empty;
+    public DateTime CreatedUtc { get; init; }
+    public DateTime UpdatedUtc { get; init; }
+    public DateTime? CompletedUtc { get; init; }
+    public int SubTicketCount { get; init; }
+    public int CompletedSubTicketCount { get; init; }
+    public int TotalMinutesSpent { get; init; }
+}
+
+public sealed class TicketDetailViewModel : TicketSummaryViewModel
+{
+    public string ParentTicketNumber { get; init; } = string.Empty;
+    public string ParentTicketTitle { get; init; } = string.Empty;
+    public Guid? SummaryMemoryId { get; init; }
+}
+
+public sealed class TicketNoteViewModel
+{
+    public Guid Id { get; init; }
+    public string Author { get; init; } = string.Empty;
+    public string Content { get; init; } = string.Empty;
+    public DateTime CreatedUtc { get; init; }
+    public DateTime UpdatedUtc { get; init; }
+}
+
+public sealed class TicketTimeLogViewModel
+{
+    public Guid Id { get; init; }
+    public string ModelName { get; init; } = string.Empty;
+    public string Summary { get; init; } = string.Empty;
+    public int MinutesSpent { get; init; }
+    public DateTime LoggedUtc { get; init; }
+    public DateTime CreatedUtc { get; init; }
+}
+
+public sealed class TicketActivityViewModel
+{
+    public Guid Id { get; init; }
+    public string ActivityType { get; init; } = string.Empty;
+    public string Message { get; init; } = string.Empty;
+    public string Metadata { get; init; } = string.Empty;
+    public DateTime CreatedUtc { get; init; }
+}
+
+public sealed class TicketEditorInput
+{
+    public Guid? Id { get; set; }
+
+    [Required]
+    [StringLength(180)]
+    [Display(Name = "Ticket title")]
+    public string Title { get; set; } = string.Empty;
+
+    [Required]
+    [DataType(DataType.MultilineText)]
+    [Display(Name = "Description")]
+    public string Description { get; set; } = string.Empty;
+
+    [Required]
+    [Display(Name = "Status")]
+    public TicketStatus Status { get; set; } = TicketStatus.New;
+
+    [Required]
+    [Display(Name = "Priority")]
+    public TicketPriority Priority { get; set; } = TicketPriority.Medium;
+
+    [Required]
+    [StringLength(120)]
+    [Display(Name = "Assignee")]
+    public string Assignee { get; set; } = "Copilot";
+
+    [StringLength(400)]
+    [Display(Name = "Tags")]
+    public string TagsText { get; set; } = string.Empty;
+
+    [StringLength(120)]
+    [Display(Name = "Git branch")]
+    public string GitBranch { get; set; } = string.Empty;
+
+    [StringLength(80)]
+    [Display(Name = "Git commit")]
+    public string GitCommit { get; set; } = string.Empty;
+}
+
+public sealed class TicketSubTicketInput
+{
+    [Required]
+    [StringLength(180)]
+    [Display(Name = "Sub-ticket title")]
+    public string Title { get; set; } = string.Empty;
+
+    [Required]
+    [DataType(DataType.MultilineText)]
+    [Display(Name = "Sub-ticket description")]
+    public string Description { get; set; } = string.Empty;
+
+    [Required]
+    [Display(Name = "Starting status")]
+    public TicketStatus Status { get; set; } = TicketStatus.New;
+}
+
+public sealed class TicketNoteInput
+{
+    [Required]
+    [StringLength(120)]
+    [Display(Name = "Author")]
+    public string Author { get; set; } = "Copilot";
+
+    [Required]
+    [DataType(DataType.MultilineText)]
+    [Display(Name = "Note")]
+    public string Content { get; set; } = string.Empty;
+}
+
+public sealed class TicketTimeLogInput
+{
+    [Required]
+    [StringLength(120)]
+    [Display(Name = "Model or owner")]
+    public string ModelName { get; set; } = "Copilot";
+
+    [Required]
+    [StringLength(260)]
+    [Display(Name = "Work summary")]
+    public string Summary { get; set; } = string.Empty;
+
+    [Range(1, 1440)]
+    [Display(Name = "Minutes spent")]
+    public int MinutesSpent { get; set; } = 30;
+
+    [Display(Name = "Logged at (UTC)")]
+    [DisplayFormat(DataFormatString = "{0:yyyy-MM-ddTHH:mm}", ApplyFormatInEditMode = true)]
+    public DateTime LoggedUtc { get; set; } = DateTime.UtcNow;
 }
 
 public sealed class WingSummaryViewModel

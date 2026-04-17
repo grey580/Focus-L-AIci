@@ -9,6 +9,11 @@ public static class MemorySeeder
     {
         await using var scope = services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<FocusMemoryContext>();
+        await EnsureDatabaseAsync(dbContext, cancellationToken);
+    }
+
+    public static async Task EnsureDatabaseAsync(FocusMemoryContext dbContext, CancellationToken cancellationToken = default)
+    {
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
         await dbContext.Database.ExecuteSqlRawAsync(
             """
@@ -37,6 +42,69 @@ public static class MemorySeeder
             cancellationToken);
         await dbContext.Database.ExecuteSqlRawAsync(
             """
+            CREATE TABLE IF NOT EXISTS Tickets (
+                Id TEXT NOT NULL CONSTRAINT PK_Tickets PRIMARY KEY,
+                ParentTicketId TEXT NULL,
+                SummaryMemoryId TEXT NULL,
+                TicketNumber TEXT NOT NULL,
+                Title TEXT NOT NULL,
+                Description TEXT NOT NULL,
+                Status INTEGER NOT NULL,
+                Priority INTEGER NOT NULL,
+                Assignee TEXT NOT NULL,
+                TagsText TEXT NOT NULL,
+                GitBranch TEXT NOT NULL,
+                GitCommit TEXT NOT NULL,
+                CreatedUtc TEXT NOT NULL,
+                UpdatedUtc TEXT NOT NULL,
+                CompletedUtc TEXT NULL,
+                CONSTRAINT FK_Tickets_Tickets_ParentTicketId FOREIGN KEY (ParentTicketId) REFERENCES Tickets (Id) ON DELETE RESTRICT,
+                CONSTRAINT FK_Tickets_Memories_SummaryMemoryId FOREIGN KEY (SummaryMemoryId) REFERENCES Memories (Id) ON DELETE SET NULL
+            );
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS TicketNotes (
+                Id TEXT NOT NULL CONSTRAINT PK_TicketNotes PRIMARY KEY,
+                TicketId TEXT NOT NULL,
+                Author TEXT NOT NULL,
+                Content TEXT NOT NULL,
+                CreatedUtc TEXT NOT NULL,
+                UpdatedUtc TEXT NOT NULL,
+                CONSTRAINT FK_TicketNotes_Tickets_TicketId FOREIGN KEY (TicketId) REFERENCES Tickets (Id) ON DELETE CASCADE
+            );
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS TicketActivities (
+                Id TEXT NOT NULL CONSTRAINT PK_TicketActivities PRIMARY KEY,
+                TicketId TEXT NOT NULL,
+                ActivityType TEXT NOT NULL,
+                Message TEXT NOT NULL,
+                Metadata TEXT NOT NULL,
+                CreatedUtc TEXT NOT NULL,
+                CONSTRAINT FK_TicketActivities_Tickets_TicketId FOREIGN KEY (TicketId) REFERENCES Tickets (Id) ON DELETE CASCADE
+            );
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS TicketTimeLogs (
+                Id TEXT NOT NULL CONSTRAINT PK_TicketTimeLogs PRIMARY KEY,
+                TicketId TEXT NOT NULL,
+                ModelName TEXT NOT NULL,
+                Summary TEXT NOT NULL,
+                MinutesSpent INTEGER NOT NULL,
+                LoggedUtc TEXT NOT NULL,
+                CreatedUtc TEXT NOT NULL,
+                CONSTRAINT FK_TicketTimeLogs_Tickets_TicketId FOREIGN KEY (TicketId) REFERENCES Tickets (Id) ON DELETE CASCADE
+            );
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
             INSERT OR IGNORE INTO SiteSettings (Id, DisplayName, HomeHeroCopy, TimeZoneId, ShowUtcTimestamps, DefaultMemoryImportance)
             VALUES (1, 'Focus L-AIci', 'A local-first C# memory system for app development: wings, rooms, verbatim notes, searchable context, and an explorer UI for finding past reasoning fast.', 'UTC', 0, 3);
             """,
@@ -60,6 +128,42 @@ public static class MemorySeeder
             """
             CREATE INDEX IF NOT EXISTS IX_Todos_Status_UpdatedUtc
             ON Todos(Status, UpdatedUtc DESC);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_Tickets_TicketNumber
+            ON Tickets(TicketNumber);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_Tickets_Status_UpdatedUtc
+            ON Tickets(Status, UpdatedUtc DESC);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_Tickets_ParentTicketId
+            ON Tickets(ParentTicketId);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_TicketNotes_TicketId_CreatedUtc
+            ON TicketNotes(TicketId, CreatedUtc DESC);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_TicketActivities_TicketId_CreatedUtc
+            ON TicketActivities(TicketId, CreatedUtc DESC);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_TicketTimeLogs_TicketId_LoggedUtc
+            ON TicketTimeLogs(TicketId, LoggedUtc DESC);
             """,
             cancellationToken);
     }

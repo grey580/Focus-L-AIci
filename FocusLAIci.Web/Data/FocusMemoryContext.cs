@@ -15,6 +15,10 @@ public sealed class FocusMemoryContext : DbContext
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<TodoEntry> Todos => Set<TodoEntry>();
+    public DbSet<TicketEntry> Tickets => Set<TicketEntry>();
+    public DbSet<TicketNoteEntry> TicketNotes => Set<TicketNoteEntry>();
+    public DbSet<TicketActivityEntry> TicketActivities => Set<TicketActivityEntry>();
+    public DbSet<TicketTimeLogEntry> TicketTimeLogs => Set<TicketTimeLogEntry>();
     public DbSet<MemoryEntry> Memories => Set<MemoryEntry>();
     public DbSet<MemoryEntryTag> MemoryTags => Set<MemoryEntryTag>();
     public DbSet<MemoryLink> MemoryLinks => Set<MemoryLink>();
@@ -62,6 +66,62 @@ public sealed class FocusMemoryContext : DbContext
             entity.HasIndex(x => x.Status);
             entity.Property(x => x.Title).HasMaxLength(180);
             entity.Property(x => x.Details).HasColumnType("TEXT");
+        });
+
+        builder.Entity<TicketEntry>(entity =>
+        {
+            entity.HasIndex(x => x.TicketNumber).IsUnique();
+            entity.HasIndex(x => new { x.Status, x.UpdatedUtc });
+            entity.HasIndex(x => x.ParentTicketId);
+            entity.Property(x => x.TicketNumber).HasMaxLength(24);
+            entity.Property(x => x.Title).HasMaxLength(180);
+            entity.Property(x => x.Description).HasColumnType("TEXT");
+            entity.Property(x => x.Assignee).HasMaxLength(120);
+            entity.Property(x => x.TagsText).HasMaxLength(400);
+            entity.Property(x => x.GitBranch).HasMaxLength(120);
+            entity.Property(x => x.GitCommit).HasMaxLength(80);
+            entity.HasOne(x => x.ParentTicket)
+                .WithMany(x => x.SubTickets)
+                .HasForeignKey(x => x.ParentTicketId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.SummaryMemory)
+                .WithMany()
+                .HasForeignKey(x => x.SummaryMemoryId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<TicketNoteEntry>(entity =>
+        {
+            entity.HasIndex(x => new { x.TicketId, x.CreatedUtc });
+            entity.Property(x => x.Author).HasMaxLength(120);
+            entity.Property(x => x.Content).HasColumnType("TEXT");
+            entity.HasOne(x => x.Ticket)
+                .WithMany(x => x.Notes)
+                .HasForeignKey(x => x.TicketId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<TicketActivityEntry>(entity =>
+        {
+            entity.HasIndex(x => new { x.TicketId, x.CreatedUtc });
+            entity.Property(x => x.ActivityType).HasMaxLength(60);
+            entity.Property(x => x.Message).HasMaxLength(500);
+            entity.Property(x => x.Metadata).HasColumnType("TEXT");
+            entity.HasOne(x => x.Ticket)
+                .WithMany(x => x.Activities)
+                .HasForeignKey(x => x.TicketId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<TicketTimeLogEntry>(entity =>
+        {
+            entity.HasIndex(x => new { x.TicketId, x.LoggedUtc });
+            entity.Property(x => x.ModelName).HasMaxLength(120);
+            entity.Property(x => x.Summary).HasMaxLength(260);
+            entity.HasOne(x => x.Ticket)
+                .WithMany(x => x.TimeLogs)
+                .HasForeignKey(x => x.TicketId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<MemoryEntry>(entity =>

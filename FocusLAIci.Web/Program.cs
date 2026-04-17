@@ -14,14 +14,16 @@ if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]))
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
-builder.Services.AddDbContext<FocusMemoryContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("FocusPalace")));
+builder.Services.AddSingleton<FocusDatabaseTargetService>();
+builder.Services.AddDbContext<FocusMemoryContext>((serviceProvider, options) =>
+    options.UseSqlite(serviceProvider.GetRequiredService<FocusDatabaseTargetService>().GetCurrentTarget().ConnectionString));
 builder.Services.AddScoped<PalaceService>();
+builder.Services.AddScoped<TicketingService>();
 builder.Services.AddScoped<SiteSettingsService>();
 
 var app = builder.Build();
 
-await MemorySeeder.EnsureDatabaseAsync(app.Services);
+await app.Services.GetRequiredService<FocusDatabaseTargetService>().EnsureCurrentDatabaseReadyAsync();
 
 var seedDemoData = app.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("FocusPalace:SeedDemoData");
 if (seedDemoData)

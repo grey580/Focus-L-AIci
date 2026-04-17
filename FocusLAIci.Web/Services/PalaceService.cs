@@ -637,7 +637,9 @@ public sealed class PalaceService
             PinnedCount = await _dbContext.Memories.CountAsync(x => x.IsPinned, cancellationToken),
             TagCount = await _dbContext.Tags.CountAsync(cancellationToken),
             OpenTodoCount = await _dbContext.Todos.CountAsync(x => x.Status != TodoStatus.Done, cancellationToken),
-            CompletedTodoCount = await _dbContext.Todos.CountAsync(x => x.Status == TodoStatus.Done, cancellationToken)
+            CompletedTodoCount = await _dbContext.Todos.CountAsync(x => x.Status == TodoStatus.Done, cancellationToken),
+            OpenTicketCount = await _dbContext.Tickets.CountAsync(x => x.Status != TicketStatus.Completed, cancellationToken),
+            CompletedTicketCount = await _dbContext.Tickets.CountAsync(x => x.Status == TicketStatus.Completed, cancellationToken)
         };
     }
 

@@ -52,6 +52,7 @@ This makes the system much better than a basic note app for operational work, be
 - wing and room browsing
 - memory creation and editing
 - todo tracking with large prompt-sized details
+- ticket tracking with subtickets, notes, time logs, and activity history
 - pinned memories for high-value knowledge
 - tag-based discovery
 - full-text style search flows across stored knowledge
@@ -88,6 +89,21 @@ That means you can:
 - use the todo list as a real work queue for complex implementation, research, or debugging sessions
 
 This is especially useful when you want a todo to carry the exact context or prompt that should be reused later.
+
+## New: engineering ticket board
+
+Focus L-AIci now includes a dedicated **Tickets** area for larger workstreams that outgrow a simple todo.
+
+Tickets support:
+
+- top-level tickets plus nested subtickets
+- notes with edit and delete flows
+- time logs by model or operator
+- an automatic activity timeline
+- Git branch / commit context
+- completion memories written back into the palace when a ticket is finished
+
+That makes Focus useful as both a durable memory system **and** a lightweight local execution tracker for longer autonomous implementation runs.
 
 ## Quick start
 

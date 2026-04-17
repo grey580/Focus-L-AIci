@@ -113,6 +113,7 @@ Recommended pattern:
 1. Capture decisions when they become clear.
 2. Record failed approaches only if they teach something reusable.
 3. Add a memory when you discover a non-obvious fix, pattern, or constraint.
+4. Use **Tickets** when the work needs subtasks, notes, tracked time, or a richer audit trail than a todo card.
 
 ### After work
 
@@ -196,6 +197,28 @@ Good examples:
 - a research prompt with constraints and expected outputs
 
 Then, once the work is done, keep the lasting knowledge in memories and keep the todo focused on execution.
+
+## When to use Todos vs Tickets
+
+Use **Todos** when:
+
+- the work is small and direct
+- you mainly need a prompt-sized execution note
+- you only care about status and quick recovery later
+
+Use **Tickets** when:
+
+- the work needs subtickets
+- multiple notes or investigation updates will accumulate
+- you want time tracking by model or operator
+- you need Git branch / commit context attached to the work
+- you want completion to create a durable summary memory automatically
+
+Recommended pattern:
+
+1. Put quick prompts and short execution queues in Todos.
+2. Promote larger work to Tickets once it needs structure.
+3. Let completed tickets feed back into the palace as reusable implementation memory.
 
 ## Prompt patterns for AI models
 

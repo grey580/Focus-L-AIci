@@ -3,7 +3,10 @@ using FocusLAIci.Web.Models;
 using FocusLAIci.Web.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 
 namespace FocusLAIci.Tests;
 
@@ -85,7 +88,7 @@ public sealed class PalaceServiceTests
         await dbContext.SaveChangesAsync();
 
         await using var settingsContext = harness.CreateDbContext();
-        var settingsService = new SiteSettingsService(settingsContext);
+        var settingsService = new SiteSettingsService(settingsContext, harness.Services.GetRequiredService<FocusDatabaseTargetService>());
         var removedCount = await settingsService.CleanupConcurrentTestWingsAsync(CancellationToken.None);
 
         await using var verifyContext = harness.CreateDbContext();
@@ -254,6 +257,199 @@ public sealed class PalaceServiceTests
         Assert.True(todo.Details.Length > 2000);
     }
 
+    [Fact]
+    public async Task TicketingService_GeneratesInheritedSubticketsFromDescription()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new TicketingService(serviceContext);
+
+        var ticketId = await service.CreateTicketAsync(new TicketEditorInput
+        {
+            Title = "Build Focus ticketing system",
+            Description = """
+                - Add the schema and service layer
+                - Build the MVC pages
+                - Cover the workflow with tests
+                """,
+            Status = TicketStatus.InProgress,
+            Priority = TicketPriority.High,
+            Assignee = "Copilot",
+            TagsText = "focus, ticketing",
+            GitBranch = "main",
+            GitCommit = "abc1234"
+        }, CancellationToken.None);
+
+        var createdCount = await service.GenerateSubTicketsAsync(ticketId, CancellationToken.None);
+        var details = await service.GetDetailsAsync(ticketId, CancellationToken.None);
+
+        Assert.Equal(3, createdCount);
+        Assert.Equal(3, details.SubTickets.Count);
+        Assert.All(details.SubTickets, subTicket =>
+        {
+            Assert.Equal(TicketPriority.High, subTicket.Priority);
+            Assert.Equal("Copilot", subTicket.Assignee);
+            Assert.Contains("focus", subTicket.Tags);
+            Assert.Equal("main", subTicket.GitBranch);
+            Assert.Equal("abc1234", subTicket.GitCommit);
+            Assert.Equal(TicketStatus.New, subTicket.Status);
+        });
+    }
+
+    [Fact]
+    public async Task TicketingService_TracksNotesTimeAndCompletionMemory()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new TicketingService(serviceContext);
+
+        var ticketId = await service.CreateTicketAsync(new TicketEditorInput
+        {
+            Title = "Ship autonomous ticket workflow",
+            Description = "Track notes, time, and completion summaries.",
+            Status = TicketStatus.InProgress,
+            Priority = TicketPriority.Critical,
+            Assignee = "Copilot",
+            TagsText = "automation, focus"
+        }, CancellationToken.None);
+
+        var noteId = await service.AddNoteAsync(ticketId, new TicketNoteInput
+        {
+            Author = "Copilot",
+            Content = "Initial implementation is underway."
+        }, CancellationToken.None);
+
+        await service.UpdateNoteAsync(ticketId, noteId, new TicketNoteInput
+        {
+            Author = "Copilot",
+            Content = "Implementation finished and ready to summarize."
+        }, CancellationToken.None);
+
+        await service.LogTimeAsync(ticketId, new TicketTimeLogInput
+        {
+            ModelName = "Copilot",
+            Summary = "Implemented ticketing MVC flow",
+            MinutesSpent = 45,
+            LoggedUtc = new DateTime(2025, 1, 2, 3, 4, 5, DateTimeKind.Utc)
+        }, CancellationToken.None);
+
+        await service.UpdateTicketAsync(ticketId, new TicketEditorInput
+        {
+            Id = ticketId,
+            Title = "Ship autonomous ticket workflow",
+            Description = "Track notes, time, and completion summaries.",
+            Status = TicketStatus.Completed,
+            Priority = TicketPriority.Critical,
+            Assignee = "Copilot",
+            TagsText = "automation, focus",
+            GitBranch = "main",
+            GitCommit = "def5678"
+        }, CancellationToken.None);
+
+        await using var verifyContext = harness.CreateDbContext();
+        var ticket = await verifyContext.Tickets.FirstAsync(x => x.Id == ticketId);
+        var memory = await verifyContext.Memories.FirstOrDefaultAsync(x => x.Id == ticket.SummaryMemoryId);
+        var activities = await verifyContext.TicketActivities.Where(x => x.TicketId == ticketId).ToListAsync();
+
+        Assert.NotNull(memory);
+        Assert.Equal(TicketStatus.Completed, ticket.Status);
+        Assert.NotNull(ticket.CompletedUtc);
+        Assert.Contains("TKT-", memory!.Title);
+        Assert.Contains("Track notes, time, and completion summaries.", memory.Content);
+        Assert.True(memory.IsPinned);
+        Assert.Contains(activities, activity => activity.ActivityType == "completed");
+        Assert.Contains(activities, activity => activity.ActivityType == "time-logged");
+        Assert.Contains(activities, activity => activity.ActivityType == "note-updated");
+    }
+
+    [Fact]
+    public async Task DatabaseTargetService_SwitchesToCustomDatabaseAndInitializesSchema()
+    {
+        var contentRoot = Path.Combine(Path.GetTempPath(), $"focus-db-target-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(contentRoot);
+
+        try
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:FocusPalace"] = "Data Source=focus-palace.db"
+                })
+                .Build();
+            var environment = new TestHostEnvironment
+            {
+                ContentRootPath = contentRoot,
+                ContentRootFileProvider = new PhysicalFileProvider(contentRoot)
+            };
+            var service = new FocusDatabaseTargetService(configuration, environment);
+            var targetPath = Path.Combine(contentRoot, "switched", "copilot-focus.db");
+
+            var snapshot = await service.UpdateTargetAsync(new DatabaseTargetInput
+            {
+                DatabasePath = targetPath
+            }, CancellationToken.None);
+
+            Assert.False(snapshot.UsesDefaultDatabase);
+            Assert.Equal(Path.GetFullPath(targetPath), snapshot.DatabasePath);
+            Assert.True(File.Exists(targetPath));
+
+            var options = new DbContextOptionsBuilder<FocusMemoryContext>()
+                .UseSqlite(snapshot.ConnectionString)
+                .Options;
+            await using var dbContext = new FocusMemoryContext(options);
+
+            Assert.True(await dbContext.Database.CanConnectAsync());
+            Assert.True(await dbContext.SiteSettings.AnyAsync(x => x.Id == 1));
+            Assert.Equal(0, await dbContext.Todos.CountAsync());
+        }
+        finally
+        {
+            TryDeleteDirectory(contentRoot);
+        }
+    }
+
+    [Fact]
+    public async Task DatabaseTargetService_CanResetBackToDefaultDatabase()
+    {
+        var contentRoot = Path.Combine(Path.GetTempPath(), $"focus-db-reset-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(contentRoot);
+
+        try
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:FocusPalace"] = "Data Source=focus-palace.db"
+                })
+                .Build();
+            var environment = new TestHostEnvironment
+            {
+                ContentRootPath = contentRoot,
+                ContentRootFileProvider = new PhysicalFileProvider(contentRoot)
+            };
+            var service = new FocusDatabaseTargetService(configuration, environment);
+            var targetPath = Path.Combine(contentRoot, "switched", "copilot-focus.db");
+
+            await service.UpdateTargetAsync(new DatabaseTargetInput
+            {
+                DatabasePath = targetPath
+            }, CancellationToken.None);
+
+            var resetSnapshot = await service.UpdateTargetAsync(new DatabaseTargetInput
+            {
+                UseDefaultDatabase = true
+            }, CancellationToken.None);
+
+            Assert.True(resetSnapshot.UsesDefaultDatabase);
+            Assert.Equal(Path.Combine(contentRoot, "focus-palace.db"), resetSnapshot.DatabasePath);
+            Assert.False(File.Exists(Path.Combine(contentRoot, "focus-palace.database-target.json")));
+        }
+        finally
+        {
+            TryDeleteDirectory(contentRoot);
+        }
+    }
+
     private sealed class TestHarness : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;
@@ -272,8 +468,21 @@ public sealed class PalaceServiceTests
             await connection.OpenAsync();
 
             var serviceCollection = new ServiceCollection();
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:FocusPalace"] = "Data Source=:memory:"
+                })
+                .Build();
+            serviceCollection.AddSingleton<IConfiguration>(configuration);
+            serviceCollection.AddSingleton<IHostEnvironment>(new TestHostEnvironment
+            {
+                ContentRootPath = AppContext.BaseDirectory
+            });
+            serviceCollection.AddSingleton<FocusDatabaseTargetService>();
             serviceCollection.AddDbContext<FocusMemoryContext>(options => options.UseSqlite(connection));
             serviceCollection.AddScoped<PalaceService>();
+            serviceCollection.AddScoped<TicketingService>();
             serviceCollection.AddScoped<SiteSettingsService>();
 
             var services = serviceCollection.BuildServiceProvider();
@@ -298,6 +507,49 @@ public sealed class PalaceServiceTests
         {
             await Services.DisposeAsync();
             await _connection.DisposeAsync();
+        }
+    }
+
+    private sealed class TestHostEnvironment : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = Environments.Development;
+        public string ApplicationName { get; set; } = "FocusLAIci.Tests";
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public IFileProvider ContentRootFileProvider { get; set; } = new PhysicalFileProvider(AppContext.BaseDirectory);
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            return;
+        }
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                Directory.Delete(path, recursive: true);
+                return;
+            }
+            catch (IOException)
+            {
+                if (attempt == 4)
+                {
+                    return;
+                }
+
+                Thread.Sleep(100);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                if (attempt == 4)
+                {
+                    return;
+                }
+
+                Thread.Sleep(100);
+            }
         }
     }
 }
