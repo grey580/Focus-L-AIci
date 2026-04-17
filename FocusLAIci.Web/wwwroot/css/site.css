@@ -377,6 +377,12 @@ body {
   white-space: pre-wrap;
 }
 
+.todo-preview-link {
+  display: inline-block;
+  margin-bottom: 0.8rem;
+  text-decoration: none;
+}
+
 .todo-status {
   border-radius: 999px;
   display: inline-flex;

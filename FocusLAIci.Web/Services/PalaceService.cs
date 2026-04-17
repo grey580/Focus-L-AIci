@@ -57,6 +57,34 @@ public sealed class PalaceService
         };
     }
 
+    public async Task<TodoDetailsViewModel> GetTodoDetailsAsync(Guid id, bool markAsInProgress, CancellationToken cancellationToken)
+    {
+        var todo = await _dbContext.Todos.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (todo is null)
+        {
+            throw new InvalidOperationException("That todo no longer exists.");
+        }
+
+        if (markAsInProgress && todo.Status == TodoStatus.Pending)
+        {
+            todo.Status = TodoStatus.InProgress;
+            todo.UpdatedUtc = DateTime.UtcNow;
+            todo.CompletedUtc = null;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return new TodoDetailsViewModel
+        {
+            Todo = MapTodo(todo),
+            Input = new TodoEditorInput
+            {
+                Title = todo.Title,
+                Details = todo.Details,
+                Status = todo.Status
+            }
+        };
+    }
+
     public async Task<WingBrowseViewModel> GetWingCatalogAsync(CancellationToken cancellationToken)
     {
         return new WingBrowseViewModel
@@ -523,6 +551,34 @@ public sealed class PalaceService
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task UpdateTodoAsync(Guid id, TodoEditorInput input, CancellationToken cancellationToken)
+    {
+        var todo = await _dbContext.Todos.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (todo is null)
+        {
+            throw new InvalidOperationException("That todo no longer exists.");
+        }
+
+        todo.Title = input.Title.Trim();
+        todo.Details = input.Details.Trim();
+        todo.Status = input.Status;
+        todo.UpdatedUtc = DateTime.UtcNow;
+        todo.CompletedUtc = input.Status == TodoStatus.Done ? todo.CompletedUtc ?? todo.UpdatedUtc : null;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteTodoAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var todo = await _dbContext.Todos.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (todo is null)
+        {
+            throw new InvalidOperationException("That todo no longer exists.");
+        }
+
+        _dbContext.Todos.Remove(todo);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<string?> GetWingSlugAsync(Guid wingId, CancellationToken cancellationToken)
     {
         return await _dbContext.Wings
@@ -693,11 +749,14 @@ public sealed class PalaceService
 
     private static TodoItemViewModel MapTodo(TodoEntry todo)
     {
+        var preview = BuildTodoPreview(todo.Details);
         return new TodoItemViewModel
         {
             Id = todo.Id,
             Title = todo.Title,
             Details = todo.Details,
+            PreviewDetails = preview,
+            HasMoreDetails = !string.Equals(preview, todo.Details, StringComparison.Ordinal),
             Status = todo.Status,
             StatusLabel = todo.Status switch
             {
@@ -711,6 +770,20 @@ public sealed class PalaceService
             UpdatedUtc = todo.UpdatedUtc,
             CompletedUtc = todo.CompletedUtc
         };
+    }
+
+    private static string BuildTodoPreview(string details)
+    {
+        if (string.IsNullOrWhiteSpace(details))
+        {
+            return string.Empty;
+        }
+
+        const int maxLength = 240;
+        var normalized = details.Replace("\r\n", "\n").Trim();
+        return normalized.Length <= maxLength
+            ? normalized
+            : $"{normalized[..maxLength].TrimEnd()}...";
     }
 
     private static async Task<MemoryEntry?> FindMemoryAsync(IQueryable<MemoryEntry> query, Guid id, CancellationToken cancellationToken)

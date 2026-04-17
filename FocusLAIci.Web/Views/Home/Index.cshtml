@@ -176,10 +176,10 @@
                         <div class="todo-preview-item">
                             <div class="d-flex justify-content-between align-items-start gap-3">
                                 <div>
-                                    <a class="todo-title-link" asp-controller="Todos" asp-action="Index" asp-fragment="todo-@todo.Id">@todo.Title</a>
-                                    @if (!string.IsNullOrWhiteSpace(todo.Details))
+                                    <a class="todo-title-link" asp-controller="Todos" asp-action="Details" asp-route-id="@todo.Id">@todo.Title</a>
+                                    @if (!string.IsNullOrWhiteSpace(todo.PreviewDetails))
                                     {
-                                        <div class="text-secondary small">@todo.Details</div>
+                                        <div class="text-secondary small">@todo.PreviewDetails</div>
                                     }
                                 </div>
                                 <span class="todo-status todo-status-@todo.Status.ToString().ToLowerInvariant()">@todo.StatusLabel</span>

@@ -1,0 +1,121 @@
+@inject SiteSettingsService SiteSettingsService
+@model FocusLAIci.Web.Models.TodoDetailsViewModel
+@{
+    ViewData["Title"] = Model.Todo.Title;
+    var siteSettings = await SiteSettingsService.GetSettingsAsync();
+}
+
+<div class="breadcrumb-bar">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a asp-controller="Home" asp-action="Index">Dashboard</a></li>
+            <li class="breadcrumb-item"><a asp-controller="Todos" asp-action="Index">Todos</a></li>
+            <li class="breadcrumb-item active" aria-current="page">@Model.Todo.Title</li>
+        </ol>
+    </nav>
+</div>
+
+<section class="page-header">
+    <div>
+        <h1 class="mb-2">@Model.Todo.Title</h1>
+        <p class="page-copy">Full todo context, edit controls, and lifecycle actions in one place.</p>
+    </div>
+    <span class="todo-status todo-status-@Model.Todo.Status.ToString().ToLowerInvariant()">@Model.Todo.StatusLabel</span>
+</section>
+
+@if (TempData["TodoError"] is string errorMessage)
+{
+    <div class="alert alert-danger shadow-sm border-0">@errorMessage</div>
+}
+
+<div class="row g-4">
+    <div class="col-xl-7">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Todo details</h2>
+                    <span class="text-secondary small">Current context</span>
+                </div>
+                @if (string.IsNullOrWhiteSpace(Model.Todo.Details))
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No details yet</h3>
+                        <p>Add implementation notes or prompt context below.</p>
+                    </div>
+                }
+                else
+                {
+                    <pre class="memory-content todo-detail-content">@Model.Todo.Details</pre>
+                }
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Edit todo</h2>
+                    <span class="text-secondary small">Update the prompt, status, or cleanup the item.</span>
+                </div>
+                <form asp-action="Update" asp-route-id="@Model.Todo.Id" method="post">
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Title" class="form-label"></label>
+                        <input asp-for="Input.Title" class="form-control" />
+                        <span asp-validation-for="Input.Title" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Details" class="form-label"></label>
+                        <textarea asp-for="Input.Details" class="form-control memory-editor todo-details-editor" rows="16"></textarea>
+                        <span asp-validation-for="Input.Details" class="text-danger"></span>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Input.Status" class="form-label"></label>
+                        <select asp-for="Input.Status" class="form-select" asp-items="Html.GetEnumSelectList<TodoStatus>()"></select>
+                        <span asp-validation-for="Input.Status" class="text-danger"></span>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button type="submit" class="btn btn-primary">Save todo</button>
+                        <a class="btn btn-outline-secondary" asp-action="Index">Back to board</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-5">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Metadata</h2>
+                    <span class="text-secondary small">Timestamps</span>
+                </div>
+                <dl class="ticket-facts">
+                    <div><dt>Status</dt><dd>@Model.Todo.StatusLabel</dd></div>
+                    <div><dt>Created</dt><dd>@SiteSettingsService.FormatUtc(Model.Todo.CreatedUtc, siteSettings)</dd></div>
+                    <div><dt>Updated</dt><dd>@SiteSettingsService.FormatUtc(Model.Todo.UpdatedUtc, siteSettings)</dd></div>
+                    @if (Model.Todo.CompletedUtc.HasValue)
+                    {
+                        <div><dt>Completed</dt><dd>@SiteSettingsService.FormatUtc(Model.Todo.CompletedUtc.Value, siteSettings)</dd></div>
+                    }
+                </dl>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Delete todo</h2>
+                    <span class="text-secondary small">Permanent removal</span>
+                </div>
+                <p class="text-secondary">Delete this todo completely if it is no longer useful.</p>
+                <form asp-action="Delete" asp-route-id="@Model.Todo.Id" method="post">
+                    <button type="submit" class="btn btn-outline-danger">Delete todo</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -19,6 +19,20 @@ public sealed class TodosController : Controller
         return View(await _palaceService.GetTodoBoardAsync(cancellationToken));
     }
 
+    [HttpGet]
+    public async Task<IActionResult> Details(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return View(await _palaceService.GetTodoDetailsAsync(id, markAsInProgress: true, cancellationToken));
+        }
+        catch (InvalidOperationException exception)
+        {
+            TempData["TodoError"] = exception.Message;
+            return RedirectToAction(nameof(Index));
+        }
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(TodoEditorInput input, CancellationToken cancellationToken)
@@ -48,6 +62,56 @@ public sealed class TodosController : Controller
         try
         {
             await _palaceService.UpdateTodoStatusAsync(id, status, cancellationToken);
+            return RedirectToAction(nameof(Index));
+        }
+        catch (InvalidOperationException exception)
+        {
+            TempData["TodoError"] = exception.Message;
+            return RedirectToAction(nameof(Index));
+        }
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(Guid id, [Bind(Prefix = "Input")] TodoEditorInput input, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            try
+            {
+                var model = await _palaceService.GetTodoDetailsAsync(id, markAsInProgress: false, cancellationToken);
+                return View("Details", new TodoDetailsViewModel
+                {
+                    Todo = model.Todo,
+                    Input = input
+                });
+            }
+            catch (InvalidOperationException exception)
+            {
+                TempData["TodoError"] = exception.Message;
+                return RedirectToAction(nameof(Index));
+            }
+        }
+
+        try
+        {
+            await _palaceService.UpdateTodoAsync(id, input, cancellationToken);
+            return RedirectToAction(nameof(Details), new { id });
+        }
+        catch (InvalidOperationException exception)
+        {
+            TempData["TodoError"] = exception.Message;
+            return RedirectToAction(nameof(Index));
+        }
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _palaceService.DeleteTodoAsync(id, cancellationToken);
             return RedirectToAction(nameof(Index));
         }
         catch (InvalidOperationException exception)

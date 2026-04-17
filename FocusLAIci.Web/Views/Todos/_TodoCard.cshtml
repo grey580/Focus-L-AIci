@@ -7,14 +7,18 @@
 <article id="todo-@Model.Id" class="todo-card todo-card-@Model.Status.ToString().ToLowerInvariant()">
     <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
         <div>
-            <h4 class="todo-card-title">@Model.Title</h4>
+            <h4 class="todo-card-title"><a class="todo-title-link" asp-controller="Todos" asp-action="Details" asp-route-id="@Model.Id">@Model.Title</a></h4>
             <span class="todo-status todo-status-@Model.Status.ToString().ToLowerInvariant()">@Model.StatusLabel</span>
         </div>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(Model.Details))
     {
-        <p class="todo-card-details">@Model.Details</p>
+        <p class="todo-card-details">@Model.PreviewDetails</p>
+        @if (Model.HasMoreDetails)
+        {
+            <a class="todo-preview-link" asp-controller="Todos" asp-action="Details" asp-route-id="@Model.Id">View full todo</a>
+        }
     }
 
     <dl class="meta-grid todo-meta-grid">
@@ -30,6 +34,7 @@
     </dl>
 
     <div class="todo-actions">
+        <a class="btn btn-sm btn-outline-dark" asp-controller="Todos" asp-action="Details" asp-route-id="@Model.Id">Details</a>
         @if (Model.Status != TodoStatus.InProgress)
         {
             <form asp-controller="Todos" asp-action="UpdateStatus" method="post">

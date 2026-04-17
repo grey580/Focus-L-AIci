@@ -97,11 +97,19 @@ public sealed class TodoBoardViewModel
     public IReadOnlyCollection<TodoItemViewModel> DoneTodos { get; init; } = Array.Empty<TodoItemViewModel>();
 }
 
+public sealed class TodoDetailsViewModel
+{
+    public TodoItemViewModel Todo { get; init; } = new();
+    public TodoEditorInput Input { get; init; } = new();
+}
+
 public sealed class TodoItemViewModel
 {
     public Guid Id { get; init; }
     public string Title { get; init; } = string.Empty;
     public string Details { get; init; } = string.Empty;
+    public string PreviewDetails { get; init; } = string.Empty;
+    public bool HasMoreDetails { get; init; }
     public TodoStatus Status { get; init; }
     public string StatusLabel { get; init; } = string.Empty;
     public DateTime CreatedUtc { get; init; }

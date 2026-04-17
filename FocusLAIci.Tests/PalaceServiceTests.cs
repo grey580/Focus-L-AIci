@@ -255,6 +255,49 @@ public sealed class PalaceServiceTests
 
         Assert.Equal(largePrompt, todo.Details);
         Assert.True(todo.Details.Length > 2000);
+        Assert.NotEqual(todo.Details, todo.PreviewDetails);
+        Assert.True(todo.HasMoreDetails);
+    }
+
+    [Fact]
+    public async Task TodoDetailsFlow_AdvancesPendingTodoAndSupportsEditDelete()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var todoId = await service.CreateTodoAsync(new TodoEditorInput
+        {
+            Title = "Implement todo details workflow",
+            Details = new string('x', 320),
+            Status = TodoStatus.Pending
+        }, CancellationToken.None);
+
+        var detail = await service.GetTodoDetailsAsync(todoId, markAsInProgress: true, CancellationToken.None);
+
+        Assert.Equal(TodoStatus.InProgress, detail.Todo.Status);
+        Assert.True(detail.Todo.HasMoreDetails);
+        Assert.EndsWith("...", detail.Todo.PreviewDetails);
+        Assert.Equal(243, detail.Todo.PreviewDetails.Length);
+
+        await service.UpdateTodoAsync(todoId, new TodoEditorInput
+        {
+            Title = "Implement todo details page",
+            Details = "Keep the full prompt here.",
+            Status = TodoStatus.Blocked
+        }, CancellationToken.None);
+
+        var updated = await service.GetTodoDetailsAsync(todoId, markAsInProgress: false, CancellationToken.None);
+
+        Assert.Equal("Implement todo details page", updated.Todo.Title);
+        Assert.Equal(TodoStatus.Blocked, updated.Todo.Status);
+        Assert.Equal("Keep the full prompt here.", updated.Todo.Details);
+        Assert.False(updated.Todo.HasMoreDetails);
+
+        await service.DeleteTodoAsync(todoId, CancellationToken.None);
+
+        await using var dbContext = harness.CreateDbContext();
+        Assert.Equal(0, await dbContext.Todos.CountAsync());
     }
 
     [Fact]
