@@ -21,7 +21,7 @@ public sealed class TicketsController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create(TicketEditorInput input, CancellationToken cancellationToken)
+    public async Task<IActionResult> Create([Bind(Prefix = "CreateInput")] TicketEditorInput input, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
         {
@@ -66,7 +66,7 @@ public sealed class TicketsController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Update(Guid id, TicketEditorInput input, CancellationToken cancellationToken)
+    public async Task<IActionResult> Update(Guid id, [Bind(Prefix = "EditInput")] TicketEditorInput input, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
         {
@@ -89,7 +89,7 @@ public sealed class TicketsController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> CreateSubTicket(Guid id, TicketSubTicketInput input, CancellationToken cancellationToken)
+    public async Task<IActionResult> CreateSubTicket(Guid id, [Bind(Prefix = "SubTicketInput")] TicketSubTicketInput input, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
         {
@@ -129,7 +129,7 @@ public sealed class TicketsController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AddNote(Guid id, TicketNoteInput input, CancellationToken cancellationToken)
+    public async Task<IActionResult> AddNote(Guid id, [Bind(Prefix = "NoteInput")] TicketNoteInput input, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
         {
@@ -192,7 +192,7 @@ public sealed class TicketsController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> LogTime(Guid id, TicketTimeLogInput input, CancellationToken cancellationToken)
+    public async Task<IActionResult> LogTime(Guid id, [Bind(Prefix = "TimeLogInput")] TicketTimeLogInput input, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
         {
