@@ -54,6 +54,7 @@ This makes the system much better than a basic note app for operational work, be
 - todo tracking with large prompt-sized details
 - ticket tracking with subtickets, notes, time logs, and activity history
 - persistent code-graph scanning for repositories, symbols, imports, and inferred references
+- persistent theme preference with a navbar light/dark mode toggle
 - pinned memories for high-value knowledge
 - tag-based discovery
 - full-text style search flows across stored knowledge
@@ -69,6 +70,16 @@ These screenshots were captured from a live local Focus L-AIci instance. Memory 
 ![Focus L-AIci dashboard wings and pinned memories](images/dashboard-wings-pinned.png)
 
 ![Focus L-AIci dashboard recent memories](images/dashboard-recent-memories.png)
+
+## Feature preview
+
+Recent additions shown below were captured from the current build in dark mode.
+
+![Focus L-AIci dashboard dark mode](images/dashboard-darkmode.png)
+
+![Focus L-AIci tickets board](images/tickets-board.png)
+
+![Focus L-AIci code graph 3D visualizer](images/code-graph-3d-visualizer.png)
 
 ## Technology
 
@@ -90,6 +101,12 @@ That means you can:
 - use the todo list as a real work queue for complex implementation, research, or debugging sessions
 
 This is especially useful when you want a todo to carry the exact context or prompt that should be reused later.
+
+## New: persistent dark mode
+
+Focus L-AIci now includes a navbar theme toggle that switches between light and dark mode and remembers your preference locally.
+
+Dark mode covers the shared layout, cards, forms, ticket board, and code graph surfaces so longer research and implementation sessions are easier on the eyes without creating a separate theme-specific UI.
 
 ## New: engineering ticket board
 

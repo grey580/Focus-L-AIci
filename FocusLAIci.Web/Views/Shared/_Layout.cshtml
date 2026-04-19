@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/FocusLAIci.Web.styles.css" asp-append-version="true" />
 </head>
-<body>
+<body data-theme="light">
     @{
         var currentController = ViewContext.RouteData.Values["controller"]?.ToString();
         var currentAction = ViewContext.RouteData.Values["action"]?.ToString();
@@ -57,7 +57,27 @@
                             <a class="nav-link @settingsActive" asp-area="" asp-controller="Admin" asp-action="Settings">Settings</a>
                         </li>
                     </ul>
-                    <a class="btn btn-sm btn-primary ms-lg-3" asp-area="" asp-controller="Palace" asp-action="NewMemory">Add Memory</a>
+                    <div class="nav-header-actions ms-lg-3">
+                        <button type="button"
+                                id="themeToggleButton"
+                                class="btn btn-sm btn-outline-light theme-toggle"
+                                aria-label="Enable dark mode"
+                                aria-pressed="false"
+                                title="Enable dark mode">
+                            <span class="theme-toggle-icon theme-toggle-icon-moon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M20.2 15.6A8.9 8.9 0 0 1 8.4 3.8a.75.75 0 0 0-.93-.93A10.5 10.5 0 1 0 21.13 16.53a.75.75 0 0 0-.93-.93Z" fill="currentColor" />
+                                </svg>
+                            </span>
+                            <span class="theme-toggle-icon theme-toggle-icon-sun" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M12 17.25A5.25 5.25 0 1 0 12 6.75a5.25 5.25 0 0 0 0 10.5Zm0-14.5a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V3.5a.75.75 0 0 1 .75-.75Zm0 15.5a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V19a.75.75 0 0 1 .75-.75Zm9.25-6.25a.75.75 0 0 1-.75.75H19a.75.75 0 0 1 0-1.5h1.5a.75.75 0 0 1 .75.75Zm-15.5 0a.75.75 0 0 1-.75.75H3.5a.75.75 0 0 1 0-1.5H5a.75.75 0 0 1 .75.75Zm11.02-5.27a.75.75 0 0 1 1.06 0l1.06 1.06a.75.75 0 1 1-1.06 1.06l-1.06-1.06a.75.75 0 0 1 0-1.06Zm-11.66 11.66a.75.75 0 0 1 1.06 0l1.06 1.06a.75.75 0 1 1-1.06 1.06L5.11 19.45a.75.75 0 0 1 0-1.06Zm12.72 1.06a.75.75 0 0 1 0 1.06l-1.06 1.06a.75.75 0 1 1-1.06-1.06l1.06-1.06a.75.75 0 0 1 1.06 0ZM6.17 6.73a.75.75 0 0 1 0 1.06L5.11 8.85A.75.75 0 1 1 4.05 7.8l1.06-1.06a.75.75 0 0 1 1.06 0Z" fill="currentColor" />
+                                </svg>
+                            </span>
+                            <span class="visually-hidden">Toggle theme</span>
+                        </button>
+                        <a class="btn btn-sm btn-primary" asp-area="" asp-controller="Palace" asp-action="NewMemory">Add Memory</a>
+                    </div>
                 </div>
             </div>
         </nav>
