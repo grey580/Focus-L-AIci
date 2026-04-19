@@ -105,6 +105,73 @@ public static class MemorySeeder
             cancellationToken);
         await dbContext.Database.ExecuteSqlRawAsync(
             """
+            CREATE TABLE IF NOT EXISTS CodeGraphProjects (
+                Id TEXT NOT NULL CONSTRAINT PK_CodeGraphProjects PRIMARY KEY,
+                Name TEXT NOT NULL,
+                RootPath TEXT NOT NULL,
+                Description TEXT NOT NULL,
+                Summary TEXT NOT NULL,
+                FileCount INTEGER NOT NULL DEFAULT 0,
+                SymbolCount INTEGER NOT NULL DEFAULT 0,
+                RelationshipCount INTEGER NOT NULL DEFAULT 0,
+                CreatedUtc TEXT NOT NULL,
+                UpdatedUtc TEXT NOT NULL,
+                LastScannedUtc TEXT NULL
+            );
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS CodeGraphFiles (
+                Id TEXT NOT NULL CONSTRAINT PK_CodeGraphFiles PRIMARY KEY,
+                ProjectId TEXT NOT NULL,
+                RelativePath TEXT NOT NULL,
+                Language TEXT NOT NULL,
+                ContentHash TEXT NOT NULL,
+                LineCount INTEGER NOT NULL,
+                ScannedUtc TEXT NOT NULL,
+                CONSTRAINT FK_CodeGraphFiles_CodeGraphProjects_ProjectId FOREIGN KEY (ProjectId) REFERENCES CodeGraphProjects (Id) ON DELETE CASCADE
+            );
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS CodeGraphNodes (
+                Id TEXT NOT NULL CONSTRAINT PK_CodeGraphNodes PRIMARY KEY,
+                ProjectId TEXT NOT NULL,
+                FileId TEXT NULL,
+                NodeKey TEXT NOT NULL,
+                Label TEXT NOT NULL,
+                SecondaryLabel TEXT NOT NULL,
+                NodeType INTEGER NOT NULL,
+                Language TEXT NOT NULL,
+                StartLine INTEGER NOT NULL,
+                EndLine INTEGER NOT NULL,
+                Metadata TEXT NOT NULL,
+                CONSTRAINT FK_CodeGraphNodes_CodeGraphProjects_ProjectId FOREIGN KEY (ProjectId) REFERENCES CodeGraphProjects (Id) ON DELETE CASCADE,
+                CONSTRAINT FK_CodeGraphNodes_CodeGraphFiles_FileId FOREIGN KEY (FileId) REFERENCES CodeGraphFiles (Id) ON DELETE SET NULL
+            );
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS CodeGraphEdges (
+                Id TEXT NOT NULL CONSTRAINT PK_CodeGraphEdges PRIMARY KEY,
+                ProjectId TEXT NOT NULL,
+                FromNodeId TEXT NOT NULL,
+                ToNodeId TEXT NOT NULL,
+                RelationshipType TEXT NOT NULL,
+                Evidence INTEGER NOT NULL,
+                ConfidenceScore TEXT NOT NULL,
+                Details TEXT NOT NULL,
+                CONSTRAINT FK_CodeGraphEdges_CodeGraphProjects_ProjectId FOREIGN KEY (ProjectId) REFERENCES CodeGraphProjects (Id) ON DELETE CASCADE,
+                CONSTRAINT FK_CodeGraphEdges_CodeGraphNodes_FromNodeId FOREIGN KEY (FromNodeId) REFERENCES CodeGraphNodes (Id) ON DELETE CASCADE,
+                CONSTRAINT FK_CodeGraphEdges_CodeGraphNodes_ToNodeId FOREIGN KEY (ToNodeId) REFERENCES CodeGraphNodes (Id) ON DELETE RESTRICT
+            );
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
             INSERT OR IGNORE INTO SiteSettings (Id, DisplayName, HomeHeroCopy, TimeZoneId, ShowUtcTimestamps, DefaultMemoryImportance)
             VALUES (1, 'Focus L-AIci', 'A local-first C# memory system for app development: wings, rooms, verbatim notes, searchable context, and an explorer UI for finding past reasoning fast.', 'UTC', 0, 3);
             """,
@@ -164,6 +231,30 @@ public static class MemorySeeder
             """
             CREATE INDEX IF NOT EXISTS IX_TicketTimeLogs_TicketId_LoggedUtc
             ON TicketTimeLogs(TicketId, LoggedUtc DESC);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_CodeGraphFiles_ProjectId_RelativePath
+            ON CodeGraphFiles(ProjectId, RelativePath);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_CodeGraphNodes_ProjectId_NodeKey
+            ON CodeGraphNodes(ProjectId, NodeKey);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_CodeGraphNodes_ProjectId_NodeType_Label
+            ON CodeGraphNodes(ProjectId, NodeType, Label);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_CodeGraphEdges_ProjectId_FromNodeId_ToNodeId_RelationshipType
+            ON CodeGraphEdges(ProjectId, FromNodeId, ToNodeId, RelationshipType);
             """,
             cancellationToken);
     }

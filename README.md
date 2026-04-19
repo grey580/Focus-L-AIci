@@ -53,6 +53,7 @@ This makes the system much better than a basic note app for operational work, be
 - memory creation and editing
 - todo tracking with large prompt-sized details
 - ticket tracking with subtickets, notes, time logs, and activity history
+- persistent code-graph scanning for repositories, symbols, imports, and inferred references
 - pinned memories for high-value knowledge
 - tag-based discovery
 - full-text style search flows across stored knowledge
@@ -104,6 +105,23 @@ Tickets support:
 - completion memories written back into the palace when a ticket is finished
 
 That makes Focus useful as both a durable memory system **and** a lightweight local execution tracker for longer autonomous implementation runs.
+
+## New: repository code graph
+
+Focus L-AIci now includes a dedicated **Code Graph** area inspired by Graphify's repository-mapping workflow, but implemented natively inside the app with C#.
+
+Code Graph supports:
+
+- scanning a local repository path and storing the result in Focus's SQLite database
+- tracking source files, namespaces, types, methods, properties, imports, and external module references
+- surfacing inferred cross-file references when a file mentions a uniquely identifiable symbol from another file
+- reopening the graph later without rescanning the whole repository just to answer structure questions
+- browsing hotspots, relationship edges, tracked files, and a server-rendered graph neighborhood for a selected node
+- exploring a dark 3D structural visualizer with smaller nodes, wider spacing, hover labels, click-to-focus navigation, and a zoom slider for dense repositories
+
+This makes Focus useful not just for preserving human reasoning, but also for preserving a durable map of how a codebase is stitched together.
+
+The intended workflow is to use Code Graph first for orientation and narrowing, then open the exact files that matter once the graph has identified the hotspot, symbol, or relationship worth changing.
 
 ## Quick start
 

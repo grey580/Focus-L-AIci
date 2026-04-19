@@ -1,0 +1,485 @@
+@using System.Text.Json
+@model CodeGraphProjectDetailViewModel
+@{
+    ViewData["Title"] = Model.Project.Name;
+    var svgNodeLookup = Model.Graph.Nodes.ToDictionary(x => x.Id);
+    var sceneJson = JsonSerializer.Serialize(new
+    {
+        nodes = Model.Scene.Nodes.Select(node => new
+        {
+            id = node.Id,
+            label = node.Label,
+            nodeTypeLabel = node.NodeTypeLabel,
+            secondaryLabel = node.SecondaryLabel,
+            colorHex = node.ColorHex,
+            x = node.X,
+            y = node.Y,
+            z = node.Z,
+            radius = node.Radius,
+            isEmphasized = node.IsEmphasized,
+            url = Url.Action("Project", "CodeGraph", new { id = Model.Project.Id, query = Model.Query, selectedNodeId = node.Id })
+        }),
+        edges = Model.Scene.Edges.Select(edge => new
+        {
+            fromNodeId = edge.FromNodeId,
+            toNodeId = edge.ToNodeId,
+            colorHex = edge.ColorHex
+        })
+    });
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Code graph project</p>
+        <h1>@Model.Project.Name</h1>
+        <p class="page-copy">@Model.Project.RootPath</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-primary" asp-action="Index">All graphs</a>
+        <form asp-action="Rescan" method="post">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="id" value="@Model.Project.Id" />
+            <button type="submit" class="btn btn-primary">Rescan repository</button>
+        </form>
+    </div>
+</section>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+@if (TempData["ErrorMessage"] is string errorMessage)
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+
+<div class="code-graph-stat-grid mb-4">
+    @foreach (var stat in Model.Stats)
+    {
+        <article class="todo-summary-card">
+            <span>@stat.Value</span>
+            <small>@stat.Label</small>
+            <div class="text-secondary mt-2">@stat.HelpText</div>
+        </article>
+    }
+</div>
+
+<section class="card shadow-sm border-0 mb-4">
+    <div class="card-body code-graph-3d-card-body">
+        <div class="section-heading mb-3">
+            <div>
+                <h2>@Model.Scene.Heading</h2>
+                <p class="page-copy mb-0">@Model.Scene.Summary</p>
+            </div>
+        </div>
+
+        <div class="code-graph-3d-toolbar">
+            <label class="code-graph-3d-zoom-control" for="codeGraph3dZoom">
+                <span>Zoom</span>
+                <input id="codeGraph3dZoom" type="range" min="70" max="170" value="100" step="5" aria-label="Zoom code graph" />
+                <strong id="codeGraph3dZoomValue">100%</strong>
+            </label>
+            <span class="code-graph-3d-toolbar-copy">Smaller nodes and wider spacing reduce overlap. Move the slider to zoom the scene.</span>
+        </div>
+
+        <div class="code-graph-3d-shell">
+            <canvas id="codeGraph3dCanvas" class="code-graph-3d-canvas" aria-label="Three-dimensional code graph for @Model.Project.Name"></canvas>
+            <div id="codeGraph3dOverlay" class="code-graph-3d-overlay">
+                <strong>@(Model.Scene.Nodes.FirstOrDefault(node => node.IsEmphasized)?.Label ?? Model.Project.Name)</strong>
+                <span>Rotate the graph by moving your pointer, use zoom to inspect clusters, and click a node to focus its neighborhood.</span>
+            </div>
+            <div class="code-graph-3d-legend">
+                @foreach (var item in Model.Scene.Legend)
+                {
+                    <span class="code-graph-3d-legend-item">
+                        <span class="code-graph-3d-legend-swatch" style="background-color: @item.ColorHex;"></span>
+                        @item.Label
+                    </span>
+                }
+            </div>
+        </div>
+    </div>
+</section>
+
+<div class="row g-4">
+    <div class="col-xl-8">
+        <section class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Graph neighborhood</h2>
+                </div>
+
+                <form asp-action="Project" method="get" class="row g-3 mb-3">
+                    <input type="hidden" name="id" value="@Model.Project.Id" />
+                    <div class="col-md-8">
+                        <label for="query" class="form-label">Filter nodes</label>
+                        <input id="query" name="query" value="@Model.Query" class="form-control" placeholder="Search by file, symbol, namespace, or module" />
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end gap-2">
+                        <button type="submit" class="btn btn-outline-primary">Apply</button>
+                        <a class="btn btn-link" asp-action="Project" asp-route-id="@Model.Project.Id">Reset</a>
+                    </div>
+                </form>
+
+                @if (!string.IsNullOrWhiteSpace(Model.Graph.EmptyMessage))
+                {
+                    <div class="empty-state">
+                        <h3>No graph neighborhood</h3>
+                        <p>@Model.Graph.EmptyMessage</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="code-graph-selected-copy">
+                        <strong>@Model.Graph.SelectedNodeLabel</strong>
+                        <span>@Model.Graph.SelectedNodeTypeLabel</span>
+                        <span>@Model.Graph.SelectedNodeDetails</span>
+                    </div>
+
+                    <svg viewBox="0 0 640 380" class="code-graph-svg" role="img" aria-label="Code graph for @Model.Project.Name">
+                        @foreach (var edge in Model.Graph.Edges)
+                        {
+                            var from = svgNodeLookup[edge.FromNodeId];
+                            var to = svgNodeLookup[edge.ToNodeId];
+                            <svg:line class="@edge.CssClass" x1="@from.X" y1="@from.Y" x2="@to.X" y2="@to.Y"></svg:line>
+                            <svg:text x="@((from.X + to.X) / 2)" y="@((from.Y + to.Y) / 2 - 8)" class="code-graph-edge-label">@edge.RelationshipType</svg:text>
+                        }
+
+                        @foreach (var node in Model.Graph.Nodes)
+                        {
+                            var nodeUrl = Url.Action("Project", "CodeGraph", new { id = Model.Project.Id, query = Model.Query, selectedNodeId = node.Id });
+                            <a href="@nodeUrl">
+                                <svg:circle class="@node.CssClass" cx="@node.X" cy="@node.Y" r="@node.Radius"></svg:circle>
+                                <svg:text x="@node.X" y="@(node.Y - 4)" class="code-graph-node-label">@node.Label</svg:text>
+                                <svg:text x="@node.X" y="@(node.Y + 13)" class="code-graph-node-kind">@node.NodeTypeLabel</svg:text>
+                            </a>
+                        }
+                    </svg>
+                }
+            </div>
+        </section>
+
+        <section class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Relationships</h2>
+                </div>
+
+                @if (Model.Relationships.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No relationships surfaced</h3>
+                        <p>Rescan the repository or broaden your filter to show more graph edges.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>From</th>
+                                    <th>Relationship</th>
+                                    <th>To</th>
+                                    <th>Evidence</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var edge in Model.Relationships)
+                                {
+                                    <tr>
+                                        <td>@edge.FromLabel</td>
+                                        <td><span class="tag-pill">@edge.RelationshipType</span></td>
+                                        <td>@edge.ToLabel</td>
+                                        <td>@edge.EvidenceLabel (@edge.ConfidenceScore.ToString("0.00"))</td>
+                                        <td>@edge.Details</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+
+    <div class="col-xl-4">
+        <section class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Hotspots</h2>
+                </div>
+                @if (Model.Hotspots.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No hotspots yet</h3>
+                        <p>Once the repository has symbols and edges, Focus ranks the most connected nodes here.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="code-graph-side-list">
+                        @foreach (var node in Model.Hotspots)
+                        {
+                            <a class="code-graph-side-item" asp-action="Project" asp-route-id="@Model.Project.Id" asp-route-query="@Model.Query" asp-route-selectedNodeId="@node.Id">
+                                <strong>@node.Label</strong>
+                                <span>@node.NodeTypeLabel • degree @node.Degree</span>
+                                @if (!string.IsNullOrWhiteSpace(node.SecondaryLabel))
+                                {
+                                    <small>@node.SecondaryLabel</small>
+                                }
+                            </a>
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Tracked files</h2>
+                </div>
+
+                @if (Model.Files.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No files yet</h3>
+                        <p>The repository scan did not detect any supported source files.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="code-graph-side-list">
+                        @foreach (var file in Model.Files.Take(20))
+                        {
+                            <div class="code-graph-side-item code-graph-side-item-static">
+                                <strong>@file.RelativePath</strong>
+                                <span>@file.Language • @file.LineCount lines</span>
+                                <small>@file.NodeCount tracked nodes</small>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+<section class="card shadow-sm border-0 mt-4">
+    <div class="card-body">
+        <div class="section-heading">
+            <h2>Nodes</h2>
+        </div>
+
+        @if (Model.Nodes.Count == 0)
+        {
+            <div class="empty-state compact-empty-state">
+                <h3>No matching nodes</h3>
+                <p>Try a broader filter or rescan after the repository changes.</p>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Node</th>
+                            <th>Type</th>
+                            <th>Language</th>
+                            <th>Line</th>
+                            <th>Degree</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var node in Model.Nodes)
+                        {
+                            <tr>
+                                <td>
+                                    <a asp-action="Project" asp-route-id="@Model.Project.Id" asp-route-query="@Model.Query" asp-route-selectedNodeId="@node.Id">@node.Label</a>
+                                    @if (!string.IsNullOrWhiteSpace(node.SecondaryLabel))
+                                    {
+                                        <div class="text-secondary small">@node.SecondaryLabel</div>
+                                    }
+                                </td>
+                                <td>@node.NodeTypeLabel</td>
+                                <td>@node.Language</td>
+                                <td>@(node.StartLine == 0 ? "—" : node.StartLine)</td>
+                                <td>@node.Degree</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</section>
+
+@section Scripts {
+    <script>
+        (() => {
+            const data = @Html.Raw(sceneJson);
+            const canvas = document.getElementById('codeGraph3dCanvas');
+            const overlay = document.getElementById('codeGraph3dOverlay');
+            const zoomInput = document.getElementById('codeGraph3dZoom');
+            const zoomValue = document.getElementById('codeGraph3dZoomValue');
+            if (!canvas || !data?.nodes?.length) {
+                return;
+            }
+
+            const context = canvas.getContext('2d');
+            const shell = canvas.parentElement;
+            const nodeById = new Map(data.nodes.map(node => [node.id, node]));
+            let hoveredNode = null;
+            let projectedNodes = [];
+            let targetRotationX = -0.22;
+            let targetRotationY = 0.52;
+            let rotationX = targetRotationX;
+            let rotationY = targetRotationY;
+            let zoomLevel = Number(zoomInput?.value || 100) / 100;
+            let animationFrameId = 0;
+
+            function resizeCanvas() {
+                const bounds = canvas.getBoundingClientRect();
+                const ratio = window.devicePixelRatio || 1;
+                canvas.width = Math.max(1, Math.round(bounds.width * ratio));
+                canvas.height = Math.max(1, Math.round(bounds.height * ratio));
+                context.setTransform(ratio, 0, 0, ratio, 0, 0);
+            }
+
+            function rotateNode(node) {
+                const cosY = Math.cos(rotationY);
+                const sinY = Math.sin(rotationY);
+                const cosX = Math.cos(rotationX);
+                const sinX = Math.sin(rotationX);
+
+                const xzX = (node.x * cosY) - (node.z * sinY);
+                const xzZ = (node.x * sinY) + (node.z * cosY);
+                const yzY = (node.y * cosX) - (xzZ * sinX);
+                const yzZ = (node.y * sinX) + (xzZ * cosX);
+                const depth = yzZ + 520;
+                const scale = (240 * zoomLevel) / Math.max(260, depth);
+
+                return {
+                    ...node,
+                    screenX: (canvas.clientWidth / 2) + (xzX * scale),
+                    screenY: (canvas.clientHeight / 2) + (yzY * scale),
+                    screenRadius: Math.max(2.4, node.radius * scale * 0.78),
+                    depth,
+                    scale
+                };
+            }
+
+            function drawScene() {
+                rotationX += (targetRotationX - rotationX) * 0.06;
+                rotationY += ((targetRotationY + 0.0025) - rotationY) * 0.06;
+
+                context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+                projectedNodes = data.nodes.map(rotateNode).sort((left, right) => left.depth - right.depth);
+
+                const projectedById = new Map(projectedNodes.map(node => [node.id, node]));
+
+                context.lineWidth = 0.95;
+                data.edges.forEach(edge => {
+                    const from = projectedById.get(edge.fromNodeId);
+                    const to = projectedById.get(edge.toNodeId);
+                    if (!from || !to) {
+                        return;
+                    }
+
+                    const alpha = Math.max(0.08, Math.min(0.28, ((from.scale + to.scale) / 2) * 0.68));
+                    context.strokeStyle = `${edge.colorHex}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`;
+                    context.beginPath();
+                    context.moveTo(from.screenX, from.screenY);
+                    context.lineTo(to.screenX, to.screenY);
+                    context.stroke();
+                });
+
+                projectedNodes.forEach(node => {
+                    context.beginPath();
+                    context.fillStyle = node.colorHex;
+                    context.shadowBlur = node.id === hoveredNode?.id ? 14 : 8;
+                    context.shadowColor = node.colorHex;
+                    context.arc(node.screenX, node.screenY, node.screenRadius, 0, Math.PI * 2);
+                    context.fill();
+                    context.shadowBlur = 0;
+
+                    if ((node.isEmphasized && node.scale >= 0.5) || node.id === hoveredNode?.id) {
+                        context.fillStyle = '#E5EEF9';
+                        context.font = `600 ${Math.max(11, 10 + (node.scale * 4))}px Segoe UI`;
+                        context.textAlign = 'center';
+                        context.fillText(node.label, node.screenX, node.screenY - node.screenRadius - 8);
+                    }
+                });
+
+                animationFrameId = window.requestAnimationFrame(drawScene);
+            }
+
+            function setHoveredNode(clientX, clientY) {
+                const bounds = canvas.getBoundingClientRect();
+                const localX = clientX - bounds.left;
+                const localY = clientY - bounds.top;
+                hoveredNode = projectedNodes
+                    .slice()
+                    .reverse()
+                    .find(node => Math.hypot(node.screenX - localX, node.screenY - localY) <= Math.max(10, node.screenRadius + 4))
+                    || null;
+
+                if (hoveredNode) {
+                    overlay.innerHTML = `<strong>${hoveredNode.label}</strong><span>${hoveredNode.nodeTypeLabel} • ${hoveredNode.secondaryLabel || 'Focused graph node'}</span>`;
+                    canvas.style.cursor = 'pointer';
+                } else {
+                    overlay.innerHTML = `<strong>@(Model.Scene.Nodes.FirstOrDefault(node => node.IsEmphasized)?.Label ?? Model.Project.Name)</strong><span>Rotate the graph by moving your pointer, use zoom to inspect clusters, and click a node to focus its neighborhood.</span>`;
+                    canvas.style.cursor = 'default';
+                }
+            }
+
+            resizeCanvas();
+            animationFrameId = window.requestAnimationFrame(drawScene);
+
+            window.addEventListener('resize', resizeCanvas);
+
+            zoomInput?.addEventListener('input', () => {
+                zoomLevel = Number(zoomInput.value) / 100;
+                if (zoomValue) {
+                    zoomValue.textContent = `${Math.round(zoomLevel * 100)}%`;
+                }
+            });
+
+            shell?.addEventListener('mousemove', event => {
+                const bounds = canvas.getBoundingClientRect();
+                const relativeX = (event.clientX - bounds.left) / Math.max(1, bounds.width);
+                const relativeY = (event.clientY - bounds.top) / Math.max(1, bounds.height);
+                targetRotationY = ((relativeX - 0.5) * 1.55) + 0.4;
+                targetRotationX = ((relativeY - 0.5) * 0.9) - 0.18;
+                setHoveredNode(event.clientX, event.clientY);
+            });
+
+            shell?.addEventListener('mouseleave', () => {
+                hoveredNode = null;
+                targetRotationX = -0.22;
+                targetRotationY = 0.52;
+                overlay.innerHTML = `<strong>@(Model.Scene.Nodes.FirstOrDefault(node => node.IsEmphasized)?.Label ?? Model.Project.Name)</strong><span>Rotate the graph by moving your pointer, use zoom to inspect clusters, and click a node to focus its neighborhood.</span>`;
+                canvas.style.cursor = 'default';
+            });
+
+            canvas.addEventListener('click', () => {
+                if (hoveredNode?.url) {
+                    window.location.href = hoveredNode.url;
+                }
+            });
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden && animationFrameId) {
+                    window.cancelAnimationFrame(animationFrameId);
+                    animationFrameId = 0;
+                } else if (!document.hidden && !animationFrameId) {
+                    animationFrameId = window.requestAnimationFrame(drawScene);
+                }
+            });
+        })();
+    </script>
+}

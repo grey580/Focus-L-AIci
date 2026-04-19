@@ -20,6 +20,7 @@ builder.Services.AddDbContext<FocusMemoryContext>((serviceProvider, options) =>
 builder.Services.AddScoped<PalaceService>();
 builder.Services.AddScoped<TicketingService>();
 builder.Services.AddScoped<SiteSettingsService>();
+builder.Services.AddScoped<CodeGraphService>();
 
 var app = builder.Build();
 

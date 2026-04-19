@@ -1,0 +1,108 @@
+@model CodeGraphBoardViewModel
+@{
+    ViewData["Title"] = "Code Graph";
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Code knowledge graph</p>
+        <h1>Track code structure without leaving Focus</h1>
+        <p class="page-copy">Graphify-inspired, but native to Focus: scan a repository, persist files, symbols, and relationships, then reopen the graph later without re-reading the whole codebase.</p>
+    </div>
+</section>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+@if (TempData["ErrorMessage"] is string errorMessage)
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+
+<div class="code-graph-board">
+    <section class="card shadow-sm border-0">
+        <div class="card-body">
+            <div class="section-heading">
+                <h2>Create a code graph</h2>
+            </div>
+            <form asp-action="Index" method="post" class="row g-3">
+                @Html.AntiForgeryToken()
+                <div asp-validation-summary="ModelOnly" class="alert alert-danger mb-0"></div>
+                <div class="col-md-4">
+                    <label asp-for="Input.Name" class="form-label"></label>
+                    <input asp-for="Input.Name" class="form-control" placeholder="Grey Canary" />
+                    <span asp-validation-for="Input.Name" class="text-danger small"></span>
+                </div>
+                <div class="col-md-8">
+                    <label asp-for="Input.RootPath" class="form-label"></label>
+                    <input asp-for="Input.RootPath" class="form-control" placeholder="C:\Copilot\Grey Canary" />
+                    <span asp-validation-for="Input.RootPath" class="text-danger small"></span>
+                </div>
+                <div class="col-12">
+                    <label asp-for="Input.Description" class="form-label"></label>
+                    <textarea asp-for="Input.Description" class="form-control" rows="3" placeholder="What this repository is for, or what you want the graph to help answer."></textarea>
+                    <span asp-validation-for="Input.Description" class="text-danger small"></span>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary">Create and scan</button>
+                </div>
+            </form>
+        </div>
+    </section>
+
+    <section class="card shadow-sm border-0">
+        <div class="card-body">
+            <div class="section-heading">
+                <h2>Saved code graphs</h2>
+            </div>
+
+            @if (Model.Projects.Count == 0)
+            {
+                <div class="empty-state">
+                    <h3>No code graphs yet</h3>
+                    <p>Create your first scan to track repository structure, symbol hotspots, and cross-file relationships in Focus.</p>
+                </div>
+            }
+            else
+            {
+                <div class="code-graph-project-list">
+                    @foreach (var project in Model.Projects)
+                    {
+                        <article class="code-graph-project-card">
+                            <div class="section-heading mb-2">
+                                <div>
+                                    <h3 class="mb-1"><a asp-action="Project" asp-route-id="@project.Id">@project.Name</a></h3>
+                                    <div class="memory-meta">@project.RootPath</div>
+                                </div>
+                                <a class="btn btn-sm btn-outline-primary" asp-action="Project" asp-route-id="@project.Id">Open</a>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(project.Description))
+                            {
+                                <p class="memory-summary">@project.Description</p>
+                            }
+
+                            <p class="text-secondary mb-3">@project.Summary</p>
+
+                            <div class="code-graph-project-metrics">
+                                <div><strong>@project.FileCount</strong><span>files</span></div>
+                                <div><strong>@project.SymbolCount</strong><span>symbols</span></div>
+                                <div><strong>@project.RelationshipCount</strong><span>edges</span></div>
+                            </div>
+
+                            <div class="memory-meta mt-3">
+                                Last scanned @(project.LastScannedUtc?.ToLocalTime().ToString("g") ?? "not yet")
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+</div>
+
+@section Scripts {
+    @await Html.PartialAsync("_ValidationScriptsPartial")
+}

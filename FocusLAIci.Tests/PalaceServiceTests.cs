@@ -536,6 +536,79 @@ public sealed class PalaceServiceTests
         }
     }
 
+    [Fact]
+    public async Task CodeGraphService_ScansRepositoryAndPersistsRelationships()
+    {
+        var repositoryRoot = CreateCodeGraphFixture();
+
+        try
+        {
+            await using var harness = await TestHarness.CreateAsync();
+            await using var serviceContext = harness.CreateDbContext();
+            var service = new CodeGraphService(serviceContext);
+
+            var projectId = await service.CreateProjectAsync(new CodeGraphProjectInput
+            {
+                Name = "Code Graph Fixture",
+                RootPath = repositoryRoot,
+                Description = "Fixture for code graph scanning."
+            }, CancellationToken.None);
+
+            await using var verifyContext = harness.CreateDbContext();
+            var project = await verifyContext.CodeGraphProjects.SingleAsync(x => x.Id == projectId);
+            var nodes = await verifyContext.CodeGraphNodes.Where(x => x.ProjectId == projectId).ToListAsync();
+            var edges = await verifyContext.CodeGraphEdges.Where(x => x.ProjectId == projectId).ToListAsync();
+
+            Assert.Equal(2, project.FileCount);
+            Assert.True(project.SymbolCount >= 4);
+            Assert.True(project.RelationshipCount >= 6);
+            Assert.Contains(nodes, node => node.Label == "AlphaService" && node.NodeType == CodeGraphNodeType.Type);
+            Assert.Contains(nodes, node => node.Label == "Execute" && node.NodeType == CodeGraphNodeType.Method);
+            Assert.Contains(edges, edge => edge.RelationshipType == "imports");
+            Assert.Contains(edges, edge => edge.RelationshipType == "contains");
+            Assert.Contains(edges, edge => edge.RelationshipType == "references");
+        }
+        finally
+        {
+            TryDeleteDirectory(repositoryRoot);
+        }
+    }
+
+    [Fact]
+    public async Task CodeGraphService_ProjectDetailsBuildSelectedNeighborhood()
+    {
+        var repositoryRoot = CreateCodeGraphFixture();
+
+        try
+        {
+            await using var harness = await TestHarness.CreateAsync();
+            await using var serviceContext = harness.CreateDbContext();
+            var service = new CodeGraphService(serviceContext);
+
+            var projectId = await service.CreateProjectAsync(new CodeGraphProjectInput
+            {
+                Name = "Code Graph Fixture",
+                RootPath = repositoryRoot
+            }, CancellationToken.None);
+
+            var detail = await service.GetProjectAsync(projectId, "AlphaService", null, CancellationToken.None);
+
+            Assert.NotNull(detail);
+            Assert.Equal("AlphaService", detail!.Graph.SelectedNodeLabel);
+            Assert.NotEmpty(detail.Graph.Nodes);
+            Assert.NotEmpty(detail.Relationships);
+            Assert.Contains(detail.Hotspots, item => item.Label == "AlphaService");
+            Assert.NotEmpty(detail.Scene.Nodes);
+            Assert.NotEmpty(detail.Scene.Edges);
+            Assert.Contains(detail.Scene.Legend, item => item.Label == nameof(CodeGraphNodeType.Type));
+            Assert.All(detail.Scene.Nodes, node => Assert.InRange(node.Radius, 1d, 18d));
+        }
+        finally
+        {
+            TryDeleteDirectory(repositoryRoot);
+        }
+    }
+
     private sealed class TestHarness : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;
@@ -602,6 +675,48 @@ public sealed class PalaceServiceTests
         public string ApplicationName { get; set; } = "FocusLAIci.Tests";
         public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
         public IFileProvider ContentRootFileProvider { get; set; } = new PhysicalFileProvider(AppContext.BaseDirectory);
+    }
+
+    private static string CreateCodeGraphFixture()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"focus-code-graph-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+
+        File.WriteAllText(
+            Path.Combine(root, "AlphaService.cs"),
+            """
+            namespace Demo.Core;
+
+            public class AlphaService
+            {
+                public string Render()
+                {
+                    return "ok";
+                }
+
+                public int Count { get; set; }
+            }
+            """);
+
+        File.WriteAllText(
+            Path.Combine(root, "BetaRunner.cs"),
+            """
+            using Demo.Core;
+
+            namespace Demo.App;
+
+            public class BetaRunner
+            {
+                private readonly AlphaService _alpha = new();
+
+                public void Execute()
+                {
+                    _alpha.Render();
+                }
+            }
+            """);
+
+        return root;
     }
 
     private static void TryDeleteDirectory(string path)

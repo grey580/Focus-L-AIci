@@ -22,6 +22,10 @@ public sealed class FocusMemoryContext : DbContext
     public DbSet<MemoryEntry> Memories => Set<MemoryEntry>();
     public DbSet<MemoryEntryTag> MemoryTags => Set<MemoryEntryTag>();
     public DbSet<MemoryLink> MemoryLinks => Set<MemoryLink>();
+    public DbSet<CodeGraphProject> CodeGraphProjects => Set<CodeGraphProject>();
+    public DbSet<CodeGraphFile> CodeGraphFiles => Set<CodeGraphFile>();
+    public DbSet<CodeGraphNode> CodeGraphNodes => Set<CodeGraphNode>();
+    public DbSet<CodeGraphEdge> CodeGraphEdges => Set<CodeGraphEdge>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -162,6 +166,65 @@ public sealed class FocusMemoryContext : DbContext
             entity.HasOne(x => x.ToMemoryEntry)
                 .WithMany(x => x.IncomingLinks)
                 .HasForeignKey(x => x.ToMemoryEntryId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<CodeGraphProject>(entity =>
+        {
+            entity.Property(x => x.Name).HasMaxLength(160);
+            entity.Property(x => x.RootPath).HasMaxLength(400);
+            entity.Property(x => x.Description).HasMaxLength(500);
+            entity.Property(x => x.Summary).HasColumnType("TEXT");
+        });
+
+        builder.Entity<CodeGraphFile>(entity =>
+        {
+            entity.HasIndex(x => new { x.ProjectId, x.RelativePath }).IsUnique();
+            entity.Property(x => x.RelativePath).HasMaxLength(320);
+            entity.Property(x => x.Language).HasMaxLength(40);
+            entity.Property(x => x.ContentHash).HasMaxLength(128);
+            entity.HasOne(x => x.Project)
+                .WithMany(x => x.Files)
+                .HasForeignKey(x => x.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<CodeGraphNode>(entity =>
+        {
+            entity.HasIndex(x => new { x.ProjectId, x.NodeKey }).IsUnique();
+            entity.HasIndex(x => new { x.ProjectId, x.NodeType, x.Label });
+            entity.Property(x => x.NodeKey).HasMaxLength(400);
+            entity.Property(x => x.Label).HasMaxLength(180);
+            entity.Property(x => x.SecondaryLabel).HasMaxLength(240);
+            entity.Property(x => x.Language).HasMaxLength(40);
+            entity.Property(x => x.Metadata).HasColumnType("TEXT");
+            entity.HasOne(x => x.Project)
+                .WithMany(x => x.Nodes)
+                .HasForeignKey(x => x.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.File)
+                .WithMany(x => x.Nodes)
+                .HasForeignKey(x => x.FileId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<CodeGraphEdge>(entity =>
+        {
+            entity.HasIndex(x => new { x.ProjectId, x.FromNodeId, x.ToNodeId, x.RelationshipType });
+            entity.Property(x => x.RelationshipType).HasMaxLength(40);
+            entity.Property(x => x.ConfidenceScore).HasPrecision(5, 2);
+            entity.Property(x => x.Details).HasMaxLength(400);
+            entity.HasOne(x => x.Project)
+                .WithMany(x => x.Edges)
+                .HasForeignKey(x => x.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.FromNode)
+                .WithMany(x => x.OutgoingEdges)
+                .HasForeignKey(x => x.FromNodeId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.ToNode)
+                .WithMany(x => x.IncomingEdges)
+                .HasForeignKey(x => x.ToNodeId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }

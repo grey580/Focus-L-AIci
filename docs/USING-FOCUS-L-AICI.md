@@ -89,6 +89,19 @@ When creating a memory:
 2. Open pinned memories and recent related entries.
 3. Review linked memories if the issue spans multiple areas.
 
+### Use Code Graph before raw code search
+
+When you are about to change a codebase, start with **Code Graph** instead of opening files blindly.
+
+Recommended pattern:
+
+1. Open the repository's Code Graph project.
+2. Use hotspots, the node filter, and relationship edges to narrow the likely files and symbols.
+3. Use the 3D visualizer to see structural clusters quickly. Hover nodes for labels, click a node to focus its neighborhood, and use the zoom slider when dense areas overlap.
+4. Only after that, open the exact files that the graph has surfaced.
+
+This keeps repository orientation fast and reduces repeated broad searching through unrelated files.
+
 ### Use todos for working prompts
 
 Focus L-AIci's todo details field supports **large prompt-sized content**.
