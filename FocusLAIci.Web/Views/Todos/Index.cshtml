@@ -28,7 +28,41 @@
 }
 
 <div class="row g-4 mb-4">
-    <div class="col-lg-8">
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Add todo</h2>
+                    <span class="text-secondary small">Capture the next step before switching gears.</span>
+                </div>
+                <form asp-action="Create" method="post" class="todo-form">
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+                    <div class="row g-3">
+                        <div class="col-lg-8">
+                            <label asp-for="Input.Title" class="form-label"></label>
+                            <input asp-for="Input.Title" class="form-control" />
+                            <span asp-validation-for="Input.Title" class="text-danger"></span>
+                        </div>
+                        <div class="col-lg-4">
+                            <label asp-for="Input.Status" class="form-label"></label>
+                            <select asp-for="Input.Status" class="form-select" asp-items="Html.GetEnumSelectList<TodoStatus>()"></select>
+                            <span asp-validation-for="Input.Status" class="text-danger"></span>
+                        </div>
+                        <div class="col-12">
+                            <label asp-for="Input.Details" class="form-label"></label>
+                            <textarea asp-for="Input.Details" class="form-control memory-editor todo-details-editor" rows="12" placeholder="Paste the full prompt, implementation notes, or handoff context here."></textarea>
+                            <div class="form-text">Large prompts are supported here, so keep the full working context when it matters.</div>
+                            <span asp-validation-for="Input.Details" class="text-danger"></span>
+                        </div>
+                        <div class="col-lg-3 ms-lg-auto">
+                            <button type="submit" class="btn btn-primary w-100">Add Todo</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-12">
         <div class="card shadow-sm border-0">
             <div class="card-body">
                 <div class="section-heading">
@@ -108,36 +142,6 @@
                         }
                     </section>
                 </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-4">
-        <div class="card shadow-sm border-0">
-            <div class="card-body">
-                <div class="section-heading">
-                    <h2>Add todo</h2>
-                    <span class="text-secondary small">Capture the next step before switching gears.</span>
-                </div>
-                <form asp-action="Create" method="post" class="todo-form">
-                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
-                    <div class="mb-3">
-                        <label asp-for="Input.Title" class="form-label"></label>
-                        <input asp-for="Input.Title" class="form-control" />
-                        <span asp-validation-for="Input.Title" class="text-danger"></span>
-                    </div>
-                    <div class="mb-3">
-                        <label asp-for="Input.Details" class="form-label"></label>
-                        <textarea asp-for="Input.Details" class="form-control memory-editor todo-details-editor" rows="14" placeholder="Paste the full prompt, implementation notes, or handoff context here."></textarea>
-                        <div class="form-text">Large prompts are supported here, so keep the full working context when it matters.</div>
-                        <span asp-validation-for="Input.Details" class="text-danger"></span>
-                    </div>
-                    <div class="mb-3">
-                        <label asp-for="Input.Status" class="form-label"></label>
-                        <select asp-for="Input.Status" class="form-select" asp-items="Html.GetEnumSelectList<TodoStatus>()"></select>
-                        <span asp-validation-for="Input.Status" class="text-danger"></span>
-                    </div>
-                    <button type="submit" class="btn btn-primary w-100">Add Todo</button>
-                </form>
             </div>
         </div>
     </div>
