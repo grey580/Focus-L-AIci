@@ -12,12 +12,12 @@
     </div>
     <div class="todo-summary">
         <div class="todo-summary-card">
-            <span>@Model.Stats.OpenTicketCount</span>
-            <small>Open</small>
+            <span>@Model.OpenTopLevelTicketCount</span>
+            <small>Open top-level</small>
         </div>
         <div class="todo-summary-card">
-            <span>@Model.Stats.CompletedTicketCount</span>
-            <small>Done</small>
+            <span>@Model.CompletedTopLevelTicketCount</span>
+            <small>Done top-level</small>
         </div>
     </div>
 </section>
@@ -36,7 +36,13 @@
     <div class="card-body">
         <div class="section-heading">
             <h2>Active board</h2>
-            <span class="text-secondary small">Top-level tickets only; subtickets live inside each ticket.</span>
+            <span class="text-secondary small">
+                Top-level tickets only; subtickets live inside each ticket.
+                @if (Model.OpenSubTicketCount > 0)
+                {
+                    <text> There @(Model.OpenSubTicketCount == 1 ? "is" : "are") @Model.OpenSubTicketCount open subticket@(Model.OpenSubTicketCount == 1 ? string.Empty : "s") inside ticket details.</text>
+                }
+            </span>
         </div>
         <div class="ticket-board">
             <section class="todo-column">
@@ -164,7 +170,7 @@
     <div class="card-body">
         <div class="section-heading">
             <h2>Completed tickets</h2>
-            <span class="text-secondary small">@Model.CompletedFilteredCount of @Model.Stats.CompletedTicketCount total</span>
+            <span class="text-secondary small">@Model.CompletedFilteredCount of @Model.CompletedTopLevelTicketCount top-level total</span>
         </div>
         <form asp-action="Index" method="get" class="ticket-filter-bar mb-3">
             <div class="ticket-filter-search">

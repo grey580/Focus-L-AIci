@@ -24,6 +24,9 @@ public sealed class TicketingService
             .Include(x => x.SubTickets)
             .Include(x => x.TimeLogs)
             .ToListAsync(cancellationToken);
+        var openSubTicketCount = await _dbContext.Tickets
+            .AsNoTracking()
+            .CountAsync(x => x.ParentTicketId != null && x.Status != TicketStatus.Completed, cancellationToken);
 
         var normalizedSearch = completedSearch?.Trim() ?? string.Empty;
         var completedQuery = BuildTopLevelTicketQuery(includeCompleted: true)
@@ -31,6 +34,7 @@ public sealed class TicketingService
             .Include(x => x.SubTickets)
             .Include(x => x.TimeLogs)
             .Where(x => x.Status == TicketStatus.Completed);
+        var completedTopLevelTicketCount = await completedQuery.CountAsync(cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(normalizedSearch))
         {
@@ -58,6 +62,9 @@ public sealed class TicketingService
         {
             Stats = await BuildStatsAsync(cancellationToken),
             CreateInput = new TicketEditorInput(),
+            OpenTopLevelTicketCount = activeTickets.Count,
+            CompletedTopLevelTicketCount = completedTopLevelTicketCount,
+            OpenSubTicketCount = openSubTicketCount,
             NewTickets = activeTickets.Where(x => x.Status == TicketStatus.New).Select(MapTicketSummary).ToArray(),
             InProgressTickets = activeTickets.Where(x => x.Status == TicketStatus.InProgress).Select(MapTicketSummary).ToArray(),
             BlockedTickets = activeTickets.Where(x => x.Status == TicketStatus.Blocked).Select(MapTicketSummary).ToArray(),

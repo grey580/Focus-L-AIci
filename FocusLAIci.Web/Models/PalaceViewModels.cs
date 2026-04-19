@@ -139,6 +139,9 @@ public sealed class TicketBoardViewModel
 
     public PalaceStatsViewModel Stats { get; init; } = new();
     public TicketEditorInput CreateInput { get; init; } = new();
+    public int OpenTopLevelTicketCount { get; init; }
+    public int CompletedTopLevelTicketCount { get; init; }
+    public int OpenSubTicketCount { get; init; }
     public IReadOnlyCollection<TicketSummaryViewModel> NewTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
     public IReadOnlyCollection<TicketSummaryViewModel> InProgressTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
     public IReadOnlyCollection<TicketSummaryViewModel> BlockedTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();

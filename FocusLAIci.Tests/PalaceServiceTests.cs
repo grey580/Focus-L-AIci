@@ -449,6 +449,41 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task TicketingService_BoardCountsTopLevelTicketsSeparatelyFromOpenSubtickets()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new TicketingService(serviceContext);
+
+        var parentTicketId = await service.CreateTicketAsync(new TicketEditorInput
+        {
+            Title = "Parent completed ticket",
+            Description = "Parent work is complete.",
+            Status = TicketStatus.Completed,
+            Priority = TicketPriority.Medium,
+            Assignee = "Copilot",
+            TagsText = "focus, tickets"
+        }, CancellationToken.None);
+
+        await service.CreateSubTicketAsync(parentTicketId, new TicketSubTicketInput
+        {
+            Title = "Open child ticket",
+            Description = "Still needs follow-up.",
+            Status = TicketStatus.New
+        }, CancellationToken.None);
+
+        var board = await service.GetBoardAsync(null, 1, CancellationToken.None);
+
+        Assert.Equal(0, board.OpenTopLevelTicketCount);
+        Assert.Equal(1, board.CompletedTopLevelTicketCount);
+        Assert.Equal(1, board.OpenSubTicketCount);
+        Assert.Single(board.CompletedTickets);
+        Assert.Empty(board.NewTickets);
+        Assert.Empty(board.InProgressTickets);
+        Assert.Empty(board.BlockedTickets);
+    }
+
+    [Fact]
     public async Task DatabaseTargetService_SwitchesToCustomDatabaseAndInitializesSchema()
     {
         var contentRoot = Path.Combine(Path.GetTempPath(), $"focus-db-target-{Guid.NewGuid():N}");
