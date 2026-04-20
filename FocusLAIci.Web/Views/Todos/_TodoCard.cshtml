@@ -7,7 +7,7 @@
 <article id="todo-@Model.Id" class="todo-card todo-card-@Model.Status.ToString().ToLowerInvariant()">
     <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
         <div>
-            <h4 class="todo-card-title"><a class="todo-title-link" asp-controller="Todos" asp-action="Details" asp-route-id="@Model.Id">@Model.Title</a></h4>
+            <h4 class="todo-card-title"><a class="todo-title-link" asp-controller="Todos" asp-action="Details" asp-route-id="@Model.Id" data-ajax-target="main[role='main']">@Model.Title</a></h4>
             <span class="todo-status todo-status-@Model.Status.ToString().ToLowerInvariant()">@Model.StatusLabel</span>
         </div>
     </div>
@@ -17,7 +17,7 @@
         <p class="todo-card-details">@Model.PreviewDetails</p>
         @if (Model.HasMoreDetails)
         {
-            <a class="todo-preview-link" asp-controller="Todos" asp-action="Details" asp-route-id="@Model.Id">View full todo</a>
+            <a class="todo-preview-link" asp-controller="Todos" asp-action="Details" asp-route-id="@Model.Id" data-ajax-target="main[role='main']">View full todo</a>
         }
     }
 
@@ -34,10 +34,10 @@
     </dl>
 
     <div class="todo-actions">
-        <a class="btn btn-sm btn-outline-dark" asp-controller="Todos" asp-action="Details" asp-route-id="@Model.Id">Details</a>
+        <a class="btn btn-sm btn-outline-dark" asp-controller="Todos" asp-action="Details" asp-route-id="@Model.Id" data-ajax-target="main[role='main']">Details</a>
         @if (Model.Status != TodoStatus.InProgress)
         {
-            <form asp-controller="Todos" asp-action="UpdateStatus" method="post">
+            <form asp-controller="Todos" asp-action="UpdateStatus" method="post" data-ajax-target="main[role='main']">
                 <input type="hidden" name="id" value="@Model.Id" />
                 <input type="hidden" name="status" value="@TodoStatus.InProgress" />
                 <button type="submit" class="btn btn-sm btn-outline-primary">@((Model.Status == TodoStatus.Done) ? "Reopen" : "Start")</button>
@@ -45,7 +45,7 @@
         }
         @if (Model.Status != TodoStatus.Pending)
         {
-            <form asp-controller="Todos" asp-action="UpdateStatus" method="post">
+            <form asp-controller="Todos" asp-action="UpdateStatus" method="post" data-ajax-target="main[role='main']">
                 <input type="hidden" name="id" value="@Model.Id" />
                 <input type="hidden" name="status" value="@TodoStatus.Pending" />
                 <button type="submit" class="btn btn-sm btn-outline-secondary">Backlog</button>
@@ -53,7 +53,7 @@
         }
         @if (Model.Status != TodoStatus.Blocked)
         {
-            <form asp-controller="Todos" asp-action="UpdateStatus" method="post">
+            <form asp-controller="Todos" asp-action="UpdateStatus" method="post" data-ajax-target="main[role='main']">
                 <input type="hidden" name="id" value="@Model.Id" />
                 <input type="hidden" name="status" value="@TodoStatus.Blocked" />
                 <button type="submit" class="btn btn-sm btn-outline-warning">Block</button>
@@ -61,7 +61,7 @@
         }
         @if (Model.Status != TodoStatus.Done)
         {
-            <form asp-controller="Todos" asp-action="UpdateStatus" method="post">
+            <form asp-controller="Todos" asp-action="UpdateStatus" method="post" data-ajax-target="main[role='main']">
                 <input type="hidden" name="id" value="@Model.Id" />
                 <input type="hidden" name="status" value="@TodoStatus.Done" />
                 <button type="submit" class="btn btn-sm btn-success">Done</button>

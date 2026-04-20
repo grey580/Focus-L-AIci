@@ -5,11 +5,12 @@
     var siteSettings = await SiteSettingsService.GetSettingsAsync();
 }
 
+<div id="focus-main-shell">
 <div class="breadcrumb-bar">
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
             <li class="breadcrumb-item"><a asp-controller="Home" asp-action="Index">Dashboard</a></li>
-            <li class="breadcrumb-item"><a asp-controller="Tickets" asp-action="Index">Tickets</a></li>
+            <li class="breadcrumb-item"><a asp-controller="Tickets" asp-action="Index" data-ajax-target="main[role='main']">Tickets</a></li>
             <li class="breadcrumb-item active" aria-current="page">@Model.Ticket.TicketNumber</li>
         </ol>
     </nav>
@@ -34,7 +35,7 @@
         {
             <div class="text-secondary small mt-2">
                 Parent ticket:
-                <a asp-controller="Tickets" asp-action="Details" asp-route-id="@Model.Ticket.ParentTicketId.Value">@Model.Ticket.ParentTicketNumber - @Model.Ticket.ParentTicketTitle</a>
+                <a asp-controller="Tickets" asp-action="Details" asp-route-id="@Model.Ticket.ParentTicketId.Value" data-ajax-target="main[role='main']">@Model.Ticket.ParentTicketNumber - @Model.Ticket.ParentTicketTitle</a>
             </div>
         }
     </div>
@@ -88,7 +89,7 @@
                     <h2>Edit ticket</h2>
                     <span class="text-secondary small">Track status, assignee, Git context, and tags in one place.</span>
                 </div>
-                <form asp-action="Update" asp-route-id="@Model.Ticket.Id" method="post">
+                <form asp-action="Update" asp-route-id="@Model.Ticket.Id" method="post" data-ajax-target="main[role='main']">
                     <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
                     <div class="mb-3">
                         <label asp-for="EditInput.Title" class="form-label">Ticket title <span class="required-asterisk">*</span></label>
@@ -138,7 +139,7 @@
             <div class="card-body">
                 <div class="section-heading">
                     <h2>Subtickets</h2>
-                    <form asp-action="GenerateSubTickets" asp-route-id="@Model.Ticket.Id" method="post">
+                    <form asp-action="GenerateSubTickets" asp-route-id="@Model.Ticket.Id" method="post" data-ajax-target="main[role='main']">
                         <button type="submit" class="btn btn-sm btn-outline-primary">Generate from description</button>
                     </form>
                 </div>
@@ -159,7 +160,7 @@
                     </div>
                 }
 
-                <form asp-action="CreateSubTicket" asp-route-id="@Model.Ticket.Id" method="post">
+                <form asp-action="CreateSubTicket" asp-route-id="@Model.Ticket.Id" method="post" data-ajax-target="main[role='main']">
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label asp-for="SubTicketInput.Title" class="form-label"></label>
@@ -185,7 +186,7 @@
                     <h2>Notes</h2>
                     <span class="text-secondary small">@Model.Notes.Count total</span>
                 </div>
-                <form asp-action="AddNote" asp-route-id="@Model.Ticket.Id" method="post" class="mb-4">
+                <form asp-action="AddNote" asp-route-id="@Model.Ticket.Id" method="post" class="mb-4" data-ajax-target="main[role='main']">
                     <div class="row g-3">
                         <div class="col-md-4">
                             <label asp-for="NoteInput.Author" class="form-label"></label>
@@ -218,13 +219,13 @@
                                         <div class="ticket-note-content">@note.Content</div>
                                         <div class="text-secondary small">Updated @SiteSettingsService.FormatUtc(note.UpdatedUtc, siteSettings)</div>
                                     </div>
-                                    <form asp-action="DeleteNote" asp-route-id="@Model.Ticket.Id" asp-route-noteId="@note.Id" method="post">
+                                    <form asp-action="DeleteNote" asp-route-id="@Model.Ticket.Id" asp-route-noteId="@note.Id" method="post" data-ajax-target="main[role='main']">
                                         <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                                     </form>
                                 </div>
                                 <details class="mt-3">
                                     <summary>Edit note</summary>
-                                    <form asp-action="UpdateNote" asp-route-id="@Model.Ticket.Id" asp-route-noteId="@note.Id" method="post" class="mt-3">
+                                    <form asp-action="UpdateNote" asp-route-id="@Model.Ticket.Id" asp-route-noteId="@note.Id" method="post" class="mt-3" data-ajax-target="main[role='main']">
                                         <div class="row g-3">
                                             <div class="col-md-4">
                                                 <label class="form-label">Author</label>
@@ -285,7 +286,7 @@
                     <h2>Time logs</h2>
                     <span class="text-secondary small">@Model.TimeLogs.Count entries</span>
                 </div>
-                <form asp-action="LogTime" asp-route-id="@Model.Ticket.Id" method="post" class="mb-4">
+                <form asp-action="LogTime" asp-route-id="@Model.Ticket.Id" method="post" class="mb-4" data-ajax-target="main[role='main']">
                     <div class="mb-3">
                         <label asp-for="TimeLogInput.ModelName" class="form-label"></label>
                         <input asp-for="TimeLogInput.ModelName" class="form-control" />
@@ -336,3 +337,4 @@
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
 }
+</div>

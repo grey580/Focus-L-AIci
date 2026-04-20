@@ -8,7 +8,7 @@
     <div class="d-flex justify-content-between align-items-start gap-3">
         <div>
             <div class="memory-meta">@Model.TicketNumber • @Model.PriorityLabel • @Model.Assignee</div>
-            <a class="todo-title-link" asp-controller="Tickets" asp-action="Details" asp-route-id="@Model.Id">@Model.Title</a>
+            <a class="todo-title-link" asp-controller="Tickets" asp-action="Details" asp-route-id="@Model.Id" data-ajax-target="main[role='main']">@Model.Title</a>
         </div>
         <span class="todo-status todo-status-@Model.Status.ToString().ToLowerInvariant()">@Model.StatusLabel</span>
     </div>

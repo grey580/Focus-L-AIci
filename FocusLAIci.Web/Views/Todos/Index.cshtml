@@ -5,6 +5,7 @@
     var siteSettings = await SiteSettingsService.GetSettingsAsync();
 }
 
+<div id="focus-main-shell">
 <section class="page-header">
     <div>
         <h1 class="mb-2">Todos</h1>
@@ -35,7 +36,7 @@
                     <h2>Add todo</h2>
                     <span class="text-secondary small">Capture the next step before switching gears.</span>
                 </div>
-                <form asp-action="Create" method="post" class="todo-form">
+                <form asp-action="Create" method="post" class="todo-form" data-ajax-target="main[role='main']">
                     <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
                     <div class="row g-3">
                         <div class="col-lg-8">
@@ -178,3 +179,4 @@
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
 }
+</div>

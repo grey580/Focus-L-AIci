@@ -5,6 +5,7 @@
     var siteSettings = await SiteSettingsService.GetSettingsAsync();
 }
 
+<div id="focus-main-shell">
 <div class="breadcrumb-bar">
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
@@ -56,7 +57,7 @@
                     <h2>Edit todo</h2>
                     <span class="text-secondary small">Update the prompt, status, or cleanup the item.</span>
                 </div>
-                <form asp-action="Update" asp-route-id="@Model.Todo.Id" method="post">
+                <form asp-action="Update" asp-route-id="@Model.Todo.Id" method="post" data-ajax-target="main[role='main']">
                     <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
                     <div class="mb-3">
                         <label asp-for="Input.Title" class="form-label"></label>
@@ -75,7 +76,7 @@
                     </div>
                     <div class="d-flex gap-2 flex-wrap">
                         <button type="submit" class="btn btn-primary">Save todo</button>
-                        <a class="btn btn-outline-secondary" asp-action="Index">Back to board</a>
+                        <a class="btn btn-outline-secondary" asp-action="Index" data-ajax-target="main[role='main']">Back to board</a>
                     </div>
                 </form>
             </div>
@@ -108,7 +109,7 @@
                     <span class="text-secondary small">Permanent removal</span>
                 </div>
                 <p class="text-secondary">Delete this todo completely if it is no longer useful.</p>
-                <form asp-action="Delete" asp-route-id="@Model.Todo.Id" method="post">
+                <form asp-action="Delete" asp-route-id="@Model.Todo.Id" method="post" data-ajax-target="main[role='main']">
                     <button type="submit" class="btn btn-outline-danger">Delete todo</button>
                 </form>
             </div>
@@ -119,3 +120,4 @@
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
 }
+</div>

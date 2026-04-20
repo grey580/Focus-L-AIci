@@ -5,6 +5,7 @@
     var siteSettings = await SiteSettingsService.GetSettingsAsync();
 }
 
+<div id="focus-main-shell">
 <section class="page-header">
     <div>
         <h1 class="mb-2">Tickets</h1>
@@ -117,7 +118,7 @@
             <h2>Create ticket</h2>
             <span class="text-secondary small">Break down complex work without losing context.</span>
         </div>
-        <form asp-action="Create" method="post" class="ticket-form">
+        <form asp-action="Create" method="post" class="ticket-form" data-ajax-target="main[role='main']">
             <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
             <div class="mb-3">
                 <label asp-for="CreateInput.Title" class="form-label">Ticket title <span class="required-asterisk">*</span></label>
@@ -172,7 +173,7 @@
             <h2>Completed tickets</h2>
             <span class="text-secondary small">@Model.CompletedFilteredCount of @Model.CompletedTopLevelTicketCount top-level total</span>
         </div>
-        <form asp-action="Index" method="get" class="ticket-filter-bar mb-3">
+        <form asp-action="Index" method="get" class="ticket-filter-bar mb-3" data-ajax-target="main[role='main']" data-ajax-loading-text="Searching...">
             <div class="ticket-filter-search">
                 <label for="completedSearch" class="form-label mb-1">Search completed tickets</label>
                 <input id="completedSearch" name="completedSearch" value="@Model.CompletedSearch" class="form-control" placeholder="Search by number, title, assignee, tags, or description" />
@@ -181,7 +182,7 @@
                 <button type="submit" class="btn btn-primary">Search</button>
                 @if (!string.IsNullOrWhiteSpace(Model.CompletedSearch))
                 {
-                    <a asp-action="Index" class="btn btn-outline-secondary">Clear</a>
+                    <a asp-action="Index" class="btn btn-outline-secondary" data-ajax-target="main[role='main']">Clear</a>
                 }
             </div>
         </form>
@@ -207,18 +208,19 @@
                     <div class="ticket-pagination-links">
                         @if (Model.CompletedPage > 1)
                         {
-                            <a asp-action="Index" asp-route-completedSearch="@Model.CompletedSearch" asp-route-completedPage="@(Model.CompletedPage - 1)" class="btn btn-outline-secondary">Previous</a>
+                            <a asp-action="Index" asp-route-completedSearch="@Model.CompletedSearch" asp-route-completedPage="@(Model.CompletedPage - 1)" class="btn btn-outline-secondary" data-ajax-target="main[role='main']">Previous</a>
                         }
                         @for (var pageNumber = 1; pageNumber <= Model.CompletedTotalPages; pageNumber++)
                         {
                             <a asp-action="Index"
                                asp-route-completedSearch="@Model.CompletedSearch"
                                asp-route-completedPage="@pageNumber"
+                               data-ajax-target="main[role='main']"
                                class="btn @(pageNumber == Model.CompletedPage ? "btn-primary" : "btn-outline-secondary")">@pageNumber</a>
                         }
                         @if (Model.CompletedPage < Model.CompletedTotalPages)
                         {
-                            <a asp-action="Index" asp-route-completedSearch="@Model.CompletedSearch" asp-route-completedPage="@(Model.CompletedPage + 1)" class="btn btn-outline-secondary">Next</a>
+                            <a asp-action="Index" asp-route-completedSearch="@Model.CompletedSearch" asp-route-completedPage="@(Model.CompletedPage + 1)" class="btn btn-outline-secondary" data-ajax-target="main[role='main']">Next</a>
                         }
                     </div>
                 </nav>
@@ -230,3 +232,4 @@
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
 }
+</div>
