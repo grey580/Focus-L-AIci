@@ -1,5 +1,7 @@
 # Focus L-AIci
 
+> **AI setup first:** Start here for automatic bootstrap and model instructions: [docs/AI-AUTOSETUP-PROMPT.md](docs/AI-AUTOSETUP-PROMPT.md)
+
 **Focus L-AIci** is a local-first memory palace for engineers, builders, researchers, and AI-assisted teams who do not want important reasoning to disappear into chat history.
 
 It gives you a structured way to capture decisions, incidents, patterns, research, and implementation knowledge in a form that stays readable to humans and useful to future sessions. Instead of burying context in loose notes, Focus L-AIci organizes knowledge into **wings**, **rooms**, **memories**, **tags**, and **relationships** so you can recover the *why* behind your work as fast as the *what*.
