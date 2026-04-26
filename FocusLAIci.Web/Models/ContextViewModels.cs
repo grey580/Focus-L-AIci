@@ -18,12 +18,16 @@ public sealed class ContextBriefInput
     [Range(3, 10)]
     [Display(Name = "Items per source")]
     public int ResultsPerSection { get; set; } = 6;
+
+    [Display(Name = "Pack goal")]
+    public ContextPackGoal PackGoal { get; set; } = ContextPackGoal.General;
 }
 
 public sealed class ContextPackViewModel
 {
     public string Question { get; init; } = string.Empty;
     public string Summary { get; init; } = string.Empty;
+    public string GoalLabel { get; init; } = string.Empty;
     public ContextBriefInput Input { get; init; } = new();
     public IReadOnlyCollection<string> SearchTokens { get; init; } = Array.Empty<string>();
     public IReadOnlyCollection<DashboardWarningViewModel> DetectedGapItems { get; init; } = Array.Empty<DashboardWarningViewModel>();
@@ -35,6 +39,15 @@ public sealed class ContextPackViewModel
     public IReadOnlyCollection<ContextRecordViewModel> CodeGraphFiles { get; init; } = Array.Empty<ContextRecordViewModel>();
     public IReadOnlyCollection<ContextRecordViewModel> CodeGraphNodes { get; init; } = Array.Empty<ContextRecordViewModel>();
     public string ExportText { get; init; } = string.Empty;
+}
+
+public enum ContextPackGoal
+{
+    General = 1,
+    Debugging = 2,
+    Delivery = 3,
+    Research = 4,
+    Architecture = 5
 }
 
 public sealed class ContextRecordViewModel
@@ -49,8 +62,11 @@ public sealed class ContextRecordViewModel
     public string ScoreLabel { get; init; } = string.Empty;
     public string MatchReason { get; init; } = string.Empty;
     public decimal Score { get; init; }
+    public decimal SemanticScore { get; init; }
     public bool IsLinked { get; init; }
     public string FreshnessWarning { get; init; } = string.Empty;
+    public string DuplicateWarning { get; init; } = string.Empty;
+    public Guid? DuplicateCandidateId { get; init; }
     public ContextMatchDetailViewModel? Provenance { get; init; }
 }
 

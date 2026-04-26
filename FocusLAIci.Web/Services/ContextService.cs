@@ -16,6 +16,26 @@ public sealed partial class ContextService
         "they", "this", "those", "through", "use", "using", "very", "want", "what", "when", "where", "which",
         "with", "would", "your"
     ];
+    private static readonly Dictionary<string, string[]> SemanticAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["bug"] = ["issue", "failure", "incident"],
+        ["incident"] = ["alert", "issue", "failure"],
+        ["deploy"] = ["deployment", "release", "ship", "install"],
+        ["deployment"] = ["deploy", "release", "install", "rollout"],
+        ["install"] = ["installer", "setup", "register", "deployment"],
+        ["installer"] = ["install", "setup", "register"],
+        ["register"] = ["registration", "token", "install"],
+        ["token"] = ["credential", "auth", "registration"],
+        ["auth"] = ["authentication", "authorization", "login", "token"],
+        ["login"] = ["signin", "auth", "credential"],
+        ["context"] = ["memory", "workspace", "pack"],
+        ["memory"] = ["context", "note", "knowledge"],
+        ["research"] = ["investigation", "analysis", "study"],
+        ["architecture"] = ["design", "system", "structure"],
+        ["delivery"] = ["release", "ship", "handoff"],
+        ["debug"] = ["troubleshoot", "diagnose", "fix"],
+        ["code"] = ["symbol", "file", "project", "implementation"]
+    };
 
     private readonly FocusMemoryContext _dbContext;
 
@@ -35,6 +55,7 @@ public sealed partial class ContextService
         var effectiveInput = input ?? new ContextBriefInput();
         var normalizedQuestion = effectiveInput.Question?.Trim() ?? string.Empty;
         var tokens = Tokenize(normalizedQuestion);
+        var semanticTokens = ExpandSemanticTokens(tokens);
         if (tokens.Count == 0)
         {
             return null;
@@ -141,6 +162,7 @@ public sealed partial class ContextService
                 var score = ScoreFields(
                     normalizedQuestion,
                     tokens,
+                    semanticTokens,
                     MemoryTrustHelper.GetEffectiveTimestamp(memory.UpdatedUtc, memory.LastVerifiedUtc),
                     new WeightedField(memory.Title, "title", "Title", 20m, "Title matches your question closely.", "Title shares your search terms."),
                     new WeightedField(memory.Summary, "summary", "Summary", 12m, "Summary closely matches the request.", "Summary reinforces the match."),
@@ -151,6 +173,7 @@ public sealed partial class ContextService
                 score = ApplyBoost(score, memory.IsPinned ? 4m : 0m, "Pinned memory");
                 score = ApplyBoost(score, Math.Max(memory.Importance - 3, 0), "High importance");
                 score = ApplyBoost(score, trust.RetrievalAdjustment, trust.RetrievalAdjustmentLabel);
+                score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.Memory, memory.SourceKind, memory.Kind), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.Memory));
 
                 return new { Memory = memory, Match = score, Trust = trust };
             })
@@ -168,6 +191,7 @@ public sealed partial class ContextService
                 Preview = x.Memory.Summary,
                 Url = $"/Palace/Memory/{x.Memory.Id}",
                 Score = x.Match.Score,
+                SemanticScore = x.Match.SemanticScore,
                 ScoreLabel = FormatScore(x.Match.Score),
                 MatchReason = x.Match.Reason,
                 FreshnessWarning = x.Trust.FreshnessWarning,
@@ -181,11 +205,13 @@ public sealed partial class ContextService
                 var score = ScoreFields(
                     normalizedQuestion,
                     tokens,
+                    semanticTokens,
                     todo.UpdatedUtc,
                     new WeightedField(todo.Title, "title", "Title", 20m, "Todo title matches your question closely.", "Todo title shares your search terms."),
                     new WeightedField(todo.Details, "details", "Details", 8m, "Todo details contain the full request.", "Todo details reinforce the match."));
 
                 score = ApplyBoost(score, todo.Status == TodoStatus.InProgress ? 4m : todo.Status == TodoStatus.Pending ? 2m : 0m, todo.Status == TodoStatus.InProgress ? "In-progress work" : "Pending work");
+                score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.Todo), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.Todo));
 
                 return new { Todo = todo, Match = score };
             })
@@ -203,6 +229,7 @@ public sealed partial class ContextService
                 Preview = TrimPreview(x.Todo.Details, 180),
                 Url = $"/Todos/Details/{x.Todo.Id}",
                 Score = x.Match.Score,
+                SemanticScore = x.Match.SemanticScore,
                 ScoreLabel = FormatScore(x.Match.Score),
                 MatchReason = x.Match.Reason,
                 Provenance = MapProvenance(x.Match)
@@ -215,6 +242,7 @@ public sealed partial class ContextService
                 var score = ScoreFields(
                     normalizedQuestion,
                     tokens,
+                    semanticTokens,
                     ticket.UpdatedUtc,
                     new WeightedField($"{ticket.TicketNumber} {ticket.Title}", "title", "Title/number", 20m, "Ticket title or number matches your request closely.", "Ticket title or number overlaps the request."),
                     new WeightedField(ticket.Description, "description", "Description", 8m, "Ticket description contains the full request.", "Ticket description reinforces the match."),
@@ -227,6 +255,7 @@ public sealed partial class ContextService
 
                 score = ApplyBoost(score, ticket.Status == TicketStatus.InProgress ? 5m : ticket.Status == TicketStatus.New ? 3m : 0m, ticket.Status == TicketStatus.InProgress ? "In-progress ticket" : "New ticket");
                 score = ApplyBoost(score, ticket.Priority == TicketPriority.Critical ? 2m : ticket.Priority == TicketPriority.High ? 1m : 0m, ticket.Priority == TicketPriority.Critical ? "Critical priority" : "High priority");
+                score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.Ticket), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.Ticket));
 
                 return new { Ticket = ticket, Match = score };
             })
@@ -244,6 +273,7 @@ public sealed partial class ContextService
                 Preview = TrimPreview(x.Ticket.Description, 180),
                 Url = $"/Tickets/Details/{x.Ticket.Id}",
                 Score = x.Match.Score,
+                SemanticScore = x.Match.SemanticScore,
                 ScoreLabel = FormatScore(x.Match.Score),
                 MatchReason = x.Match.Reason,
                 Provenance = MapProvenance(x.Match)
@@ -256,12 +286,14 @@ public sealed partial class ContextService
                 var score = ScoreFields(
                     normalizedQuestion,
                     tokens,
+                    semanticTokens,
                     project.UpdatedUtc,
                     new WeightedField(project.Name, "name", "Project name", 22m, "Project name matches your request closely.", "Project name overlaps the request."),
                     new WeightedField(project.RootPath, "path", "Project path", 18m, "Project path matches the request.", "Project path overlaps the request."),
                     new WeightedField($"{project.Description} {project.Summary}", "summary", "Description/summary", 8m, "Project description contains the full request.", "Project description reinforces the match."));
 
                 score = ApplyBoost(score, Math.Min(project.RelationshipCount / 50m, 3m), "High relationship count");
+                score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.CodeGraphProject), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.CodeGraphProject));
 
                 return new { Project = project, Match = score };
             })
@@ -279,6 +311,7 @@ public sealed partial class ContextService
                 Preview = string.IsNullOrWhiteSpace(x.Project.Description) ? x.Project.Summary : x.Project.Description,
                 Url = $"/CodeGraph/Project/{x.Project.Id}",
                 Score = x.Match.Score,
+                SemanticScore = x.Match.SemanticScore,
                 ScoreLabel = FormatScore(x.Match.Score),
                 MatchReason = x.Match.Reason,
                 Provenance = MapProvenance(x.Match)
@@ -291,11 +324,13 @@ public sealed partial class ContextService
                 var score = ScoreFields(
                     normalizedQuestion,
                     tokens,
+                    semanticTokens,
                     file.ScannedUtc,
                     new WeightedField(file.RelativePath, "path", "File path", 20m, "File path matches your request closely.", "File path overlaps the request."),
                     new WeightedField(file.Language, "language", "Language", 5m, "File language matches your request.", "File language reinforces the request."),
                     new WeightedField(file.Project?.Name, "project", "Project", 8m, "Project name matches your request closely.", "Project name overlaps the request."));
 
+                score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.CodeGraphFile), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.CodeGraphFile));
                 return new { File = file, Match = score };
             })
             .Where(x => x.Match.Score > 0)
@@ -312,6 +347,7 @@ public sealed partial class ContextService
                 Preview = $"{x.File.LineCount} lines",
                 Url = $"/CodeGraph/Project/{x.File.ProjectId}?selectedFileId={x.File.Id}",
                 Score = x.Match.Score,
+                SemanticScore = x.Match.SemanticScore,
                 ScoreLabel = FormatScore(x.Match.Score),
                 MatchReason = x.Match.Reason,
                 Provenance = MapProvenance(x.Match)
@@ -324,12 +360,14 @@ public sealed partial class ContextService
                 var score = ScoreFields(
                     normalizedQuestion,
                     tokens,
+                    semanticTokens,
                     null,
                     new WeightedField(node.Label, "name", "Symbol name", 24m, "Symbol name matches your request closely.", "Symbol name overlaps the request."),
                     new WeightedField(node.File?.RelativePath, "path", "File path", 20m, "File path matches the request.", "File path overlaps the request."),
                     new WeightedField($"{node.NodeType} {node.SecondaryLabel}", "metadata", "Symbol metadata", 8m, "Symbol metadata contains the full request.", "Symbol metadata reinforces the match."));
 
                 score = ApplyBoost(score, Math.Min(nodeDegrees.GetValueOrDefault(node.Id) / 4m, 3m), "High graph connectivity");
+                score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.CodeGraphNode), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.CodeGraphNode));
 
                 return new { Node = node, Match = score };
             })
@@ -347,6 +385,7 @@ public sealed partial class ContextService
                 Preview = x.Node.SecondaryLabel,
                 Url = $"/CodeGraph/Project/{x.Node.ProjectId}?selectedNodeId={x.Node.Id}",
                 Score = x.Match.Score,
+                SemanticScore = x.Match.SemanticScore,
                 ScoreLabel = FormatScore(x.Match.Score),
                 MatchReason = x.Match.Reason,
                 Provenance = MapProvenance(x.Match)
@@ -387,12 +426,14 @@ public sealed partial class ContextService
         {
             Question = normalizedQuestion,
             Summary = BuildSummary(memoryResults, todoResults, ticketResults, projectResults, fileResults, nodeResults),
+            GoalLabel = GetPackGoalLabel(effectiveInput.PackGoal),
             Input = new ContextBriefInput
             {
                 Question = normalizedQuestion,
                 IncludeCompletedWork = effectiveInput.IncludeCompletedWork,
                 ExpandHistory = effectiveInput.ExpandHistory,
-                ResultsPerSection = resultsPerSection
+                ResultsPerSection = resultsPerSection,
+                PackGoal = effectiveInput.PackGoal
             },
             SearchTokens = tokens.OrderBy(x => x).ToArray(),
             TopMatches = topMatches,
@@ -402,7 +443,7 @@ public sealed partial class ContextService
             CodeGraphProjects = projectResults,
             CodeGraphFiles = fileResults,
             CodeGraphNodes = nodeResults,
-            ExportText = BuildExportText(normalizedQuestion, memoryResults, todoResults, ticketResults, projectResults, fileResults, nodeResults)
+            ExportText = BuildExportText(normalizedQuestion, effectiveInput.PackGoal, memoryResults, todoResults, ticketResults, projectResults, fileResults, nodeResults)
         };
     }
 
@@ -436,7 +477,8 @@ public sealed partial class ContextService
             Question = sourceText,
             ExpandHistory = true,
             IncludeCompletedWork = true,
-            ResultsPerSection = 8
+            ResultsPerSection = 8,
+            PackGoal = ContextPackGoal.General
         }, cancellationToken);
         var suggestedItems = contextPack is null
             ? Array.Empty<ContextRecordViewModel>()
@@ -515,7 +557,8 @@ public sealed partial class ContextService
             Question = input.SourceText,
             IncludeCompletedWork = true,
             ExpandHistory = true,
-            ResultsPerSection = Math.Clamp(input.Limit + 2, 3, 10)
+            ResultsPerSection = Math.Clamp(input.Limit + 2, 3, 10),
+            PackGoal = ContextPackGoal.General
         }, cancellationToken);
 
         if (contextPack is null)
@@ -709,6 +752,7 @@ public sealed partial class ContextService
 
     private static string BuildExportText(
         string question,
+        ContextPackGoal goal,
         IReadOnlyCollection<ContextRecordViewModel> memories,
         IReadOnlyCollection<ContextRecordViewModel> todos,
         IReadOnlyCollection<ContextRecordViewModel> tickets,
@@ -728,6 +772,7 @@ public sealed partial class ContextService
 
         var builder = new System.Text.StringBuilder()
             .AppendLine($"Context pack: {question}")
+            .AppendLine($"Goal: {GetPackGoalLabel(goal)}")
             .AppendLine();
 
         foreach (var (title, items) in sections)
@@ -751,6 +796,10 @@ public sealed partial class ContextService
                     if (!string.IsNullOrWhiteSpace(item.MatchReason))
                     {
                         builder.Append(" | ").Append(item.MatchReason);
+                    }
+                    if (item.SemanticScore > 0m)
+                    {
+                        builder.Append(" | semantic ").Append(item.SemanticScore.ToString("0.0"));
                     }
 
                     builder.AppendLine();
@@ -811,11 +860,14 @@ public sealed partial class ContextService
                     Preview = item.Preview,
                     Url = item.Url,
                     Score = boostedScore,
+                    SemanticScore = item.SemanticScore,
                     ScoreLabel = FormatScore(boostedScore),
                     MatchReason = isLinked && !item.MatchReason.Contains("Linked context", StringComparison.OrdinalIgnoreCase)
                         ? $"{item.MatchReason} Linked context already exists."
                         : item.MatchReason,
                     FreshnessWarning = item.FreshnessWarning,
+                    DuplicateWarning = item.DuplicateWarning,
+                    DuplicateCandidateId = item.DuplicateCandidateId,
                     IsLinked = isLinked,
                     Provenance = provenance
                 };
@@ -850,6 +902,7 @@ public sealed partial class ContextService
     private static ContextScoreOutcome ScoreFields(
         string question,
         IReadOnlyCollection<string> tokens,
+        IReadOnlyCollection<string> semanticTokens,
         DateTime? updatedUtc,
         params WeightedField[] fields)
     {
@@ -861,6 +914,7 @@ public sealed partial class ContextService
         var normalizedQuestion = NormalizePhrase(question);
         var matchedTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         decimal score = 0m;
+        decimal semanticScore = 0m;
         string reason = string.Empty;
         var exactPhraseMatched = false;
         var highSignalFieldMatched = false;
@@ -918,6 +972,39 @@ public sealed partial class ContextService
                 continue;
             }
 
+            var fieldSemanticTokens = ExpandSemanticTokens(fieldTokens);
+            var semanticOverlap = semanticTokens.Intersect(fieldSemanticTokens, StringComparer.OrdinalIgnoreCase)
+                .Except(overlap, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (semanticOverlap.Length > 0)
+            {
+                var semanticBoost = Math.Min(semanticOverlap.Length, 3) * Math.Max(field.PerTokenWeight / 4m, 1m);
+                score += semanticBoost;
+                semanticScore += semanticBoost;
+                boosts.Add(new ContextMatchBoostViewModel
+                {
+                    Label = $"{field.Label} semantic similarity",
+                    Value = semanticBoost
+                });
+            }
+
+            var phraseSimilarity = ScorePhraseSimilarity(normalizedQuestion, normalizedField);
+            if (phraseSimilarity >= 0.72m)
+            {
+                var phraseBoost = Math.Round(phraseSimilarity * Math.Max(field.PerTokenWeight / 3m, 1m), 2);
+                score += phraseBoost;
+                semanticScore += phraseBoost;
+                boosts.Add(new ContextMatchBoostViewModel
+                {
+                    Label = $"{field.Label} semantic phrasing",
+                    Value = phraseBoost
+                });
+                if (string.IsNullOrWhiteSpace(reason))
+                {
+                    reason = field.PartialReason;
+                }
+            }
+
             if (overlap.Length == tokens.Count)
             {
                 score += 12m;
@@ -971,6 +1058,7 @@ public sealed partial class ContextService
 
         return new ContextScoreOutcome(
             score,
+            semanticScore,
             reason,
             matchedTokens.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
             fieldHits.ToArray(),
@@ -1083,6 +1171,30 @@ public sealed partial class ContextService
 
     private static string NormalizePhrase(string? value) => string.Join(' ', Tokenize(value, keepStopWords: true));
 
+    private static string GetPackGoalLabel(ContextPackGoal goal) => goal switch
+    {
+        ContextPackGoal.Debugging => "Debugging",
+        ContextPackGoal.Delivery => "Delivery",
+        ContextPackGoal.Research => "Research",
+        ContextPackGoal.Architecture => "Architecture",
+        _ => "General"
+    };
+
+    private static decimal GoalBoost(ContextPackGoal goal, ContextRecordKind kind, SourceKind? sourceKind = null, MemoryKind memoryKind = MemoryKind.Fact)
+        => goal switch
+        {
+            ContextPackGoal.Debugging when kind == ContextRecordKind.Memory && (sourceKind == SourceKind.DebugSession || memoryKind == MemoryKind.Incident) => 4m,
+            ContextPackGoal.Debugging when kind is ContextRecordKind.Ticket or ContextRecordKind.CodeGraphFile or ContextRecordKind.CodeGraphNode => 3m,
+            ContextPackGoal.Delivery when kind is ContextRecordKind.Todo or ContextRecordKind.Ticket => 4m,
+            ContextPackGoal.Research when kind == ContextRecordKind.Memory && (sourceKind == SourceKind.Research || memoryKind is MemoryKind.Reference or MemoryKind.Insight) => 4m,
+            ContextPackGoal.Architecture when kind == ContextRecordKind.Memory && sourceKind == SourceKind.Architecture => 4m,
+            ContextPackGoal.Architecture when kind is ContextRecordKind.CodeGraphProject or ContextRecordKind.CodeGraphFile or ContextRecordKind.CodeGraphNode => 3m,
+            _ => 0m
+        };
+
+    private static string GoalBoostLabel(ContextPackGoal goal, ContextRecordKind kind)
+        => goal == ContextPackGoal.General ? string.Empty : $"{GetPackGoalLabel(goal)} focus";
+
     private static HashSet<string> Tokenize(string? value, bool keepStopWords = false)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -1102,19 +1214,91 @@ public sealed partial class ContextService
             : tokens;
     }
 
+    private static HashSet<string> ExpandSemanticTokens(IEnumerable<string> tokens)
+    {
+        var expanded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var token in tokens)
+        {
+            var normalized = StemToken(token);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                continue;
+            }
+
+            expanded.Add(normalized);
+            if (!SemanticAliases.TryGetValue(normalized, out var aliases))
+            {
+                continue;
+            }
+
+            foreach (var alias in aliases)
+            {
+                expanded.Add(StemToken(alias));
+            }
+        }
+
+        return expanded;
+    }
+
+    private static string StemToken(string token)
+    {
+        var normalized = token.Trim().ToLowerInvariant();
+        if (normalized.Length > 5 && normalized.EndsWith("ing", StringComparison.Ordinal))
+        {
+            return normalized[..^3];
+        }
+
+        if (normalized.Length > 4 && (normalized.EndsWith("ed", StringComparison.Ordinal) || normalized.EndsWith("es", StringComparison.Ordinal)))
+        {
+            return normalized[..^2];
+        }
+
+        if (normalized.Length > 3 && normalized.EndsWith("s", StringComparison.Ordinal))
+        {
+            return normalized[..^1];
+        }
+
+        return normalized;
+    }
+
+    private static decimal ScorePhraseSimilarity(string left, string right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+        {
+            return 0m;
+        }
+
+        var leftTerms = left.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(StemToken)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var rightTerms = right.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(StemToken)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (leftTerms.Count == 0 || rightTerms.Count == 0)
+        {
+            return 0m;
+        }
+
+        var overlap = leftTerms.Intersect(rightTerms, StringComparer.OrdinalIgnoreCase).Count();
+        var denominator = Math.Max(leftTerms.Count, rightTerms.Count);
+        return denominator == 0 ? 0m : (decimal)overlap / denominator;
+    }
+
     [GeneratedRegex("[a-z0-9]+", RegexOptions.Compiled)]
     private static partial Regex WordRegex();
 
     private sealed record WeightedField(string? Text, string Key, string Label, decimal PerTokenWeight, string ExactReason, string PartialReason);
     private sealed record ContextScoreOutcome(
         decimal Score,
+        decimal SemanticScore,
         string Reason,
         IReadOnlyCollection<string> MatchedTokens,
         IReadOnlyCollection<ContextMatchFieldHitViewModel> FieldHits,
         IReadOnlyCollection<ContextMatchBoostViewModel> Boosts,
         bool ExactPhraseMatched)
     {
-        public static ContextScoreOutcome None { get; } = new(0m, string.Empty, Array.Empty<string>(), Array.Empty<ContextMatchFieldHitViewModel>(), Array.Empty<ContextMatchBoostViewModel>(), false);
+        public static ContextScoreOutcome None { get; } = new(0m, 0m, string.Empty, Array.Empty<string>(), Array.Empty<ContextMatchFieldHitViewModel>(), Array.Empty<ContextMatchBoostViewModel>(), false);
     }
     private sealed record ContextRecordKey(ContextRecordKind Kind, Guid Id);
     private sealed record LinkedContextRef(Guid LinkId, string Label, ContextRecordKind Kind, Guid TargetId);

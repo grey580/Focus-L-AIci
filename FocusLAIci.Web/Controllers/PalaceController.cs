@@ -150,15 +150,7 @@ public sealed class PalaceController : Controller
         var settings = await _siteSettingsService.GetSettingsAsync(cancellationToken);
         if (!ModelState.IsValid)
         {
-            var editor = await _palaceService.BuildMemoryEditorAsync(null, input.WingId, cancellationToken);
-            return View("EditMemory", new MemoryEditorViewModel
-            {
-                Heading = "Add memory",
-                SubmitLabel = "Add Memory",
-                Input = input,
-                WingOptions = editor.WingOptions,
-                RoomOptions = editor.RoomOptions
-            });
+            return View("EditMemory", await BuildDraftEditorAsync(null, input, cancellationToken));
         }
 
         try
@@ -169,16 +161,8 @@ public sealed class PalaceController : Controller
         }
         catch (InvalidOperationException exception)
         {
-            var editor = await _palaceService.BuildMemoryEditorAsync(null, input.WingId, cancellationToken);
             ModelState.AddModelError(string.Empty, exception.Message);
-            return View("EditMemory", new MemoryEditorViewModel
-            {
-                Heading = "Add memory",
-                SubmitLabel = "Add Memory",
-                Input = input,
-                WingOptions = editor.WingOptions,
-                RoomOptions = editor.RoomOptions
-            });
+            return View("EditMemory", await BuildDraftEditorAsync(null, input, cancellationToken));
         }
     }
 
@@ -206,15 +190,7 @@ public sealed class PalaceController : Controller
         var settings = await _siteSettingsService.GetSettingsAsync(cancellationToken);
         if (!ModelState.IsValid)
         {
-            var editor = await _palaceService.BuildMemoryEditorAsync(id, input.WingId, cancellationToken);
-            return View(new MemoryEditorViewModel
-            {
-                Heading = editor.Heading,
-                SubmitLabel = editor.SubmitLabel,
-                Input = input,
-                WingOptions = editor.WingOptions,
-                RoomOptions = editor.RoomOptions
-            });
+            return View(await BuildDraftEditorAsync(id, input, cancellationToken));
         }
 
         try
@@ -225,17 +201,24 @@ public sealed class PalaceController : Controller
         }
         catch (InvalidOperationException exception)
         {
-            var editor = await _palaceService.BuildMemoryEditorAsync(id, input.WingId, cancellationToken);
             ModelState.AddModelError(string.Empty, exception.Message);
-            return View(new MemoryEditorViewModel
-            {
-                Heading = editor.Heading,
-                SubmitLabel = editor.SubmitLabel,
-                Input = input,
-                WingOptions = editor.WingOptions,
-                RoomOptions = editor.RoomOptions
-            });
+            return View(await BuildDraftEditorAsync(id, input, cancellationToken));
         }
+    }
+
+    private async Task<MemoryEditorViewModel> BuildDraftEditorAsync(Guid? id, MemoryEditorInput input, CancellationToken cancellationToken)
+    {
+        var editor = await _palaceService.BuildMemoryEditorAsync(id, input.WingId, cancellationToken);
+        return new MemoryEditorViewModel
+        {
+            Heading = editor.Heading,
+            SubmitLabel = editor.SubmitLabel,
+            Input = input,
+            WingOptions = editor.WingOptions,
+            RoomOptions = editor.RoomOptions,
+            SuggestedTags = _palaceService.SuggestTagsForDraft(input),
+            DuplicateSuggestions = await _palaceService.FindDuplicateSuggestionsAsync(input, cancellationToken)
+        };
     }
 
     [HttpGet]

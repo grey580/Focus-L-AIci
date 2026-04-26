@@ -10,6 +10,8 @@ internal sealed record MemoryTrustSnapshot(
     bool IsReviewDue,
     string FreshnessLabel,
     string FreshnessWarning,
+    decimal TrustScore,
+    string TrustLabel,
     decimal RetrievalAdjustment,
     string RetrievalAdjustmentLabel);
 
@@ -56,6 +58,8 @@ internal static class MemoryTrustHelper
                 false,
                 "Verified",
                 string.Empty,
+                92m,
+                "High trust",
                 1.5m,
                 "Verified memory");
         }
@@ -69,6 +73,8 @@ internal static class MemoryTrustHelper
                 normalizedReviewAfterUtc,
                 true,
                 "Needs review",
+                "Needs review",
+                24m,
                 "Needs review",
                 -6m,
                 "Needs review");
@@ -84,6 +90,8 @@ internal static class MemoryTrustHelper
                 true,
                 "Review due",
                 "Review due",
+                38m,
+                "Review due",
                 -6m,
                 "Review due");
         }
@@ -98,6 +106,8 @@ internal static class MemoryTrustHelper
                 false,
                 "Unverified",
                 "Unverified",
+                48m,
+                "Unverified",
                 -3m,
                 "Unverified memory");
         }
@@ -110,6 +120,8 @@ internal static class MemoryTrustHelper
             false,
             verificationStatus == MemoryVerificationStatus.Verified ? "Verified" : "Unverified",
             string.Empty,
+            verificationStatus == MemoryVerificationStatus.Verified ? 80m : 60m,
+            verificationStatus == MemoryVerificationStatus.Verified ? "Trusted" : "Watch",
             0m,
             string.Empty);
     }

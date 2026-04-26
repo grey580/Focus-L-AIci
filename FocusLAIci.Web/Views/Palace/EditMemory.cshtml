@@ -100,6 +100,10 @@
                     <label asp-for="Input.TagsText" class="form-label"></label>
                     <input asp-for="Input.TagsText" class="form-control" placeholder="comma, separated, tags" />
                     <div class="form-text">Tags improve search and cross-cutting recall.</div>
+                    @if (Model.SuggestedTags.Count > 0)
+                    {
+                        <div class="form-text mt-2">Suggested tags: @string.Join(", ", Model.SuggestedTags)</div>
+                    }
                 </div>
                 <div class="col-12">
                     <div class="form-check">
@@ -107,6 +111,22 @@
                         <label asp-for="Input.IsPinned" class="form-check-label"></label>
                     </div>
                 </div>
+                @if (Model.DuplicateSuggestions.Count > 0)
+                {
+                    <div class="col-12">
+                        <div class="alert alert-warning border-0 mb-0">
+                            <strong>Possible duplicates</strong>
+                            <div class="mt-2 d-grid gap-2">
+                                @foreach (var suggestion in Model.DuplicateSuggestions)
+                                {
+                                    <a class="text-decoration-none" href="@suggestion.Url">
+                                        <strong>@suggestion.Title</strong> - @suggestion.ScoreLabel - @suggestion.MatchReason
+                                    </a>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
                 <div class="col-12">
                     <button type="submit" class="btn btn-primary submit-button">@Model.SubmitLabel</button>
                     <a class="btn btn-outline-secondary" asp-action="Explore">Cancel</a>

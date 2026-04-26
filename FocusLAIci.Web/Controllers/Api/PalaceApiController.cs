@@ -126,6 +126,13 @@ public sealed class PalaceApiController : ControllerBase
         }
     }
 
+    [HttpPost("memories/quick-capture")]
+    public async Task<ActionResult<object>> QuickCapture([FromBody] QuickCaptureInput input, CancellationToken cancellationToken)
+    {
+        var id = await _palaceService.QuickCaptureAsync(input, cancellationToken);
+        return CreatedAtAction(nameof(Memory), new { id }, new { id });
+    }
+
     [HttpPost("memories/{id:guid}/verify")]
     public async Task<ActionResult<object>> VerifyMemory(Guid id, CancellationToken cancellationToken)
     {

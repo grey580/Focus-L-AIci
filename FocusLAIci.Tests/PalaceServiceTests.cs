@@ -145,6 +145,39 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task SaveMemoryAsync_AssignsWingMemoriesToGeneralRoom()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Reusable Pattern Defaults",
+            Description = "Shared implementation patterns."
+        }, CancellationToken.None);
+
+        var memoryId = await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Default to General room",
+            Summary = "Wing-level memories should normalize into a real room.",
+            Content = "This memory should land in the General room automatically.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.Architecture,
+            Importance = 4,
+            WingId = wingId
+        }, CancellationToken.None);
+
+        var detail = await service.GetMemoryAsync(memoryId, CancellationToken.None);
+        var visualizer = await service.GetVisualizerAsync(CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.Equal("General", detail!.Memory.RoomName);
+        Assert.Contains(visualizer.Wings, wing => wing.Name == "Reusable Pattern Defaults" && wing.Rooms.Any(room => room.Name == "General"));
+        Assert.DoesNotContain(visualizer.Wings.SelectMany(wing => wing.GeneralMemories), memory => memory.Id == memoryId);
+    }
+
+    [Fact]
     public async Task MemoryTrustLifecycle_VerifyAndEditDriveTrustState()
     {
         await using var harness = await TestHarness.CreateAsync();
@@ -346,16 +379,107 @@ public sealed class PalaceServiceTests
             TagsText = "visualizer, frontend"
         }, CancellationToken.None);
 
+        var unsortedId = await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Unsorted palace note",
+            Summary = "The palace graph should still surface unfiled memories.",
+            Content = "Unsorted memories should appear in the 3D holding area instead of disappearing.",
+            Kind = MemoryKind.Reference,
+            SourceKind = SourceKind.ManualNote,
+            Importance = 3,
+            TagsText = "visualizer, backlog"
+        }, CancellationToken.None);
+
+        await using (var linkContext = harness.CreateDbContext())
+        {
+            linkContext.MemoryLinks.Add(new MemoryLink
+            {
+                FromMemoryEntryId = memoryId,
+                ToMemoryEntryId = unsortedId,
+                Label = "Related"
+            });
+            await linkContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var todoId = await service.CreateTodoAsync(new TodoEditorInput
+        {
+            Title = "Add todo lane to palace visualizer",
+            Details = "Operational work should show up without manual memory promotion.",
+            Status = TodoStatus.InProgress
+        }, CancellationToken.None);
+
         var model = await service.GetVisualizerAsync(CancellationToken.None);
 
         var wing = Assert.Single(model.Wings);
         var room = Assert.Single(wing.Rooms);
         var memory = Assert.Single(room.Memories);
+        var unsorted = Assert.Single(model.UnsortedMemories);
 
         Assert.Equal("Architecture", wing.Name);
         Assert.Equal("Runtime", room.Name);
         Assert.Equal(memoryId, memory.Id);
-        Assert.Contains(model.Tags, tag => tag.Slug == "visualizer" && tag.MemoryCount == 1);
+        Assert.Equal(unsortedId, unsorted.Id);
+        Assert.Contains(model.ActiveTodos, todo => todo.Id == todoId);
+        Assert.Contains(model.Tags, tag => tag.Slug == "visualizer" && tag.MemoryCount == 2);
+        Assert.Contains(model.Scene.Nodes, node => node.NodeTypeLabel == "Palace");
+        var wingNode = Assert.Single(model.Scene.Nodes, node => node.NodeTypeLabel == "Wing" && node.Label == "Architecture");
+        var roomNode = Assert.Single(model.Scene.Nodes, node => node.NodeTypeLabel == "Room" && node.Label == "Runtime");
+        var memoryNode = Assert.Single(model.Scene.Nodes, node => node.NodeTypeLabel == "Memory" && node.Label == "Visualizer nodes should stay clickable");
+        Assert.True(wingNode.Radius > 14d);
+        Assert.Equal($"wing:{wingId}", roomNode.OrbitCenterNodeId);
+        Assert.True(roomNode.OrbitRadius > 0d);
+        Assert.Equal(Math.PI / 60d, roomNode.OrbitSpeed, precision: 10);
+        Assert.Equal($"room:{roomId}", memoryNode.OrbitCenterNodeId);
+        Assert.Equal(Math.PI / 120d, memoryNode.OrbitSpeed, precision: 10);
+        Assert.Contains(model.Scene.Nodes, node => node.NodeTypeLabel == "Wing" && node.Label == "Unsorted wing");
+        Assert.Contains(model.Scene.Nodes, node => node.NodeTypeLabel == "Wing" && node.Label == "Workboard");
+        Assert.Contains(model.Scene.Nodes, node => node.NodeTypeLabel == "Todo" && node.Label == "Add todo lane to palace visualizer");
+        Assert.Contains(model.Scene.Edges, edge => edge.FromNodeId == $"memory:{memoryId}" && edge.ToNodeId == $"memory:{unsortedId}");
+    }
+
+    [Fact]
+    public async Task GetVisualizerAsync_DenseRoomMemoriesStayPacked()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Ticketing",
+            Description = "Operational work"
+        }, CancellationToken.None);
+
+        var roomId = await service.CreateRoomAsync(new RoomEditorInput
+        {
+            WingId = wingId,
+            Name = "Completed tickets",
+            Description = "High-volume closed work"
+        }, CancellationToken.None);
+
+        for (var index = 0; index < 30; index++)
+        {
+            await service.SaveMemoryAsync(new MemoryEditorInput
+            {
+                Title = $"Completed ticket {index + 1}",
+                Summary = "Closed ticket summary",
+                Content = "Closed ticket detail",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                Importance = 2 + (index % 3),
+                WingId = wingId,
+                RoomId = roomId
+            }, CancellationToken.None);
+        }
+
+        var model = await service.GetVisualizerAsync(CancellationToken.None);
+
+        var roomMemoryNodes = model.Scene.Nodes
+            .Where(node => node.NodeTypeLabel == "Memory" && node.OrbitCenterNodeId == $"room:{roomId}")
+            .ToArray();
+
+        Assert.Equal(30, roomMemoryNodes.Length);
+        Assert.True(roomMemoryNodes.Max(node => node.OrbitRadius) < 150d);
     }
 
     [Fact]
@@ -978,6 +1102,103 @@ public sealed class PalaceServiceTests
         Assert.Equal(concise!.Todos.Select(x => x.Title), withStopwords!.Todos.Select(x => x.Title));
         Assert.DoesNotContain("and", withStopwords.SearchTokens);
         Assert.DoesNotContain("the", withStopwords.SearchTokens);
+    }
+
+    [Fact]
+    public async Task ContextService_AppliesPackGoalAndSemanticScoring()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        dbContext.Memories.Add(new MemoryEntry
+        {
+            Title = "Platform architecture baseline",
+            Summary = "Core system design decisions.",
+            Content = "This memory captures the architecture structure for the platform.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.Architecture,
+            UpdatedUtc = DateTime.UtcNow,
+            Wing = new Wing
+            {
+                Name = "Architecture",
+                Slug = "architecture",
+                Description = "System design notes."
+            }
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(new ContextBriefInput
+        {
+            Question = "system design",
+            PackGoal = ContextPackGoal.Architecture,
+            ResultsPerSection = 3
+        }, CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.Equal("Architecture", pack!.GoalLabel);
+        var topMemory = Assert.Single(pack.Memories);
+        Assert.True(topMemory.SemanticScore > 0m);
+        Assert.Equal("Top match", topMemory.ScoreLabel);
+    }
+
+    [Fact]
+    public async Task QuickCaptureAsync_CreatesMemoryWithDerivedTags()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Capture",
+            Description = "Quick capture coverage."
+        }, CancellationToken.None);
+
+        var id = await service.QuickCaptureAsync(new QuickCaptureInput
+        {
+            RawText = "Installer deployment reliability follow-up\nNeed to verify token registration and retry behavior.",
+            Kind = MemoryKind.Incident,
+            SourceKind = SourceKind.ChatSession,
+            WingId = wingId,
+            IsPinned = true
+        }, CancellationToken.None);
+
+        var memory = await service.GetMemoryAsync(id, CancellationToken.None);
+        Assert.NotNull(memory);
+        Assert.Equal("Installer deployment reliability follow-up", memory!.Memory.Title);
+        Assert.Contains("installer", memory.Memory.Tags);
+        Assert.Contains("deployment", memory.Memory.Tags);
+        Assert.True(memory.Memory.IsPinned);
+    }
+
+    [Fact]
+    public async Task FindDuplicateSuggestionsAsync_ReturnsLikelyDuplicate()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Installer token retry behavior",
+            Summary = "Capture how installer registration retries behave.",
+            Content = "Installer token registration should retry cleanly after transient network failures.",
+            Kind = MemoryKind.Reference,
+            SourceKind = SourceKind.DebugSession,
+            Importance = 4,
+            TagsText = "installer, token, retry"
+        }, CancellationToken.None);
+
+        var suggestions = await service.FindDuplicateSuggestionsAsync(new MemoryEditorInput
+        {
+            Title = "Installer token retry behavior",
+            Summary = "How registration retries behave after a transient failure.",
+            Content = "Installer token registration should retry after transient network failures."
+        }, CancellationToken.None);
+
+        var suggestion = Assert.Single(suggestions);
+        Assert.Equal("Likely duplicate", suggestion.ScoreLabel);
     }
 
     [Fact]

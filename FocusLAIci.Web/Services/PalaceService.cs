@@ -43,6 +43,12 @@ public sealed class PalaceService
             .ThenByDescending(x => x.UpdatedUtc)
             .Take(12)
             .ToListAsync(cancellationToken);
+        var resurfacingCandidates = await BuildMemoryQuery()
+            .OrderByDescending(x => x.ReferenceCount)
+            .ThenBy(x => x.LastReferencedUtc ?? DateTime.MinValue)
+            .ThenBy(x => x.UpdatedUtc)
+            .Take(24)
+            .ToListAsync(cancellationToken);
         var currentTodos = await BuildTodoQuery(includeDone: false)
             .Take(5)
             .ToListAsync(cancellationToken);
@@ -101,6 +107,8 @@ public sealed class PalaceService
 
         var wings = await BuildWingSummariesAsync(cancellationToken);
         var contextPack = await _contextService.BuildContextPackAsync(effectiveContextInput, cancellationToken);
+        var mappedRecentMemories = memories.Select(MapCard).ToArray();
+        var mappedPinnedMemories = mappedRecentMemories.Where(x => x.IsPinned).ToArray();
         var recentActivity = recentTicketActivity
             .Concat(recentMemoryActivity)
             .Concat(recentTodoActivity)
@@ -113,8 +121,8 @@ public sealed class PalaceService
             currentTodos.Select(MapTodo).ToArray(),
             activeTickets.Select(MapDashboardTicketSummary).ToArray(),
             recentActivity,
-            memories.Where(x => x.IsPinned).Select(MapCard).ToArray(),
-            memories.Select(MapCard).ToArray(),
+            mappedPinnedMemories,
+            mappedRecentMemories,
             wings);
 
         return new DashboardViewModel
@@ -122,11 +130,13 @@ public sealed class PalaceService
             Stats = await BuildStatsAsync(cancellationToken),
             ContextInput = effectiveContextInput,
             ContextPack = contextPack,
+            QuickCaptureInput = new QuickCaptureInput(),
             ActiveTickets = activeTickets.Select(MapDashboardTicketSummary).ToArray(),
             RecentActivity = recentActivity,
             Wings = wings,
-            RecentMemories = memories.Select(MapCard).ToArray(),
-            PinnedMemories = memories.Where(x => x.IsPinned).Select(MapCard).ToArray(),
+            RecentMemories = mappedRecentMemories,
+            PinnedMemories = mappedPinnedMemories,
+            ResurfacingMemories = BuildResurfacingMemories(resurfacingCandidates, contextPack),
             CurrentTodos = currentTodos.Select(MapTodo).ToArray(),
             MissingContextWarnings = warningItems.Select(x => x.Message).ToArray(),
             MissingContextWarningItems = warningItems,
@@ -505,6 +515,8 @@ public sealed class PalaceService
 
     public async Task<PalaceVisualizerViewModel> GetVisualizerAsync(CancellationToken cancellationToken)
     {
+        await NormalizeWingLevelMemoriesIntoGeneralRoomsAsync(cancellationToken);
+
         var wings = await _dbContext.Wings
             .AsNoTracking()
             .OrderBy(x => x.Name)
@@ -522,6 +534,13 @@ public sealed class PalaceService
                 .ThenInclude(x => x.Tag)
             .OrderByDescending(x => x.IsPinned)
             .ThenByDescending(x => x.UpdatedUtc)
+            .ToListAsync(cancellationToken);
+        var activeTodos = await BuildTodoQuery(includeDone: false).ToListAsync(cancellationToken);
+
+        var activeMemoryIds = memories.Select(x => x.Id).ToArray();
+        var memoryLinks = await _dbContext.MemoryLinks
+            .AsNoTracking()
+            .Where(x => activeMemoryIds.Contains(x.FromMemoryEntryId) && activeMemoryIds.Contains(x.ToMemoryEntryId))
             .ToListAsync(cancellationToken);
 
         var visualMemories = memories
@@ -544,8 +563,8 @@ public sealed class PalaceService
                         .OrderBy(x => x)
                         .ToArray()
                 }
-            })
-            .ToList();
+                })
+                .ToList();
 
         var tagStats = await _dbContext.Tags
             .AsNoTracking()
@@ -585,16 +604,14 @@ public sealed class PalaceService
                                 .ToArray()
                         })
                         .ToArray(),
-                    GeneralMemories = visualMemories
-                        .Where(memory => memory.WingId == wing.Id && memory.RoomId is null)
-                        .Select(memory => memory.Item)
-                        .ToArray()
+                    GeneralMemories = Array.Empty<PalaceVisualizerMemoryViewModel>()
                 })
                 .ToArray(),
             UnsortedMemories = visualMemories
                 .Where(memory => memory.WingId is null)
                 .Select(memory => memory.Item)
                 .ToArray(),
+            ActiveTodos = activeTodos.Select(MapTodo).ToArray(),
             Tags = tagStats
                 .Select(tag => new TagCloudItemViewModel
                 {
@@ -605,7 +622,8 @@ public sealed class PalaceService
                         ? 3
                         : 1 + (int)Math.Round(((double)(tag.MemoryCount - minTagCount) / (maxTagCount - minTagCount)) * 4d, MidpointRounding.AwayFromZero)
                 })
-                .ToArray()
+                .ToArray(),
+            Scene = BuildPalaceScene(wings, rooms, memories, memoryLinks, activeTodos)
         };
     }
 
@@ -732,6 +750,8 @@ public sealed class PalaceService
 
     public async Task<MemoryEditorViewModel> BuildMemoryEditorAsync(Guid? id, Guid? selectedWingId, CancellationToken cancellationToken)
     {
+        await NormalizeWingLevelMemoriesIntoGeneralRoomsAsync(cancellationToken);
+
         if (id is null)
         {
             return new MemoryEditorViewModel
@@ -743,7 +763,9 @@ public sealed class PalaceService
                     WingId = selectedWingId
                 },
                 WingOptions = await BuildWingOptionsAsync(cancellationToken),
-                RoomOptions = await BuildRoomOptionsAsync(selectedWingId, cancellationToken)
+                RoomOptions = await BuildRoomOptionsAsync(selectedWingId, cancellationToken),
+                SuggestedTags = Array.Empty<string>(),
+                DuplicateSuggestions = Array.Empty<DuplicateSuggestionViewModel>()
             };
         }
 
@@ -776,8 +798,81 @@ public sealed class PalaceService
                 TagsText = string.Join(", ", memory.MemoryTags.Select(x => x.Tag!.Name).OrderBy(x => x))
             },
             WingOptions = await BuildWingOptionsAsync(cancellationToken),
-            RoomOptions = await BuildRoomOptionsAsync(selectedWingId ?? memory.WingId, cancellationToken)
+            RoomOptions = await BuildRoomOptionsAsync(selectedWingId ?? memory.WingId, cancellationToken),
+            SuggestedTags = SuggestTagsForDraft(new MemoryEditorInput
+            {
+                Title = memory.Title,
+                Summary = memory.Summary,
+                Content = memory.Content,
+                TagsText = string.Join(", ", memory.MemoryTags.Select(x => x.Tag!.Name).OrderBy(x => x))
+            }),
+            DuplicateSuggestions = await FindDuplicateSuggestionsAsync(new MemoryEditorInput
+            {
+                Id = memory.Id,
+                Title = memory.Title,
+                Summary = memory.Summary,
+                Content = memory.Content
+            }, cancellationToken)
         };
+    }
+
+    public async Task<Guid> QuickCaptureAsync(QuickCaptureInput input, CancellationToken cancellationToken)
+    {
+        var memoryInput = BuildQuickCaptureMemoryInput(input);
+        return await SaveMemoryAsync(memoryInput, cancellationToken);
+    }
+
+    public IReadOnlyCollection<string> SuggestTagsForDraft(MemoryEditorInput input)
+    {
+        var explicitTags = ParseTags(input.TagsText);
+        var suggestedTokens = TokenizeDraftText($"{input.Title} {input.Summary} {input.Content}")
+            .Where(token => token.Length > 3)
+            .Where(token => !explicitTags.Contains(token, StringComparer.OrdinalIgnoreCase))
+            .Take(6)
+            .ToArray();
+
+        return explicitTags.Concat(suggestedTokens)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public async Task<IReadOnlyCollection<DuplicateSuggestionViewModel>> FindDuplicateSuggestionsAsync(MemoryEditorInput input, CancellationToken cancellationToken)
+    {
+        var normalizedDraft = $"{input.Title} {input.Summary} {input.Content}".Trim();
+        if (string.IsNullOrWhiteSpace(normalizedDraft))
+        {
+            return Array.Empty<DuplicateSuggestionViewModel>();
+        }
+
+        var memories = await BuildMemoryQuery(includeRetired: false)
+            .Where(x => !input.Id.HasValue || x.Id != input.Id.Value)
+            .OrderByDescending(x => x.UpdatedUtc)
+            .Take(40)
+            .ToListAsync(cancellationToken);
+
+        return memories
+            .Select(memory =>
+            {
+                var score = ScoreDuplicateSimilarity(normalizedDraft, $"{memory.Title} {memory.Summary} {memory.Content}");
+                return new { Memory = memory, Score = score };
+            })
+            .Where(x => x.Score >= 0.42m)
+            .OrderByDescending(x => x.Score)
+            .ThenByDescending(x => x.Memory.UpdatedUtc)
+            .Take(3)
+            .Select(x => new DuplicateSuggestionViewModel
+            {
+                Id = x.Memory.Id,
+                Title = x.Memory.Title,
+                Summary = x.Memory.Summary,
+                Url = $"/Palace/Memory/{x.Memory.Id}",
+                Score = Math.Round(x.Score * 100m, 1),
+                ScoreLabel = x.Score >= 0.75m ? "Likely duplicate" : "Related memory",
+                MatchReason = x.Score >= 0.75m
+                    ? "High overlap with the current draft."
+                    : "Similar language and intent detected."
+            })
+            .ToArray();
     }
 
     public async Task<RoomEditorViewModel> BuildRoomEditorAsync(CancellationToken cancellationToken)
@@ -792,9 +887,11 @@ public sealed class PalaceService
     public async Task<Guid> SaveMemoryAsync(MemoryEditorInput input, CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
-        var room = input.RoomId.HasValue
-            ? await _dbContext.Rooms.AsNoTracking().FirstOrDefaultAsync(x => x.Id == input.RoomId.Value, cancellationToken)
-            : null;
+        Room? room = null;
+        if (input.RoomId.HasValue)
+        {
+            room = await _dbContext.Rooms.AsNoTracking().FirstOrDefaultAsync(x => x.Id == input.RoomId.Value, cancellationToken);
+        }
 
         if (input.RoomId.HasValue && room is null)
         {
@@ -810,6 +907,12 @@ public sealed class PalaceService
         if (room is not null && input.WingId.HasValue && room.WingId != input.WingId.Value)
         {
             throw new InvalidOperationException("The selected room does not belong to the selected wing.");
+        }
+
+        if (room is null && wingId.HasValue)
+        {
+            room = await GetOrCreateGeneralRoomAsync(wingId.Value, cancellationToken);
+            wingId = room.WingId;
         }
 
         MemoryEntry memory;
@@ -870,7 +973,7 @@ public sealed class PalaceService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        var tagNames = ParseTags(input.TagsText);
+        var tagNames = SuggestTagsForDraft(input);
         await SyncTagsAsync(memory.Id, tagNames, cancellationToken);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -1244,6 +1347,8 @@ public sealed class PalaceService
 
     private async Task<IReadOnlyCollection<SelectListItem>> BuildRoomOptionsAsync(Guid? wingId, CancellationToken cancellationToken)
     {
+        await NormalizeWingLevelMemoriesIntoGeneralRoomsAsync(cancellationToken);
+
         var query = _dbContext.Rooms
             .AsNoTracking()
             .Include(x => x.Wing)
@@ -1259,6 +1364,57 @@ public sealed class PalaceService
             .ThenBy(x => x.Name)
             .Select(x => new SelectListItem($"{x.Wing!.Name} / {x.Name}", x.Id.ToString()))
             .ToListAsync(cancellationToken);
+    }
+
+    private async Task NormalizeWingLevelMemoriesIntoGeneralRoomsAsync(CancellationToken cancellationToken)
+    {
+        var wingIds = await _dbContext.Memories
+            .Where(x => x.WingId.HasValue && x.RoomId == null)
+            .Select(x => x.WingId!.Value)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+
+        if (wingIds.Length == 0)
+        {
+            return;
+        }
+
+        foreach (var wingId in wingIds)
+        {
+            var generalRoom = await GetOrCreateGeneralRoomAsync(wingId, cancellationToken);
+            var memories = await _dbContext.Memories
+                .Where(x => x.WingId == wingId && x.RoomId == null)
+                .ToListAsync(cancellationToken);
+            foreach (var memory in memories)
+            {
+                memory.RoomId = generalRoom.Id;
+            }
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<Room> GetOrCreateGeneralRoomAsync(Guid wingId, CancellationToken cancellationToken)
+    {
+        var existingRoom = await _dbContext.Rooms.FirstOrDefaultAsync(
+            x => x.WingId == wingId && x.Name.ToLower() == "general",
+            cancellationToken);
+        if (existingRoom is not null)
+        {
+            return existingRoom;
+        }
+
+        var room = new Room
+        {
+            WingId = wingId,
+            Name = "General",
+            Description = "Default room for wing memories that do not fit a more specific category.",
+            Slug = await BuildUniqueRoomSlugAsync(wingId, "General", cancellationToken)
+        };
+
+        _dbContext.Rooms.Add(room);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return room;
     }
 
     private async Task<IReadOnlyCollection<WingSummaryViewModel>> BuildWingSummariesAsync(CancellationToken cancellationToken)
@@ -1470,6 +1626,84 @@ public sealed class PalaceService
         return tagsText
             .Split([',', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static MemoryEditorInput BuildQuickCaptureMemoryInput(QuickCaptureInput input)
+    {
+        var rawText = input.RawText.Trim();
+        var lines = rawText
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var title = lines.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            title = rawText.Length <= 80 ? rawText : rawText[..80].TrimEnd();
+        }
+
+        title = title.Length <= 200 ? title : title[..200].TrimEnd();
+        var summary = rawText.Length <= 220 ? rawText : rawText[..220].TrimEnd() + "...";
+
+        return new MemoryEditorInput
+        {
+            Title = title,
+            Summary = summary,
+            Content = rawText,
+            Kind = input.Kind,
+            SourceKind = input.SourceKind,
+            IsPinned = input.IsPinned,
+            WingId = input.WingId,
+            TagsText = string.Empty
+        };
+    }
+
+    private static IReadOnlyCollection<string> TokenizeDraftText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Array.Empty<string>();
+        }
+
+        return value
+            .ToLowerInvariant()
+            .Split([' ', '\r', '\n', '\t', ',', '.', ':', ';', '/', '\\', '(', ')', '[', ']', '{', '}', '-', '_', '"', '\''], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(token => token.Length > 2)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(token => token)
+            .ToArray();
+    }
+
+    private static decimal ScoreDuplicateSimilarity(string left, string right)
+    {
+        var leftTokens = TokenizeDraftText(left).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var rightTokens = TokenizeDraftText(right).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (leftTokens.Count == 0 || rightTokens.Count == 0)
+        {
+            return 0m;
+        }
+
+        var overlap = leftTokens.Intersect(rightTokens, StringComparer.OrdinalIgnoreCase).Count();
+        var denominator = Math.Max(leftTokens.Count, rightTokens.Count);
+        var tokenScore = denominator == 0 ? 0m : (decimal)overlap / denominator;
+        var phraseScore = left.Contains(right, StringComparison.OrdinalIgnoreCase) || right.Contains(left, StringComparison.OrdinalIgnoreCase)
+            ? 1m
+            : 0m;
+        return Math.Round(Math.Max(tokenScore, phraseScore), 3);
+    }
+
+    private static IReadOnlyCollection<MemoryCardViewModel> BuildResurfacingMemories(
+        IReadOnlyCollection<MemoryEntry> memories,
+        ContextPackViewModel? contextPack)
+    {
+        var contextIds = contextPack?.Memories.Select(x => x.Id).ToHashSet() ?? new HashSet<Guid>();
+
+        return memories
+            .Select(MapCard)
+            .OrderByDescending(x => contextIds.Contains(x.Id))
+            .ThenByDescending(x => x.IsReviewDue)
+            .ThenByDescending(x => x.ReferenceCount > 0)
+            .ThenBy(x => x.LastReferencedUtc ?? DateTime.MinValue)
+            .ThenBy(x => x.UpdatedUtc)
+            .Take(4)
             .ToArray();
     }
 
@@ -1776,8 +2010,620 @@ public sealed class PalaceService
             IsReviewDue = trust.IsReviewDue,
             IsRetired = memory.LifecycleState != MemoryLifecycleState.Active,
             FreshnessLabel = trust.FreshnessLabel,
+            TrustScore = trust.TrustScore,
+            TrustLabel = trust.TrustLabel,
             UpdatedUtc = memory.UpdatedUtc,
             Tags = memory.MemoryTags.OrderBy(x => x.Tag!.Name).Select(x => x.Tag!.Name).ToArray()
         };
+    }
+
+    private static PalaceVisualizerSceneViewModel BuildPalaceScene(
+        IReadOnlyCollection<Wing> wings,
+        IReadOnlyCollection<Room> rooms,
+        IReadOnlyCollection<MemoryEntry> memories,
+        IReadOnlyCollection<MemoryLink> memoryLinks,
+        IReadOnlyCollection<TodoEntry> activeTodos)
+    {
+        if (wings.Count == 0 && memories.Count == 0 && activeTodos.Count == 0)
+        {
+            return new PalaceVisualizerSceneViewModel();
+        }
+
+        const string palaceNodeId = "palace-root";
+        const string unsortedNodeId = "wing:unsorted";
+        const string todoWingNodeId = "wing:workboard";
+        const string palaceColor = "#7EA8FF";
+        const string unsortedColor = "#D59CFF";
+        const string todoWingColor = "#14B8A6";
+        const string structureEdgeColor = "#8AB4F8";
+        const string memoryLinkEdgeColor = "#FFB76A";
+        string[] wingPalette = ["#2563EB", "#DC2626", "#EAB308", "#16A34A", "#F97316", "#7C3AED", "#0891B2", "#DB2777"];
+
+        var nodes = new List<PalaceVisualizerSceneNodeViewModel>();
+        var edges = new List<PalaceVisualizerSceneEdgeViewModel>();
+
+        var orderedWings = wings.OrderBy(x => x.Name).ToArray();
+        var orderedRooms = rooms.OrderBy(x => x.Name).ToArray();
+        var roomLookup = orderedRooms.ToDictionary(x => x.Id);
+        var wingLookup = orderedWings.ToDictionary(x => x.Id);
+
+        var activeMemories = memories
+            .OrderByDescending(x => x.IsPinned)
+            .ThenByDescending(x => x.Importance)
+            .ThenBy(x => x.Title)
+            .ToArray();
+        var unsortedMemories = activeMemories
+            .Where(memory => memory.WingId is null)
+            .OrderByDescending(x => x.IsPinned)
+            .ThenByDescending(x => x.Importance)
+            .ThenBy(x => x.Title)
+            .ToArray();
+        var totalWingLikeCount = orderedWings.Length + (unsortedMemories.Length > 0 ? 1 : 0) + (activeTodos.Count > 0 ? 1 : 0);
+
+        nodes.Add(new PalaceVisualizerSceneNodeViewModel
+        {
+            Id = palaceNodeId,
+            Label = "Focus Palace",
+            NodeTypeLabel = "Palace",
+            SecondaryLabel = $"{orderedWings.Length} wings • {orderedRooms.Length} rooms • {activeMemories.Length} active memories • {activeTodos.Count} active todos",
+            ColorHex = palaceColor,
+            UrlPath = "/Palace/Explore",
+            Radius = 22d,
+            IsEmphasized = false
+        });
+
+        var wingAnchors = new Dictionary<Guid, (double X, double Y, double Z)>();
+        var wingColors = new Dictionary<Guid, string>();
+        var roomColors = new Dictionary<Guid, string>();
+        for (var index = 0; index < orderedWings.Length; index++)
+        {
+            var wing = orderedWings[index];
+            var wingColor = wingPalette[index % wingPalette.Length];
+            var angle = (index / Math.Max(1d, totalWingLikeCount)) * Math.PI * 2d;
+            var radius = 480d;
+            var galaxyPhase = StableUnitValue(wing.Id, 11) * Math.PI * 2d;
+            var quadrant = index % 4;
+            var verticalLaneBias = quadrant switch
+            {
+                0 => 228d,
+                1 => -218d,
+                2 => 172d,
+                _ => -182d
+            };
+            var depthLaneBias = quadrant switch
+            {
+                0 => 298d,
+                1 => 286d,
+                2 => -286d,
+                _ => -302d
+            };
+            var xTilt = quadrant switch
+            {
+                0 => 1d,
+                1 => 0.82d,
+                2 => -0.82d,
+                _ => -1d
+            };
+            var anchor = (
+                X: (Math.Cos(angle) * radius) + (Math.Sin(galaxyPhase) * 88d * xTilt),
+                Y: (Math.Sin(angle) * radius * 0.78d) + verticalLaneBias + (Math.Cos(galaxyPhase) * 42d),
+                Z: (Math.Cos((angle * 1.28d) + galaxyPhase) * radius * 0.42d) + depthLaneBias + (Math.Sin(angle + galaxyPhase) * 52d));
+
+            wingAnchors[wing.Id] = anchor;
+            wingColors[wing.Id] = wingColor;
+
+            var wingRoomCount = orderedRooms.Count(room => room.WingId == wing.Id);
+            var wingMemoryCount = activeMemories.Count(memory => memory.WingId == wing.Id);
+            var wingRadius = Math.Min(14d + (wingRoomCount * 1.55d), 25d);
+            nodes.Add(new PalaceVisualizerSceneNodeViewModel
+            {
+                Id = $"wing:{wing.Id}",
+                Label = wing.Name,
+                NodeTypeLabel = "Wing",
+                SecondaryLabel = $"{wingRoomCount} rooms • {wingMemoryCount} memories",
+                ColorHex = wingColor,
+                UrlPath = $"/Palace/Wing?slug={Uri.EscapeDataString(wing.Slug)}",
+                X = anchor.X,
+                Y = anchor.Y,
+                Z = anchor.Z,
+                Radius = wingRadius,
+                IsEmphasized = false
+            });
+            edges.Add(new PalaceVisualizerSceneEdgeViewModel
+            {
+                FromNodeId = palaceNodeId,
+                ToNodeId = $"wing:{wing.Id}",
+                ColorHex = structureEdgeColor
+            });
+        }
+
+        foreach (var wing in orderedWings)
+        {
+            var wingAnchor = wingAnchors[wing.Id];
+            var wingRooms = orderedRooms.Where(room => room.WingId == wing.Id).OrderBy(room => room.Name).ToArray();
+            for (var index = 0; index < wingRooms.Length; index++)
+            {
+                var room = wingRooms[index];
+                var roomColor = BlendHexColor(wingColors[wing.Id], "#0E1828", 0.18d + (StableUnitValue(room.Id, 19) * 0.12d));
+                roomColors[room.Id] = roomColor;
+                var angle = ((index / Math.Max(1d, wingRooms.Length)) * Math.PI * 2d) + (StableUnitValue(room.Id, 5) * 0.34d);
+                var radius = 220d + (index * 34d) + (StableUnitValue(room.Id, 9) * 42d);
+                var orbitPhase = StableUnitValue(room.Id, 21) * Math.PI * 2d;
+                var orbitSpeed = Math.PI / 60d;
+                var x = wingAnchor.X + Math.Cos(angle) * radius;
+                var y = wingAnchor.Y + Math.Sin(angle) * radius * 0.94d;
+                var z = wingAnchor.Z + Math.Cos((angle * 1.14d) + orbitPhase) * radius * 0.34d;
+
+                nodes.Add(new PalaceVisualizerSceneNodeViewModel
+                {
+                    Id = $"room:{room.Id}",
+                    Label = room.Name,
+                    NodeTypeLabel = "Room",
+                    SecondaryLabel = $"{wing.Name} • {activeMemories.Count(memory => memory.RoomId == room.Id)} memories",
+                    ColorHex = roomColor,
+                    UrlPath = $"/Palace/Explore?roomId={room.Id}",
+                    X = x,
+                    Y = y,
+                    Z = z,
+                    Radius = 11d,
+                    OrbitCenterNodeId = $"wing:{wing.Id}",
+                    OrbitRadius = radius,
+                    OrbitVerticalRadius = radius * 0.94d,
+                    OrbitDepthRadius = radius * 0.34d,
+                    OrbitPhase = angle,
+                    OrbitSpeed = orbitSpeed,
+                    IsEmphasized = false
+                });
+                edges.Add(new PalaceVisualizerSceneEdgeViewModel
+                {
+                    FromNodeId = $"wing:{wing.Id}",
+                    ToNodeId = $"room:{room.Id}",
+                    ColorHex = structureEdgeColor
+                });
+            }
+        }
+
+        var generalMemoriesByWing = activeMemories
+            .Where(memory => memory.WingId.HasValue && memory.RoomId is null)
+            .GroupBy(memory => memory.WingId!.Value)
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(x => x.IsPinned).ThenByDescending(x => x.Importance).ThenBy(x => x.Title).ToArray());
+
+        foreach (var wing in orderedWings)
+        {
+            if (!generalMemoriesByWing.TryGetValue(wing.Id, out var generalMemories))
+            {
+                continue;
+            }
+
+            var wingAnchor = wingAnchors[wing.Id];
+            var wingMemoryColor = BlendHexColor(wingColors[wing.Id], "#FFFFFF", 0.16d);
+            for (var index = 0; index < generalMemories.Length; index++)
+            {
+                var memory = generalMemories[index];
+                AddMemorySceneNode(nodes, edges, $"wing:{wing.Id}", memory, $"General • {wing.Name}", wingAnchor, index, generalMemories.Length, wingMemoryColor, structureEdgeColor, $"/Palace/Memory?id={memory.Id}", 86d, 14d);
+            }
+        }
+
+        foreach (var room in orderedRooms)
+        {
+            var roomMemories = activeMemories
+                .Where(memory => memory.RoomId == room.Id)
+                .OrderByDescending(x => x.IsPinned)
+                .ThenByDescending(x => x.Importance)
+                .ThenBy(x => x.Title)
+                .ToArray();
+
+            if (roomMemories.Length == 0)
+            {
+                continue;
+            }
+
+            var roomNode = nodes.First(node => node.Id == $"room:{room.Id}");
+            var roomAnchor = (roomNode.X, roomNode.Y, roomNode.Z);
+            var roomMemoryColor = BlendHexColor(roomColors[room.Id], "#FFFFFF", 0.16d);
+            foreach (var memoryWithIndex in roomMemories.Select((memory, index) => new { memory, index }))
+            {
+                AddMemorySceneNode(nodes, edges, $"room:{room.Id}", memoryWithIndex.memory, $"{room.Name} • {wingLookup[room.WingId].Name}", roomAnchor, memoryWithIndex.index, roomMemories.Length, roomMemoryColor, structureEdgeColor, $"/Palace/Memory?id={memoryWithIndex.memory.Id}", 64d, 12d);
+            }
+        }
+
+        if (unsortedMemories.Length > 0)
+        {
+            var unsortedIndex = orderedWings.Length;
+            var unsortedAngle = (unsortedIndex / Math.Max(1d, totalWingLikeCount)) * Math.PI * 2d;
+            var unsortedRadius = 480d;
+            const double unsortedGalaxyPhase = Math.PI * 1.37d;
+            var unsortedQuadrant = unsortedIndex % 4;
+            var unsortedVerticalLaneBias = unsortedQuadrant switch
+            {
+                0 => 228d,
+                1 => -218d,
+                2 => 172d,
+                _ => -182d
+            };
+            var unsortedDepthLaneBias = unsortedQuadrant switch
+            {
+                0 => 298d,
+                1 => 286d,
+                2 => -286d,
+                _ => -302d
+            };
+            var unsortedXTilt = unsortedQuadrant switch
+            {
+                0 => 1d,
+                1 => 0.82d,
+                2 => -0.82d,
+                _ => -1d
+            };
+            var unsortedAnchor = (
+                X: (Math.Cos(unsortedAngle) * unsortedRadius) + (Math.Sin(unsortedGalaxyPhase) * 88d * unsortedXTilt),
+                Y: (Math.Sin(unsortedAngle) * unsortedRadius * 0.78d) + unsortedVerticalLaneBias + (Math.Cos(unsortedGalaxyPhase) * 42d),
+                Z: (Math.Cos((unsortedAngle * 1.28d) + unsortedGalaxyPhase) * unsortedRadius * 0.42d) + unsortedDepthLaneBias + (Math.Sin(unsortedAngle + unsortedGalaxyPhase) * 52d));
+            nodes.Add(new PalaceVisualizerSceneNodeViewModel
+            {
+                Id = unsortedNodeId,
+                Label = "Unsorted wing",
+                NodeTypeLabel = "Wing",
+                SecondaryLabel = $"{unsortedMemories.Length} unfiled memories",
+                ColorHex = unsortedColor,
+                UrlPath = "/Palace/Explore",
+                X = unsortedAnchor.X,
+                Y = unsortedAnchor.Y,
+                Z = unsortedAnchor.Z,
+                Radius = Math.Min(14d + (unsortedMemories.Length * 0.35d), 22d),
+                IsEmphasized = false
+            });
+            edges.Add(new PalaceVisualizerSceneEdgeViewModel
+            {
+                FromNodeId = palaceNodeId,
+                ToNodeId = unsortedNodeId,
+                ColorHex = structureEdgeColor
+            });
+
+            var unsortedMemoryColor = BlendHexColor(unsortedColor, "#FFFFFF", 0.14d);
+            foreach (var memoryWithIndex in unsortedMemories.Select((memory, index) => new { memory, index }))
+            {
+                AddMemorySceneNode(nodes, edges, unsortedNodeId, memoryWithIndex.memory, "Unsorted wing", unsortedAnchor, memoryWithIndex.index, unsortedMemories.Length, unsortedMemoryColor, structureEdgeColor, $"/Palace/Memory?id={memoryWithIndex.memory.Id}", 92d, 14d);
+            }
+        }
+
+        if (activeTodos.Count > 0)
+        {
+            var todoIndex = orderedWings.Length + (unsortedMemories.Length > 0 ? 1 : 0);
+            var todoAngle = (todoIndex / Math.Max(1d, totalWingLikeCount)) * Math.PI * 2d;
+            var todoRadius = 480d;
+            const double todoGalaxyPhase = Math.PI * 0.63d;
+            var todoQuadrant = todoIndex % 4;
+            var todoVerticalLaneBias = todoQuadrant switch
+            {
+                0 => 228d,
+                1 => -218d,
+                2 => 172d,
+                _ => -182d
+            };
+            var todoDepthLaneBias = todoQuadrant switch
+            {
+                0 => 298d,
+                1 => 286d,
+                2 => -286d,
+                _ => -302d
+            };
+            var todoXTilt = todoQuadrant switch
+            {
+                0 => 1d,
+                1 => 0.82d,
+                2 => -0.82d,
+                _ => -1d
+            };
+            var todoAnchor = (
+                X: (Math.Cos(todoAngle) * todoRadius) + (Math.Sin(todoGalaxyPhase) * 88d * todoXTilt),
+                Y: (Math.Sin(todoAngle) * todoRadius * 0.78d) + todoVerticalLaneBias + (Math.Cos(todoGalaxyPhase) * 42d),
+                Z: (Math.Cos((todoAngle * 1.28d) + todoGalaxyPhase) * todoRadius * 0.42d) + todoDepthLaneBias + (Math.Sin(todoAngle + todoGalaxyPhase) * 52d));
+            var todoRoomCount = activeTodos.Select(x => x.Status).Distinct().Count();
+            nodes.Add(new PalaceVisualizerSceneNodeViewModel
+            {
+                Id = todoWingNodeId,
+                Label = "Workboard",
+                NodeTypeLabel = "Wing",
+                SecondaryLabel = $"{todoRoomCount} todo lanes • {activeTodos.Count} active todos",
+                ColorHex = todoWingColor,
+                UrlPath = "/Todos",
+                X = todoAnchor.X,
+                Y = todoAnchor.Y,
+                Z = todoAnchor.Z,
+                Radius = Math.Min(15d + (todoRoomCount * 2d), 24d),
+                IsEmphasized = false
+            });
+            edges.Add(new PalaceVisualizerSceneEdgeViewModel
+            {
+                FromNodeId = palaceNodeId,
+                ToNodeId = todoWingNodeId,
+                ColorHex = structureEdgeColor
+            });
+
+            var todoStatusGroups = activeTodos
+                .GroupBy(todo => todo.Status)
+                .OrderBy(group => group.Key == TodoStatus.InProgress ? 0 : group.Key == TodoStatus.Pending ? 1 : 2)
+                .ToArray();
+
+            for (var index = 0; index < todoStatusGroups.Length; index++)
+            {
+                var group = todoStatusGroups[index];
+                var roomId = $"todo-room:{group.Key}";
+                var roomAngle = ((index / Math.Max(1d, todoStatusGroups.Length)) * Math.PI * 2d) + (index * 0.18d);
+                var roomRadius = 210d + (index * 28d);
+                var roomColor = BlendHexColor(todoWingColor, "#0E1828", 0.16d + (index * 0.06d));
+                var roomPhase = index * 0.7d;
+                var roomAnchor = (
+                    X: todoAnchor.X + Math.Cos(roomAngle) * roomRadius,
+                    Y: todoAnchor.Y + Math.Sin(roomAngle) * roomRadius * 0.92d,
+                    Z: todoAnchor.Z + Math.Cos((roomAngle * 1.14d) + roomPhase) * roomRadius * 0.32d);
+                nodes.Add(new PalaceVisualizerSceneNodeViewModel
+                {
+                    Id = roomId,
+                    Label = group.Key switch
+                    {
+                        TodoStatus.InProgress => "In progress",
+                        TodoStatus.Pending => "Pending",
+                        TodoStatus.Blocked => "Blocked",
+                        _ => group.Key.ToString()
+                    },
+                    NodeTypeLabel = "Room",
+                    SecondaryLabel = $"Workboard • {group.Count()} todos",
+                    ColorHex = roomColor,
+                    UrlPath = "/Todos",
+                    X = roomAnchor.X,
+                    Y = roomAnchor.Y,
+                    Z = roomAnchor.Z,
+                    Radius = 11d,
+                    OrbitCenterNodeId = todoWingNodeId,
+                    OrbitRadius = roomRadius,
+                    OrbitVerticalRadius = roomRadius * 0.92d,
+                    OrbitDepthRadius = roomRadius * 0.32d,
+                    OrbitPhase = roomAngle,
+                    OrbitSpeed = 0.08d + (index * 0.01d),
+                    IsEmphasized = false
+                });
+                edges.Add(new PalaceVisualizerSceneEdgeViewModel
+                {
+                    FromNodeId = todoWingNodeId,
+                    ToNodeId = roomId,
+                    ColorHex = structureEdgeColor
+                });
+
+                var orderedTodos = group
+                    .OrderBy(todo => todo.Status == TodoStatus.InProgress ? 0 : todo.Status == TodoStatus.Pending ? 1 : 2)
+                    .ThenByDescending(todo => todo.UpdatedUtc)
+                    .ThenBy(todo => todo.Title)
+                    .ToArray();
+                foreach (var todoWithIndex in orderedTodos.Select((todo, itemIndex) => new { todo, itemIndex }))
+                {
+                    AddTodoSceneNode(
+                        nodes,
+                        edges,
+                        roomId,
+                        todoWithIndex.todo,
+                        roomAnchor,
+                        todoWithIndex.itemIndex,
+                        orderedTodos.Length,
+                        roomColor,
+                        structureEdgeColor);
+                }
+            }
+        }
+
+        var memoryNodeIds = nodes
+            .Where(node => node.Id.StartsWith("memory:", StringComparison.Ordinal))
+            .Select(node => node.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var link in memoryLinks.Where(link => link.FromMemoryEntryId != link.ToMemoryEntryId))
+        {
+            var fromNodeId = $"memory:{link.FromMemoryEntryId}";
+            var toNodeId = $"memory:{link.ToMemoryEntryId}";
+            if (!memoryNodeIds.Contains(fromNodeId) || !memoryNodeIds.Contains(toNodeId))
+            {
+                continue;
+            }
+
+            edges.Add(new PalaceVisualizerSceneEdgeViewModel
+            {
+                FromNodeId = fromNodeId,
+                ToNodeId = toNodeId,
+                ColorHex = memoryLinkEdgeColor
+            });
+        }
+
+        var legend = new List<PalaceVisualizerSceneLegendItemViewModel>
+        {
+            new() { Label = "Palace", ColorHex = palaceColor }
+        };
+
+        legend.AddRange(orderedWings.Select(wing => new PalaceVisualizerSceneLegendItemViewModel
+        {
+            Label = wing.Name,
+            ColorHex = wingColors[wing.Id]
+        }));
+
+        if (unsortedMemories.Length > 0)
+        {
+            legend.Add(new PalaceVisualizerSceneLegendItemViewModel
+            {
+                Label = "Unsorted wing",
+                ColorHex = unsortedColor
+            });
+        }
+
+        if (activeTodos.Count > 0)
+        {
+            legend.Add(new PalaceVisualizerSceneLegendItemViewModel
+            {
+                Label = "Workboard",
+                ColorHex = todoWingColor
+            });
+        }
+
+        return new PalaceVisualizerSceneViewModel
+        {
+            Heading = "3D palace graph",
+            Summary = "A rotating structural map of wings, rooms, memories, and cross-memory links so the palace is easier to inspect as a connected system.",
+            Legend = legend,
+            Nodes = nodes,
+            Edges = edges
+        };
+    }
+
+    private static void AddMemorySceneNode(
+        ICollection<PalaceVisualizerSceneNodeViewModel> nodes,
+        ICollection<PalaceVisualizerSceneEdgeViewModel> edges,
+        string parentNodeId,
+        MemoryEntry memory,
+        string secondaryLabel,
+        (double X, double Y, double Z) anchor,
+        int index,
+        int totalCount,
+        string nodeColor,
+        string edgeColor,
+        string urlPath,
+        double baseOrbitRadius,
+        double orbitStep)
+    {
+        var shellCapacity = Math.Clamp((int)Math.Ceiling(Math.Sqrt(Math.Max(1, totalCount)) * 2.4d), 6, 18);
+        var shellIndex = index / shellCapacity;
+        var shellSlot = index % shellCapacity;
+        var shellItemCount = Math.Min(shellCapacity, totalCount - (shellIndex * shellCapacity));
+        var angle = ((shellSlot / Math.Max(1d, shellItemCount)) * Math.PI * 2d)
+            + (shellIndex * 0.42d)
+            + (StableUnitValue(memory.Id, 17) * 0.45d);
+        var radius = baseOrbitRadius
+            + (shellIndex * orbitStep * 1.45d)
+            + (StableUnitValue(memory.Id, 23) * Math.Min(orbitStep * 0.75d, 9d));
+        var orbitPhase = StableUnitValue(memory.Id, 31) * Math.PI * 2d;
+        var orbitSpeed = Math.PI / 120d;
+        var x = anchor.X + Math.Cos(angle) * radius;
+        var y = anchor.Y + Math.Sin(angle) * radius * 0.9d;
+        var z = anchor.Z + Math.Cos((angle * 1.18d) + orbitPhase) * radius * 0.38d;
+        var pinnedSuffix = memory.IsPinned ? " • pinned" : string.Empty;
+
+        nodes.Add(new PalaceVisualizerSceneNodeViewModel
+        {
+            Id = $"memory:{memory.Id}",
+            Label = memory.Title,
+            NodeTypeLabel = "Memory",
+            SecondaryLabel = $"{secondaryLabel} • importance {memory.Importance}/5{pinnedSuffix}",
+            ColorHex = nodeColor,
+            UrlPath = urlPath,
+            X = x,
+            Y = y,
+            Z = z,
+            Radius = Math.Min(11d + memory.Importance * 0.9d + (memory.IsPinned ? 1.4d : 0d), 17d),
+            OrbitCenterNodeId = parentNodeId,
+            OrbitRadius = radius,
+            OrbitVerticalRadius = radius * 0.9d,
+            OrbitDepthRadius = radius * 0.38d,
+            OrbitPhase = angle,
+            OrbitSpeed = orbitSpeed,
+            IsEmphasized = false
+        });
+        edges.Add(new PalaceVisualizerSceneEdgeViewModel
+        {
+            FromNodeId = parentNodeId,
+            ToNodeId = $"memory:{memory.Id}",
+            ColorHex = edgeColor
+        });
+    }
+
+    private static void AddTodoSceneNode(
+        ICollection<PalaceVisualizerSceneNodeViewModel> nodes,
+        ICollection<PalaceVisualizerSceneEdgeViewModel> edges,
+        string parentNodeId,
+        TodoEntry todo,
+        (double X, double Y, double Z) anchor,
+        int index,
+        int totalCount,
+        string nodeColor,
+        string edgeColor)
+    {
+        var shellCapacity = Math.Clamp((int)Math.Ceiling(Math.Sqrt(Math.Max(1, totalCount)) * 2.2d), 5, 14);
+        var shellIndex = index / shellCapacity;
+        var shellSlot = index % shellCapacity;
+        var shellItemCount = Math.Min(shellCapacity, totalCount - (shellIndex * shellCapacity));
+        var angle = ((shellSlot / Math.Max(1d, shellItemCount)) * Math.PI * 2d)
+            + (shellIndex * 0.4d)
+            + (StableUnitValue(todo.Id, 41) * 0.35d);
+        var radius = 70d + (shellIndex * 18d) + (StableUnitValue(todo.Id, 43) * 6d);
+        var orbitPhase = StableUnitValue(todo.Id, 47) * Math.PI * 2d;
+        var orbitSpeed = 0.11d + (StableUnitValue(todo.Id, 53) * 0.025d);
+        var x = anchor.X + Math.Cos(angle) * radius;
+        var y = anchor.Y + Math.Sin(angle) * radius * 0.88d;
+        var z = anchor.Z + Math.Cos((angle * 1.18d) + orbitPhase) * radius * 0.28d;
+
+        nodes.Add(new PalaceVisualizerSceneNodeViewModel
+        {
+            Id = $"todo:{todo.Id}",
+            Label = todo.Title,
+            NodeTypeLabel = "Todo",
+            SecondaryLabel = $"{MapDashboardTodoStatusLabel(todo.Status)} • updated {todo.UpdatedUtc:g}",
+            ColorHex = BlendHexColor(nodeColor, "#FFFFFF", 0.12d),
+            UrlPath = $"/Todos/Details/{todo.Id}",
+            X = x,
+            Y = y,
+            Z = z,
+            Radius = 10d,
+            OrbitCenterNodeId = parentNodeId,
+            OrbitRadius = radius,
+            OrbitVerticalRadius = radius * 0.88d,
+            OrbitDepthRadius = radius * 0.28d,
+            OrbitPhase = angle,
+            OrbitSpeed = orbitSpeed,
+            IsEmphasized = false
+        });
+        edges.Add(new PalaceVisualizerSceneEdgeViewModel
+        {
+            FromNodeId = parentNodeId,
+            ToNodeId = $"todo:{todo.Id}",
+            ColorHex = edgeColor
+        });
+    }
+
+    private static string BlendHexColor(string primaryHex, string secondaryHex, double secondaryWeight)
+    {
+        secondaryWeight = Math.Clamp(secondaryWeight, 0d, 1d);
+        var primary = ParseHexColor(primaryHex);
+        var secondary = ParseHexColor(secondaryHex);
+
+        static int Blend(byte primary, byte secondary, double secondaryWeight)
+            => (int)Math.Round((primary * (1d - secondaryWeight)) + (secondary * secondaryWeight), MidpointRounding.AwayFromZero);
+
+        return $"#{Blend(primary.R, secondary.R, secondaryWeight):X2}{Blend(primary.G, secondary.G, secondaryWeight):X2}{Blend(primary.B, secondary.B, secondaryWeight):X2}";
+    }
+
+    private static (byte R, byte G, byte B) ParseHexColor(string hex)
+    {
+        var normalized = hex.Trim().TrimStart('#');
+        if (normalized.Length != 6)
+        {
+            throw new InvalidOperationException("Expected a 6-character hex color.");
+        }
+
+        return (
+            Convert.ToByte(normalized.Substring(0, 2), 16),
+            Convert.ToByte(normalized.Substring(2, 2), 16),
+            Convert.ToByte(normalized.Substring(4, 2), 16));
+    }
+
+    private static double StableUnitValue(Guid id, int salt)
+    {
+        unchecked
+        {
+            var hash = 1469598103934665603UL;
+            foreach (var value in id.ToByteArray())
+            {
+                hash ^= (ulong)(value + salt);
+                hash *= 1099511628211UL;
+            }
+
+            return (hash % 10000UL) / 10000d;
+        }
     }
 }

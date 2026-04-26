@@ -54,6 +54,7 @@ This makes the system much better than a basic note app for operational work, be
 - dashboard context workspace with multi-source retrieval, match explanations, and export/save actions
 - native Inspect page for database/app-state inspection and missing-context review
 - wing and room browsing
+- palace visualizer with both list and 3D graph views for wings, rooms, memories, and links
 - memory creation and editing
 - todo tracking with large prompt-sized details
 - ticket tracking with subtickets, notes, time logs, and activity history

@@ -49,6 +49,39 @@ body[data-theme="dark"] .theme-toggle-icon-moon {
   color: rgba(255, 255, 255, 0.9);
 }
 
+.focus-brand {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.8rem;
+  text-decoration: none;
+}
+
+.focus-brand-copy {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+}
+
+.focus-brand-title {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.focus-brand-tag {
+  color: rgba(191, 219, 254, 0.78);
+  font-size: 0.63rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.focus-brand-mark {
+  display: block;
+  height: 2.2rem;
+  width: 2.2rem;
+}
+
 .palace-nav .nav-link:hover,
 .palace-nav .navbar-brand:hover {
   color: #fff;
@@ -1052,6 +1085,10 @@ body[data-theme="dark"] .theme-toggle-icon-moon {
   z-index: 1;
 }
 
+.palace-3d-canvas {
+  height: 670px;
+}
+
 .code-graph-3d-overlay {
   background: rgba(4, 10, 22, 0.72);
   border: 1px solid rgba(120, 161, 230, 0.26);
@@ -1221,6 +1258,17 @@ body[data-theme="dark"] .theme-toggle-icon-moon {
   line-height: 60px;
   position: absolute;
   width: 100%;
+}
+
+.focus-footer-brand {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.6rem;
+}
+
+.focus-footer-mark {
+  height: 1.1rem;
+  width: 1.1rem;
 }
 
 body[data-theme="dark"] {
@@ -1524,6 +1572,10 @@ body[data-theme="dark"] .footer {
     height: 460px;
   }
 
+  .palace-3d-canvas {
+    height: 610px;
+  }
+
   .code-graph-3d-legend {
     left: 1rem;
     right: 1rem;
@@ -1553,6 +1605,10 @@ body[data-theme="dark"] .footer {
 
   .code-graph-3d-canvas {
     height: 360px;
+  }
+
+  .palace-3d-canvas {
+    height: 510px;
   }
 
   .code-graph-3d-overlay,

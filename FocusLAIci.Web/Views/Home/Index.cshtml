@@ -87,6 +87,22 @@
                         <input id="Question" name="Question" value="@Model.ContextInput.Question" class="form-control" placeholder="e.g. fix auth token refresh, investigate installer reliability, find prior deployment lessons" />
                     </div>
                     <div class="col-md-4">
+                        <label for="PackGoal" class="form-label">@Html.DisplayNameFor(x => x.ContextInput.PackGoal)</label>
+                        <select id="PackGoal" name="PackGoal" class="form-select">
+                            @foreach (var goal in Enum.GetValues<ContextPackGoal>())
+                            {
+                                if (goal == Model.ContextInput.PackGoal)
+                                {
+                                    <option value="@goal" selected>@goal</option>
+                                }
+                                else
+                                {
+                                    <option value="@goal">@goal</option>
+                                }
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4">
                         <label for="ResultsPerSection" class="form-label">@Html.DisplayNameFor(x => x.ContextInput.ResultsPerSection)</label>
                         <select id="ResultsPerSection" name="ResultsPerSection" class="form-select">
                             @foreach (var option in contextResultOptions)
@@ -102,7 +118,7 @@
                             }
                         </select>
                     </div>
-                    <div class="col-md-4 d-flex align-items-end">
+                    <div class="col-md-2 d-flex align-items-end">
                         <div class="form-check">
                             <input type="hidden" name="IncludeCompletedWork" value="false" />
                             @if (Model.ContextInput.IncludeCompletedWork)
@@ -116,7 +132,7 @@
                             <label for="IncludeCompletedWork" class="form-check-label">@Html.DisplayNameFor(x => x.ContextInput.IncludeCompletedWork)</label>
                         </div>
                     </div>
-                    <div class="col-md-4 d-flex align-items-end">
+                    <div class="col-md-2 d-flex align-items-end">
                         <div class="form-check">
                             <input type="hidden" name="ExpandHistory" value="false" />
                             @if (Model.ContextInput.ExpandHistory)
@@ -137,7 +153,9 @@
 
                 @if (Model.ContextPack is not null)
                 {
-                    <div class="alert alert-primary border-0">@Model.ContextPack.Summary</div>
+                    <div class="alert alert-primary border-0">
+                        <strong>@Model.ContextPack.GoalLabel pack:</strong> @Model.ContextPack.Summary
+                    </div>
                     @if (Model.ContextPack.SearchTokens.Count > 0)
                     {
                         <div class="tag-row mb-3">
@@ -152,6 +170,7 @@
                         <form method="post" asp-controller="Context" asp-action="SavePack" class="d-inline">
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="Question" value="@Model.ContextInput.Question" />
+                            <input type="hidden" name="PackGoal" value="@Model.ContextInput.PackGoal" />
                             <input type="hidden" name="ResultsPerSection" value="@Model.ContextInput.ResultsPerSection" />
                             <input type="hidden" name="IncludeCompletedWork" value="@Model.ContextInput.IncludeCompletedWork.ToString().ToLowerInvariant()" />
                             <input type="hidden" name="ExpandHistory" value="@Model.ContextInput.ExpandHistory.ToString().ToLowerInvariant()" />
@@ -160,6 +179,7 @@
                         <form method="post" asp-controller="Context" asp-action="ExportPack" class="d-inline">
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="Question" value="@Model.ContextInput.Question" />
+                            <input type="hidden" name="PackGoal" value="@Model.ContextInput.PackGoal" />
                             <input type="hidden" name="ResultsPerSection" value="@Model.ContextInput.ResultsPerSection" />
                             <input type="hidden" name="IncludeCompletedWork" value="@Model.ContextInput.IncludeCompletedWork.ToString().ToLowerInvariant()" />
                             <input type="hidden" name="ExpandHistory" value="@Model.ContextInput.ExpandHistory.ToString().ToLowerInvariant()" />
@@ -179,10 +199,14 @@
                                 {
                                      <a class="code-graph-side-item" href="@item.Url">
                                          <strong>@item.Title</strong>
-                                         <span>@item.KindLabel • @item.ScoreLabel</span>
-                                         @if (!string.IsNullOrWhiteSpace(item.FreshnessWarning))
-                                         {
-                                             <small class="text-warning-emphasis">@item.FreshnessWarning</small>
+                                          <span>@item.KindLabel • @item.ScoreLabel</span>
+                                          @if (item.SemanticScore > 0m)
+                                          {
+                                              <small>Semantic @item.SemanticScore.ToString("0.0")</small>
+                                          }
+                                          @if (!string.IsNullOrWhiteSpace(item.FreshnessWarning))
+                                          {
+                                              <small class="text-warning-emphasis">@item.FreshnessWarning</small>
                                          }
                                          @if (!string.IsNullOrWhiteSpace(item.MatchReason))
                                          {
@@ -234,10 +258,14 @@
                                                 {
                                                      <a class="code-graph-side-item" href="@item.Url">
                                                          <strong>@item.Title</strong>
-                                                         <span>@item.KindLabel • @item.ScoreLabel</span>
-                                                         @if (!string.IsNullOrWhiteSpace(item.FreshnessWarning))
-                                                         {
-                                                             <small class="text-warning-emphasis">@item.FreshnessWarning</small>
+                                                          <span>@item.KindLabel • @item.ScoreLabel</span>
+                                                          @if (item.SemanticScore > 0m)
+                                                          {
+                                                              <small>Semantic @item.SemanticScore.ToString("0.0")</small>
+                                                          }
+                                                          @if (!string.IsNullOrWhiteSpace(item.FreshnessWarning))
+                                                          {
+                                                              <small class="text-warning-emphasis">@item.FreshnessWarning</small>
                                                          }
                                                          @if (!string.IsNullOrWhiteSpace(item.MatchReason))
                                                          {
@@ -260,10 +288,92 @@
                         }
                     </div>
                 }
+
+                <div class="card shadow-sm border-0 inner-card">
+                    <div class="card-body dashboard-mini-panel">
+                        <div class="section-heading">
+                            <h2 class="h5">Quick capture</h2>
+                            <span class="text-secondary small">Drop raw notes in one box and save a structured memory fast.</span>
+                        </div>
+                        <form method="post" asp-action="QuickCapture" class="row g-3">
+                            @Html.AntiForgeryToken()
+                            <div class="col-12">
+                                <label asp-for="QuickCaptureInput.RawText" class="form-label"></label>
+                                <textarea asp-for="QuickCaptureInput.RawText" rows="5" class="form-control" placeholder="Paste a finding, transcript fragment, command log, or reasoning block here"></textarea>
+                            </div>
+                            <div class="col-md-4">
+                                <label asp-for="QuickCaptureInput.Kind" class="form-label"></label>
+                                <select asp-for="QuickCaptureInput.Kind" class="form-select" asp-items="Html.GetEnumSelectList<MemoryKind>()"></select>
+                            </div>
+                            <div class="col-md-4">
+                                <label asp-for="QuickCaptureInput.SourceKind" class="form-label"></label>
+                                <select asp-for="QuickCaptureInput.SourceKind" class="form-select" asp-items="Html.GetEnumSelectList<SourceKind>()"></select>
+                            </div>
+                            <div class="col-md-4">
+                                <label asp-for="QuickCaptureInput.WingId" class="form-label"></label>
+                                <select asp-for="QuickCaptureInput.WingId" class="form-select">
+                                    <option value="">Unsorted</option>
+                                    @foreach (var wing in Model.Wings)
+                                    {
+                                        if (Model.QuickCaptureInput.WingId == wing.Id)
+                                        {
+                                            <option value="@wing.Id" selected>@wing.Name</option>
+                                        }
+                                        else
+                                        {
+                                            <option value="@wing.Id">@wing.Name</option>
+                                        }
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <div class="form-check">
+                                    <input asp-for="QuickCaptureInput.IsPinned" class="form-check-input" />
+                                    <label asp-for="QuickCaptureInput.IsPinned" class="form-check-label"></label>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <button type="submit" class="btn btn-outline-primary">Save quick capture</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
     <aside class="dashboard-sidebar-stack">
+        <div class="card shadow-sm border-0 dashboard-panel">
+            <div class="card-body dashboard-panel-body">
+                <div class="section-heading">
+                    <h2 class="h5">Resurface now</h2>
+                    <span class="text-secondary small">@Model.ResurfacingMemories.Count candidate memories</span>
+                </div>
+                @if (Model.ResurfacingMemories.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No resurfacing candidates</h3>
+                        <p>Memories needing review or likely to matter again will appear here.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="code-graph-side-list dashboard-scroll-list">
+                        @foreach (var memory in Model.ResurfacingMemories)
+                        {
+                            <a class="code-graph-side-item" href="/Palace/Memory/@memory.Id">
+                                <strong>@memory.Title</strong>
+                                <span>@memory.TrustLabel • @memory.TrustScore.ToString("0")</span>
+                                @if (!string.IsNullOrWhiteSpace(memory.FreshnessLabel))
+                                {
+                                    <small>@memory.FreshnessLabel</small>
+                                }
+                                <small>@memory.WingName / @memory.RoomName</small>
+                            </a>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
         <div class="card shadow-sm border-0 dashboard-panel">
             <div class="card-body dashboard-panel-body">
                 <div class="section-heading">

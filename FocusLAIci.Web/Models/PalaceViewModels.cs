@@ -8,11 +8,13 @@ public sealed class DashboardViewModel
     public PalaceStatsViewModel Stats { get; init; } = new();
     public ContextBriefInput ContextInput { get; init; } = new();
     public ContextPackViewModel? ContextPack { get; init; }
+    public QuickCaptureInput QuickCaptureInput { get; init; } = new();
     public IReadOnlyCollection<TicketSummaryViewModel> ActiveTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
     public IReadOnlyCollection<DashboardActivityViewModel> RecentActivity { get; init; } = Array.Empty<DashboardActivityViewModel>();
     public IReadOnlyCollection<WingSummaryViewModel> Wings { get; init; } = Array.Empty<WingSummaryViewModel>();
     public IReadOnlyCollection<MemoryCardViewModel> RecentMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
     public IReadOnlyCollection<MemoryCardViewModel> PinnedMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
+    public IReadOnlyCollection<MemoryCardViewModel> ResurfacingMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
     public IReadOnlyCollection<TodoItemViewModel> CurrentTodos { get; init; } = Array.Empty<TodoItemViewModel>();
     public IReadOnlyCollection<string> MissingContextWarnings { get; init; } = Array.Empty<string>();
     public IReadOnlyCollection<DashboardWarningViewModel> MissingContextWarningItems { get; init; } = Array.Empty<DashboardWarningViewModel>();
@@ -490,7 +492,9 @@ public sealed class PalaceVisualizerViewModel
 {
     public IReadOnlyCollection<PalaceVisualizerWingViewModel> Wings { get; init; } = Array.Empty<PalaceVisualizerWingViewModel>();
     public IReadOnlyCollection<PalaceVisualizerMemoryViewModel> UnsortedMemories { get; init; } = Array.Empty<PalaceVisualizerMemoryViewModel>();
+    public IReadOnlyCollection<TodoItemViewModel> ActiveTodos { get; init; } = Array.Empty<TodoItemViewModel>();
     public IReadOnlyCollection<TagCloudItemViewModel> Tags { get; init; } = Array.Empty<TagCloudItemViewModel>();
+    public PalaceVisualizerSceneViewModel Scene { get; init; } = new();
 }
 
 public sealed class PalaceVisualizerWingViewModel
@@ -519,6 +523,49 @@ public sealed class PalaceVisualizerMemoryViewModel
     public bool IsPinned { get; init; }
     public IReadOnlyCollection<string> TagNames { get; init; } = Array.Empty<string>();
     public IReadOnlyCollection<string> TagSlugs { get; init; } = Array.Empty<string>();
+}
+
+public sealed class PalaceVisualizerSceneViewModel
+{
+    public string Heading { get; init; } = string.Empty;
+    public string Summary { get; init; } = string.Empty;
+    public IReadOnlyCollection<PalaceVisualizerSceneLegendItemViewModel> Legend { get; init; } = Array.Empty<PalaceVisualizerSceneLegendItemViewModel>();
+    public IReadOnlyCollection<PalaceVisualizerSceneNodeViewModel> Nodes { get; init; } = Array.Empty<PalaceVisualizerSceneNodeViewModel>();
+    public IReadOnlyCollection<PalaceVisualizerSceneEdgeViewModel> Edges { get; init; } = Array.Empty<PalaceVisualizerSceneEdgeViewModel>();
+}
+
+public sealed class PalaceVisualizerSceneLegendItemViewModel
+{
+    public string Label { get; init; } = string.Empty;
+    public string ColorHex { get; init; } = string.Empty;
+}
+
+public sealed class PalaceVisualizerSceneNodeViewModel
+{
+    public string Id { get; init; } = string.Empty;
+    public string Label { get; init; } = string.Empty;
+    public string NodeTypeLabel { get; init; } = string.Empty;
+    public string SecondaryLabel { get; init; } = string.Empty;
+    public string ColorHex { get; init; } = string.Empty;
+    public string UrlPath { get; init; } = string.Empty;
+    public double X { get; init; }
+    public double Y { get; init; }
+    public double Z { get; init; }
+    public double Radius { get; init; }
+    public string OrbitCenterNodeId { get; init; } = string.Empty;
+    public double OrbitRadius { get; init; }
+    public double OrbitVerticalRadius { get; init; }
+    public double OrbitDepthRadius { get; init; }
+    public double OrbitPhase { get; init; }
+    public double OrbitSpeed { get; init; }
+    public bool IsEmphasized { get; init; }
+}
+
+public sealed class PalaceVisualizerSceneEdgeViewModel
+{
+    public string FromNodeId { get; init; } = string.Empty;
+    public string ToNodeId { get; init; } = string.Empty;
+    public string ColorHex { get; init; } = string.Empty;
 }
 
 public sealed class TagBrowseItemViewModel
@@ -563,6 +610,8 @@ public sealed class MemoryCardViewModel
     public bool IsReviewDue { get; init; }
     public bool IsRetired { get; init; }
     public string FreshnessLabel { get; init; } = string.Empty;
+    public decimal TrustScore { get; init; }
+    public string TrustLabel { get; init; } = string.Empty;
     public DateTime UpdatedUtc { get; init; }
     public IReadOnlyCollection<string> Tags { get; init; } = Array.Empty<string>();
 }
@@ -624,6 +673,8 @@ public sealed class MemoryEditorViewModel
     public MemoryEditorInput Input { get; init; } = new();
     public IReadOnlyCollection<SelectListItem> WingOptions { get; init; } = Array.Empty<SelectListItem>();
     public IReadOnlyCollection<SelectListItem> RoomOptions { get; init; } = Array.Empty<SelectListItem>();
+    public IReadOnlyCollection<DuplicateSuggestionViewModel> DuplicateSuggestions { get; init; } = Array.Empty<DuplicateSuggestionViewModel>();
+    public IReadOnlyCollection<string> SuggestedTags { get; init; } = Array.Empty<string>();
 }
 
 public sealed class MemoryEditorInput
@@ -675,6 +726,39 @@ public sealed class MemoryEditorInput
 
     [Display(Name = "Tags")]
     public string TagsText { get; set; } = string.Empty;
+}
+
+public sealed class QuickCaptureInput
+{
+    [Required]
+    [StringLength(5000)]
+    [Display(Name = "Quick capture")]
+    public string RawText { get; set; } = string.Empty;
+
+    [Required]
+    [Display(Name = "Capture type")]
+    public MemoryKind Kind { get; set; } = MemoryKind.Fact;
+
+    [Required]
+    [Display(Name = "Source type")]
+    public SourceKind SourceKind { get; set; } = SourceKind.ChatSession;
+
+    [Display(Name = "Pin after save")]
+    public bool IsPinned { get; set; }
+
+    [Display(Name = "Wing")]
+    public Guid? WingId { get; set; }
+}
+
+public sealed class DuplicateSuggestionViewModel
+{
+    public Guid Id { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public string Summary { get; init; } = string.Empty;
+    public string Url { get; init; } = string.Empty;
+    public string ScoreLabel { get; init; } = string.Empty;
+    public decimal Score { get; init; }
+    public string MatchReason { get; init; } = string.Empty;
 }
 
 public enum MemoryBulkGovernanceAction

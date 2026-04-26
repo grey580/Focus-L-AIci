@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 160" role="img" aria-labelledby="title desc">
+  <title id="title">Focus L-AIci logo</title>
+  <desc id="desc">Focus L-AIci wordmark with focus lens icon.</desc>
+  <defs>
+    <linearGradient id="focusGradient" x1="10" y1="18" x2="124" y2="132" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7dd3fc" />
+      <stop offset="0.55" stop-color="#3b82f6" />
+      <stop offset="1" stop-color="#0f172a" />
+    </linearGradient>
+  </defs>
+  <g transform="translate(12 12)">
+    <rect width="136" height="136" rx="30" fill="#081120" />
+    <path d="M30 40h18l12 12m46-12h12v12m0 44v12h-12M48 108H30V90l12-12" fill="none" stroke="#93c5fd" stroke-linecap="round" stroke-linejoin="round" stroke-width="6" opacity="0.9" />
+    <circle cx="68" cy="68" r="40" fill="none" stroke="url(#focusGradient)" stroke-width="9" />
+    <circle cx="68" cy="68" r="22" fill="none" stroke="#dbeafe" stroke-width="7" />
+    <circle cx="68" cy="68" r="8" fill="#dbeafe" />
+    <path d="M50 68H33m70 0H86M68 50V33m0 70V86" fill="none" stroke="#38bdf8" stroke-linecap="round" stroke-width="5" />
+    <circle cx="106" cy="28" r="4.5" fill="#7dd3fc" />
+    <circle cx="28" cy="106" r="4.5" fill="#7dd3fc" />
+  </g>
+  <g transform="translate(174 44)">
+    <text x="0" y="34" fill="#e2e8f0" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="44" font-weight="700" letter-spacing="1.5">FOCUS</text>
+    <text x="0" y="84" fill="#60a5fa" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="38" font-weight="600" letter-spacing="7">L-AICI</text>
+    <text x="318" y="84" fill="#94a3b8" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="18" font-weight="600" letter-spacing="3.2">INTELLIGENT WORK MEMORY</text>
+  </g>
+</svg>

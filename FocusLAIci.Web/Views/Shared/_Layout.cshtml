@@ -9,6 +9,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] - @siteSettings.DisplayName</title>
     <script type="importmap"></script>
+    <link rel="icon" type="image/svg+xml" href="~/branding/favicon.svg" />
+    <link rel="alternate icon" href="~/favicon.ico" />
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/FocusLAIci.Web.styles.css" asp-append-version="true" />
@@ -29,7 +31,13 @@
     <header>
         <nav class="navbar navbar-expand-lg navbar-dark palace-nav shadow-sm mb-4">
             <div class="container">
-                <a class="navbar-brand fw-semibold" asp-area="" asp-controller="Home" asp-action="Index">@siteSettings.DisplayName</a>
+                <a class="navbar-brand focus-brand" asp-area="" asp-controller="Home" asp-action="Index" aria-label="@siteSettings.DisplayName">
+                    <img src="~/branding/focus-mark.svg" alt="" class="focus-brand-mark" />
+                    <span class="focus-brand-copy">
+                        <span class="focus-brand-title">@siteSettings.DisplayName</span>
+                        <span class="focus-brand-tag">intelligent work memory</span>
+                    </span>
+                </a>
                 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
                          aria-expanded="false" aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>
@@ -94,7 +102,10 @@
 
     <footer class="footer text-muted">
         <div class="container">
-            @siteSettings.DisplayName • local-first development memory in C#
+            <span class="focus-footer-brand">
+                <img src="~/branding/focus-mark.svg" alt="" class="focus-footer-mark" />
+                <span>@siteSettings.DisplayName • local-first development memory in C#</span>
+            </span>
         </div>
     </footer>
     <script src="~/lib/jquery/dist/jquery.min.js"></script>

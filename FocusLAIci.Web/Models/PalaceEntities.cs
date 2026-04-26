@@ -286,7 +286,10 @@ public enum SourceKind
     Architecture = 4,
     Meeting = 5,
     Import = 6,
-    Research = 7
+    Research = 7,
+    ChatSession = 8,
+    GitCommit = 9,
+    TicketNote = 10
 }
 
 public enum MemoryVerificationStatus

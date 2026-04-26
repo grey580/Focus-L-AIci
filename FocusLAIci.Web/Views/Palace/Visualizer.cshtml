@@ -1,6 +1,39 @@
+@using System.Text.Json
 @model PalaceVisualizerViewModel
 @{
     ViewData["Title"] = "Visualizer";
+    var defaultSceneNode = Model.Scene.Nodes.FirstOrDefault(node => node.IsEmphasized) ?? Model.Scene.Nodes.FirstOrDefault();
+    var defaultSceneTitle = defaultSceneNode?.Label ?? "Focus Palace";
+    var defaultSceneCopy = "The palace rotates slowly on its own. Drag to spin it manually, use zoom to inspect depth, and click a node to open the wing, room search, memory, or todo.";
+    var sceneJson = JsonSerializer.Serialize(new
+    {
+        nodes = Model.Scene.Nodes.Select(node => new
+        {
+            id = node.Id,
+            label = node.Label,
+            nodeTypeLabel = node.NodeTypeLabel,
+            secondaryLabel = node.SecondaryLabel,
+            colorHex = node.ColorHex,
+            url = node.UrlPath,
+            x = node.X,
+            y = node.Y,
+            z = node.Z,
+            radius = node.Radius,
+            orbitCenterNodeId = node.OrbitCenterNodeId,
+            orbitRadius = node.OrbitRadius,
+            orbitVerticalRadius = node.OrbitVerticalRadius,
+            orbitDepthRadius = node.OrbitDepthRadius,
+            orbitPhase = node.OrbitPhase,
+            orbitSpeed = node.OrbitSpeed,
+            isEmphasized = node.IsEmphasized
+        }),
+        edges = Model.Scene.Edges.Select(edge => new
+        {
+            fromNodeId = edge.FromNodeId,
+            toNodeId = edge.ToNodeId,
+            colorHex = edge.ColorHex
+        })
+    });
 }
 
 <section class="page-header">
@@ -11,6 +44,46 @@
     </div>
     <a class="btn btn-primary" asp-action="Explore">Open Explorer</a>
 </section>
+
+@if (Model.Scene.Nodes.Count > 0)
+{
+    <section class="card shadow-sm border-0 mb-4">
+        <div class="card-body code-graph-3d-card-body">
+            <div class="section-heading mb-3">
+                <div>
+                    <h2>@Model.Scene.Heading</h2>
+                    <p class="page-copy mb-0">@Model.Scene.Summary</p>
+                </div>
+            </div>
+
+            <div class="code-graph-3d-toolbar">
+                <label class="code-graph-3d-zoom-control" for="palace3dZoom">
+                    <span>Zoom</span>
+                    <input id="palace3dZoom" type="range" min="70" max="170" value="100" step="5" aria-label="Zoom palace visualizer" />
+                    <strong id="palace3dZoomValue">100%</strong>
+                </label>
+                <span class="code-graph-3d-toolbar-copy">The scene auto-rotates slowly. Drag anywhere on the graph to spin it yourself, then hover nodes to reveal labels across wings, rooms, memories, and todos.</span>
+            </div>
+
+            <div class="code-graph-3d-shell">
+                <canvas id="palace3dCanvas" class="code-graph-3d-canvas palace-3d-canvas" aria-label="Three-dimensional palace graph"></canvas>
+                <div id="palace3dOverlay" class="code-graph-3d-overlay">
+                    <strong>@defaultSceneTitle</strong>
+                    <span>@defaultSceneCopy</span>
+                </div>
+                <div class="code-graph-3d-legend">
+                    @foreach (var item in Model.Scene.Legend)
+                    {
+                        <span class="code-graph-3d-legend-item">
+                            <span class="code-graph-3d-legend-swatch" style="background-color: @item.ColorHex;"></span>
+                            @item.Label
+                        </span>
+                    }
+                </div>
+            </div>
+        </div>
+    </section>
+}
 
 <div class="visualizer-layout">
     <section>
@@ -40,25 +113,6 @@
                             <a class="btn btn-sm btn-outline-primary" asp-action="Wing" asp-route-slug="@wing.Slug">Open</a>
                         </div>
                         <p class="text-secondary mb-3">@wing.Description</p>
-
-                        @if (wing.GeneralMemories.Count > 0)
-                        {
-                            <div class="visualizer-room">
-                                <div class="visualizer-room-header">
-                                    <strong>General</strong>
-                                    <span class="text-secondary small">@wing.GeneralMemories.Count memories</span>
-                                </div>
-                                <div class="visualizer-memory-list">
-                                    @foreach (var memory in wing.GeneralMemories)
-                                    {
-                                        <a class="visualizer-memory-node" asp-action="Memory" asp-route-id="@memory.Id" data-tag-slugs="@string.Join("|", memory.TagSlugs)">
-                                            <span>@memory.Title</span>
-                                            <small>Importance @memory.Importance / 5@(memory.IsPinned ? " • pinned" : string.Empty)</small>
-                                        </a>
-                                    }
-                                </div>
-                            </div>
-                        }
 
                         @foreach (var room in wing.Rooms)
                         {
@@ -116,6 +170,41 @@
                     </div>
                 </div>
             }
+
+            @if (Model.ActiveTodos.Count > 0)
+            {
+                <div class="card shadow-sm border-0 mt-4">
+                    <div class="card-body">
+                        <div class="section-heading">
+                            <h2>Workboard wing</h2>
+                            <a asp-controller="Todos" asp-action="Index">Open todos</a>
+                        </div>
+                        <div class="visualizer-wing-grid">
+                            @foreach (var todoGroup in Model.ActiveTodos.GroupBy(todo => todo.Status).OrderBy(group => group.Key == TodoStatus.InProgress ? 0 : group.Key == TodoStatus.Pending ? 1 : 2))
+                            {
+                                <article class="visualizer-wing">
+                                    <div class="visualizer-wing-header">
+                                        <div>
+                                            <div class="memory-meta">Todo lane</div>
+                                            <h2>@todoGroup.First().StatusLabel</h2>
+                                        </div>
+                                        <span class="text-secondary small">@todoGroup.Count() todos</span>
+                                    </div>
+                                    <div class="visualizer-memory-list">
+                                        @foreach (var todo in todoGroup)
+                                        {
+                                            <a class="visualizer-memory-node" asp-controller="Todos" asp-action="Details" asp-route-id="@todo.Id">
+                                                <span>@todo.Title</span>
+                                                <small>@todo.StatusLabel • updated @todo.UpdatedUtc.ToLocalTime().ToString("g")</small>
+                                            </a>
+                                        }
+                                    </div>
+                                </article>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
         }
     </section>
 
@@ -154,6 +243,483 @@
 @section Scripts {
     <script>
         (() => {
+            const scene = @Html.Raw(sceneJson);
+            const canvas = document.getElementById('palace3dCanvas');
+            const overlay = document.getElementById('palace3dOverlay');
+            const zoomInput = document.getElementById('palace3dZoom');
+            const zoomValue = document.getElementById('palace3dZoomValue');
+
+            if (canvas && scene?.nodes?.length) {
+                const context = canvas.getContext('2d');
+                const shell = canvas.parentElement;
+                const sceneNodeById = new Map(scene.nodes.map(node => [node.id, node]));
+                let hoveredNode = null;
+                let projectedNodes = [];
+                let targetRotationX = -0.24;
+                let targetRotationY = 0.48;
+                let rotationX = targetRotationX;
+                let rotationY = targetRotationY;
+                let zoomLevel = Number(zoomInput?.value || 100) / 100;
+                let animationFrameId = 0;
+                let inertiaX = 0;
+                let inertiaY = 0.0000018;
+                let isDragging = false;
+                let dragMoved = false;
+                let pointerId = null;
+                let lastPointerX = 0;
+                let lastPointerY = 0;
+                const defaultTitle = @Html.Raw(JsonSerializer.Serialize(defaultSceneTitle));
+                const defaultCopy = @Html.Raw(JsonSerializer.Serialize(defaultSceneCopy));
+
+                function setOverlay(title, copy) {
+                    if (!overlay) {
+                        return;
+                    }
+
+                    overlay.innerHTML = `<strong>${title}</strong><span>${copy}</span>`;
+                }
+
+                function resizeCanvas() {
+                    const bounds = canvas.getBoundingClientRect();
+                    const ratio = window.devicePixelRatio || 1;
+                    canvas.width = Math.max(1, Math.round(bounds.width * ratio));
+                    canvas.height = Math.max(1, Math.round(bounds.height * ratio));
+                    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+                }
+
+                function projectPoint(x, y, z) {
+                    const cosY = Math.cos(rotationY);
+                    const sinY = Math.sin(rotationY);
+                    const cosX = Math.cos(rotationX);
+                    const sinX = Math.sin(rotationX);
+
+                    const xzX = (x * cosY) - (z * sinY);
+                    const xzZ = (x * sinY) + (z * cosY);
+                    const yzY = (y * cosX) - (xzZ * sinX);
+                    const yzZ = (y * sinX) + (xzZ * cosX);
+                    const depth = yzZ + 520;
+                    const scale = (240 * zoomLevel) / Math.max(260, depth);
+
+                    return {
+                        screenX: (canvas.clientWidth / 2) + (xzX * scale),
+                        screenY: (canvas.clientHeight / 2) + (yzY * scale),
+                        depth,
+                        scale
+                    };
+                }
+
+                function resolveNodePosition(node, animationTick, cache) {
+                    if (cache.has(node.id)) {
+                        return cache.get(node.id);
+                    }
+
+                    if (!node.orbitCenterNodeId) {
+                        const position = { x: node.x, y: node.y, z: node.z };
+                        cache.set(node.id, position);
+                        return position;
+                    }
+
+                    const centerNode = sceneNodeById.get(node.orbitCenterNodeId);
+                    if (!centerNode) {
+                        const position = { x: node.x, y: node.y, z: node.z };
+                        cache.set(node.id, position);
+                        return position;
+                    }
+
+                    const center = resolveNodePosition(centerNode, animationTick, cache);
+                    const orbit = node.orbitPhase + (animationTick * node.orbitSpeed);
+                    const position = {
+                        x: center.x + (Math.cos(orbit) * node.orbitRadius),
+                        y: center.y + (Math.sin(orbit) * node.orbitVerticalRadius),
+                        z: center.z + (Math.cos((orbit * 1.16) + node.orbitPhase) * node.orbitDepthRadius)
+                    };
+                    cache.set(node.id, position);
+                    return position;
+                }
+
+                function rotateNode(node, animationTick, cache) {
+                    const resolved = resolveNodePosition(node, animationTick, cache);
+                    const projection = projectPoint(resolved.x, resolved.y, resolved.z);
+                    return {
+                        ...node,
+                        x: resolved.x,
+                        y: resolved.y,
+                        z: resolved.z,
+                        ...projection,
+                        screenRadius: Math.max(2.6, node.radius * projection.scale * (node.nodeTypeLabel === 'Palace' ? 1.08 : node.nodeTypeLabel === 'Wing' ? 0.96 : 0.8))
+                    };
+                }
+
+                function drawPalaceClouds(palaceNode, animationTick) {
+                    if (!palaceNode) {
+                        return;
+                    }
+
+                    const cloudLayers = [
+                        { color: '#FF595E', radius: 34, speed: 0.34, count: 10, size: 13, phase: 0.0 },
+                        { color: '#FFCA3A', radius: 42, speed: 0.28, count: 12, size: 14, phase: 1.7 },
+                        { color: '#8AC926', radius: 38, speed: 0.31, count: 9, size: 12, phase: 2.8 },
+                        { color: '#00C2FF', radius: 46, speed: 0.24, count: 11, size: 15, phase: 4.1 },
+                        { color: '#8338EC', radius: 40, speed: 0.29, count: 10, size: 13, phase: 5.3 }
+                    ];
+
+                    cloudLayers.forEach(layer => {
+                        for (let index = 0; index < layer.count; index += 1) {
+                            const orbit = animationTick * layer.speed + layer.phase + (index / layer.count) * Math.PI * 2;
+                            const x = palaceNode.x + Math.cos(orbit) * layer.radius;
+                            const y = palaceNode.y + Math.sin(orbit * 1.12) * layer.radius * 0.72;
+                            const z = palaceNode.z + Math.cos(orbit * 1.46 + layer.phase) * layer.radius * 0.92;
+                            const projected = projectPoint(x, y, z);
+                            const blobRadius = Math.max(4, projected.scale * (layer.size + ((index % 3) * 1.6)));
+                            const gradient = context.createRadialGradient(
+                                projected.screenX,
+                                projected.screenY,
+                                blobRadius * 0.08,
+                                projected.screenX,
+                                projected.screenY,
+                                blobRadius);
+
+                            gradient.addColorStop(0, `${layer.color}D8`);
+                            gradient.addColorStop(0.45, `${layer.color}66`);
+                            gradient.addColorStop(1, `${layer.color}00`);
+
+                            context.beginPath();
+                            context.fillStyle = gradient;
+                            context.arc(projected.screenX, projected.screenY, blobRadius, 0, Math.PI * 2);
+                            context.fill();
+                        }
+                    });
+                }
+
+                function stringSeed(value) {
+                    let hash = 0;
+                    for (let index = 0; index < value.length; index += 1) {
+                        hash = ((hash * 31) + value.charCodeAt(index)) >>> 0;
+                    }
+
+                    return hash;
+                }
+
+                function drawWingClouds(wingNodes, animationTick) {
+                    wingNodes.forEach(wingNode => {
+                        const seed = stringSeed(wingNode.id);
+                        const phaseOffset = (seed % 360) * (Math.PI / 180);
+                        const cloudLayers = [
+                            { radius: 22, speed: 0.30, count: 5, size: 8, skew: 0.88, phase: phaseOffset },
+                            { radius: 29, speed: -0.22, count: 6, size: 9, skew: 1.08, phase: phaseOffset + 1.7 },
+                            { radius: 35, speed: 0.18, count: 5, size: 10, skew: 1.28, phase: phaseOffset + 3.1 }
+                        ];
+
+                        cloudLayers.forEach(layer => {
+                            for (let index = 0; index < layer.count; index += 1) {
+                                const orbit = animationTick * layer.speed + layer.phase + (index / layer.count) * Math.PI * 2;
+                                const x = wingNode.x + Math.cos(orbit) * layer.radius;
+                                const y = wingNode.y + Math.sin(orbit * layer.skew) * layer.radius * 0.74;
+                                const z = wingNode.z + Math.cos((orbit * 1.32) + layer.phase) * layer.radius * 0.86;
+                                const projected = projectPoint(x, y, z);
+                                const blobRadius = Math.max(2.8, projected.scale * (layer.size + ((index % 2) * 1.25)));
+                                const gradient = context.createRadialGradient(
+                                    projected.screenX,
+                                    projected.screenY,
+                                    blobRadius * 0.08,
+                                    projected.screenX,
+                                    projected.screenY,
+                                    blobRadius);
+
+                                gradient.addColorStop(0, `${wingNode.colorHex}B8`);
+                                gradient.addColorStop(0.5, `${wingNode.colorHex}4A`);
+                                gradient.addColorStop(1, `${wingNode.colorHex}00`);
+
+                                context.beginPath();
+                                context.fillStyle = gradient;
+                                context.arc(projected.screenX, projected.screenY, blobRadius, 0, Math.PI * 2);
+                                context.fill();
+                            }
+                        });
+                    });
+                }
+
+                function drawRoomClouds(roomNodes, animationTick) {
+                    roomNodes.forEach(roomNode => {
+                        const seed = stringSeed(roomNode.id);
+                        const phaseOffset = (seed % 360) * (Math.PI / 180);
+                        const cloudLayers = [
+                            { radius: 12, speed: 0.18, count: 4, size: 4.8, skew: 0.94, phase: phaseOffset },
+                            { radius: 16, speed: -0.14, count: 4, size: 5.4, skew: 1.12, phase: phaseOffset + 1.5 }
+                        ];
+
+                        cloudLayers.forEach(layer => {
+                            for (let index = 0; index < layer.count; index += 1) {
+                                const orbit = animationTick * layer.speed + layer.phase + (index / layer.count) * Math.PI * 2;
+                                const x = roomNode.x + Math.cos(orbit) * layer.radius;
+                                const y = roomNode.y + Math.sin(orbit * layer.skew) * layer.radius * 0.68;
+                                const z = roomNode.z + Math.cos((orbit * 1.24) + layer.phase) * layer.radius * 0.56;
+                                const projected = projectPoint(x, y, z);
+                                const blobRadius = Math.max(1.6, projected.scale * (layer.size + ((index % 2) * 0.7)));
+                                const gradient = context.createRadialGradient(
+                                    projected.screenX,
+                                    projected.screenY,
+                                    blobRadius * 0.1,
+                                    projected.screenX,
+                                    projected.screenY,
+                                    blobRadius);
+
+                                gradient.addColorStop(0, `${roomNode.colorHex}70`);
+                                gradient.addColorStop(0.55, `${roomNode.colorHex}22`);
+                                gradient.addColorStop(1, `${roomNode.colorHex}00`);
+
+                                context.beginPath();
+                                context.fillStyle = gradient;
+                                context.arc(projected.screenX, projected.screenY, blobRadius, 0, Math.PI * 2);
+                                context.fill();
+                            }
+                        });
+                    });
+                }
+
+                function drawRoomOrbitTrails(roomNodes, animationTick, positionCache) {
+                    roomNodes.forEach(roomNode => {
+                        if (!roomNode.orbitCenterNodeId) {
+                            return;
+                        }
+
+                        const centerNode = sceneNodeById.get(roomNode.orbitCenterNodeId);
+                        if (!centerNode) {
+                            return;
+                        }
+
+                        const center = resolveNodePosition(centerNode, animationTick, positionCache);
+                        const samples = 36;
+                        context.beginPath();
+                        for (let index = 0; index <= samples; index += 1) {
+                            const orbit = roomNode.orbitPhase + (animationTick * roomNode.orbitSpeed) + ((index / samples) * Math.PI * 2);
+                            const projected = projectPoint(
+                                center.x + (Math.cos(orbit) * roomNode.orbitRadius),
+                                center.y + (Math.sin(orbit) * roomNode.orbitVerticalRadius),
+                                center.z + (Math.cos((orbit * 1.16) + roomNode.orbitPhase) * roomNode.orbitDepthRadius));
+                            if (index === 0) {
+                                context.moveTo(projected.screenX, projected.screenY);
+                            } else {
+                                context.lineTo(projected.screenX, projected.screenY);
+                            }
+                        }
+
+                        context.lineWidth = 0.75;
+                        context.strokeStyle = `${roomNode.colorHex}30`;
+                        context.stroke();
+                    });
+                }
+
+                function drawScene() {
+                    const animationTick = performance.now() / 1000;
+                    const statefulYawDrift = Math.sin(animationTick * 0.11) * 0.0000004;
+                    const statefulPitchDrift = Math.cos(animationTick * 0.08) * 0.0000003;
+
+                    if (!isDragging) {
+                        targetRotationX = Math.max(-1.05, Math.min(1.05, targetRotationX + inertiaX + statefulPitchDrift));
+                        targetRotationY += inertiaY + statefulYawDrift;
+                        inertiaX *= 0.9;
+                        inertiaY *= 0.978;
+                        if (Math.abs(inertiaY) < 0.0000018) {
+                            inertiaY = inertiaY < 0 ? -0.0000018 : 0.0000018;
+                        }
+                    }
+
+                    rotationX += (targetRotationX - rotationX) * 0.08;
+                    rotationY += (targetRotationY - rotationY) * 0.08;
+
+                    context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+                    const positionCache = new Map();
+                    projectedNodes = scene.nodes.map(node => rotateNode(node, animationTick, positionCache)).sort((left, right) => left.depth - right.depth);
+                    const projectedById = new Map(projectedNodes.map(node => [node.id, node]));
+                    const palaceNode = projectedNodes.find(node => node.nodeTypeLabel === 'Palace');
+                    const wingNodes = projectedNodes.filter(node => node.nodeTypeLabel === 'Wing');
+                    const roomNodes = projectedNodes.filter(node => node.nodeTypeLabel === 'Room');
+
+                    drawRoomOrbitTrails(roomNodes, animationTick, positionCache);
+                    context.lineWidth = 0.95;
+                    scene.edges.forEach(edge => {
+                        const from = projectedById.get(edge.fromNodeId);
+                        const to = projectedById.get(edge.toNodeId);
+                        if (!from || !to) {
+                            return;
+                        }
+
+                        const alpha = Math.max(0.08, Math.min(0.3, ((from.scale + to.scale) / 2) * 0.7));
+                        context.strokeStyle = `${edge.colorHex}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`;
+                        context.beginPath();
+                        context.moveTo(from.screenX, from.screenY);
+                        context.lineTo(to.screenX, to.screenY);
+                        context.stroke();
+                    });
+
+                    drawPalaceClouds(palaceNode, animationTick);
+                    drawWingClouds(wingNodes, animationTick);
+                    drawRoomClouds(roomNodes, animationTick);
+
+                    projectedNodes.forEach(node => {
+                        const isPalace = node.nodeTypeLabel === 'Palace';
+                        const isWing = node.nodeTypeLabel === 'Wing';
+
+                        if (isPalace) {
+                            context.beginPath();
+                            context.lineWidth = Math.max(1.5, node.screenRadius * 0.18);
+                            context.strokeStyle = 'rgba(255, 255, 255, 0.38)';
+                            context.arc(node.screenX, node.screenY, node.screenRadius * 1.42, 0, Math.PI * 2);
+                            context.stroke();
+                        }
+
+                        if (isWing) {
+                            context.beginPath();
+                            context.fillStyle = `${node.colorHex}20`;
+                            context.arc(node.screenX, node.screenY, node.screenRadius * 1.85, 0, Math.PI * 2);
+                            context.fill();
+
+                            context.beginPath();
+                            context.lineWidth = Math.max(1.2, node.screenRadius * 0.16);
+                            context.strokeStyle = `${node.colorHex}9C`;
+                            context.arc(node.screenX, node.screenY, node.screenRadius * 1.45, 0, Math.PI * 2);
+                            context.stroke();
+                        }
+
+                        context.beginPath();
+                        if (isPalace) {
+                            const coreGradient = context.createRadialGradient(
+                                node.screenX,
+                                node.screenY,
+                                node.screenRadius * 0.18,
+                                node.screenX,
+                                node.screenY,
+                                node.screenRadius);
+                            coreGradient.addColorStop(0.0, '#FFFFFF');
+                            coreGradient.addColorStop(0.28, '#FFE66D');
+                            coreGradient.addColorStop(0.55, '#6CCBFF');
+                            coreGradient.addColorStop(1.0, '#6A4CFF');
+                            context.fillStyle = coreGradient;
+                        } else {
+                            context.fillStyle = node.colorHex;
+                        }
+
+                        context.shadowBlur = node.id === hoveredNode?.id ? 18 : isPalace ? 16 : isWing ? 12 : 8;
+                        context.shadowColor = isPalace ? '#FFFFFF' : node.colorHex;
+                        context.arc(node.screenX, node.screenY, node.screenRadius, 0, Math.PI * 2);
+                        context.fill();
+                        context.shadowBlur = 0;
+
+                        if (node.id === hoveredNode?.id) {
+                            context.fillStyle = '#E5EEF9';
+                            context.font = `600 ${Math.max(11, 10 + (node.scale * 4))}px Segoe UI`;
+                            context.textAlign = 'center';
+                            context.fillText(node.label, node.screenX, node.screenY - node.screenRadius - 8);
+                        }
+                    });
+
+                    animationFrameId = window.requestAnimationFrame(drawScene);
+                }
+
+                function setHoveredNode(clientX, clientY) {
+                    const bounds = canvas.getBoundingClientRect();
+                    const localX = clientX - bounds.left;
+                    const localY = clientY - bounds.top;
+                    hoveredNode = projectedNodes
+                        .slice()
+                        .reverse()
+                        .find(node => Math.hypot(node.screenX - localX, node.screenY - localY) <= Math.max(10, node.screenRadius + 4))
+                        || null;
+
+                    if (hoveredNode) {
+                        setOverlay(hoveredNode.label, `${hoveredNode.nodeTypeLabel} • ${hoveredNode.secondaryLabel || 'Palace node'}`);
+                        canvas.style.cursor = hoveredNode.url ? 'pointer' : 'default';
+                    } else {
+                        setOverlay(defaultTitle, defaultCopy);
+                        canvas.style.cursor = 'default';
+                    }
+                }
+
+                resizeCanvas();
+                canvas.style.touchAction = 'none';
+                animationFrameId = window.requestAnimationFrame(drawScene);
+
+                window.addEventListener('resize', resizeCanvas);
+
+                zoomInput?.addEventListener('input', () => {
+                    zoomLevel = Number(zoomInput.value) / 100;
+                    if (zoomValue) {
+                        zoomValue.textContent = `${Math.round(zoomLevel * 100)}%`;
+                    }
+                });
+
+                canvas.addEventListener('pointerdown', event => {
+                    isDragging = true;
+                    dragMoved = false;
+                    pointerId = event.pointerId;
+                    lastPointerX = event.clientX;
+                    lastPointerY = event.clientY;
+                    inertiaX = 0;
+                    canvas.setPointerCapture(event.pointerId);
+                    canvas.style.cursor = 'grabbing';
+                });
+
+                canvas.addEventListener('pointermove', event => {
+                    if (isDragging && pointerId === event.pointerId) {
+                        const deltaX = event.clientX - lastPointerX;
+                        const deltaY = event.clientY - lastPointerY;
+                        dragMoved = dragMoved || Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2;
+                        targetRotationY += deltaX * 0.0085;
+                        targetRotationX = Math.max(-1.05, Math.min(1.05, targetRotationX + (deltaY * 0.0055)));
+                        inertiaY = deltaX * 0.0000012;
+                        inertiaX = deltaY * 0.0000006;
+                        lastPointerX = event.clientX;
+                        lastPointerY = event.clientY;
+                        hoveredNode = null;
+                        setOverlay(defaultTitle, "Dragging the palace graph. Release to let it keep spinning.");
+                        return;
+                    }
+
+                    setHoveredNode(event.clientX, event.clientY);
+                });
+
+                function endDrag(event) {
+                    if (!isDragging || pointerId !== event.pointerId) {
+                        return;
+                    }
+
+                    isDragging = false;
+                    pointerId = null;
+                    canvas.releasePointerCapture(event.pointerId);
+                    canvas.style.cursor = hoveredNode?.url ? 'pointer' : 'default';
+                    setHoveredNode(event.clientX, event.clientY);
+                }
+
+                canvas.addEventListener('pointerup', endDrag);
+                canvas.addEventListener('pointercancel', endDrag);
+
+                canvas.addEventListener('pointerleave', event => {
+                    if (isDragging) {
+                        return;
+                    }
+
+                    hoveredNode = null;
+                    setOverlay(defaultTitle, defaultCopy);
+                    canvas.style.cursor = 'default';
+                });
+
+                canvas.addEventListener('click', () => {
+                    if (!dragMoved && hoveredNode?.url) {
+                        window.location.href = hoveredNode.url;
+                    }
+                });
+
+                document.addEventListener('visibilitychange', () => {
+                    if (document.hidden && animationFrameId) {
+                        window.cancelAnimationFrame(animationFrameId);
+                        animationFrameId = 0;
+                    } else if (!document.hidden && !animationFrameId) {
+                        animationFrameId = window.requestAnimationFrame(drawScene);
+                    }
+                });
+            }
+
             const tags = document.querySelectorAll('[data-tag-slug]');
             const memories = document.querySelectorAll('.visualizer-memory-node[data-tag-slugs]');
 
