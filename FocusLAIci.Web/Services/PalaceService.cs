@@ -780,6 +780,7 @@ public sealed class PalaceService
 
     public async Task<Guid> SaveMemoryAsync(MemoryEditorInput input, CancellationToken cancellationToken)
     {
+        var now = DateTime.UtcNow;
         var room = input.RoomId.HasValue
             ? await _dbContext.Rooms.AsNoTracking().FirstOrDefaultAsync(x => x.Id == input.RoomId.Value, cancellationToken)
             : null;
@@ -801,11 +802,14 @@ public sealed class PalaceService
         }
 
         MemoryEntry memory;
+        var isExistingMemory = input.Id.HasValue;
+        var materialChangeDetected = false;
         if (input.Id is null)
         {
             memory = new MemoryEntry
             {
-                CreatedUtc = DateTime.UtcNow
+                CreatedUtc = now,
+                VerificationStatus = MemoryVerificationStatus.Unverified
             };
             _dbContext.Memories.Add(memory);
         }
@@ -815,6 +819,19 @@ public sealed class PalaceService
                 .Include(x => x.MemoryTags)
                 .FirstOrDefaultAsync(x => x.Id == input.Id.Value, cancellationToken)
                 ?? throw new InvalidOperationException("Memory entry not found.");
+
+            materialChangeDetected =
+                !string.Equals(memory.Title, input.Title.Trim(), StringComparison.Ordinal) ||
+                !string.Equals(memory.Summary, input.Summary.Trim(), StringComparison.Ordinal) ||
+                !string.Equals(memory.Content, input.Content.Trim(), StringComparison.Ordinal) ||
+                memory.Kind != input.Kind ||
+                memory.SourceKind != input.SourceKind ||
+                !string.Equals(memory.SourceReference, input.SourceReference.Trim(), StringComparison.Ordinal) ||
+                memory.Importance != Math.Clamp(input.Importance, 1, 5) ||
+                memory.IsPinned != input.IsPinned ||
+                memory.OccurredUtc != input.OccurredUtc ||
+                memory.WingId != wingId ||
+                memory.RoomId != room?.Id;
         }
 
         memory.Title = input.Title.Trim();
@@ -828,7 +845,17 @@ public sealed class PalaceService
         memory.OccurredUtc = input.OccurredUtc;
         memory.WingId = wingId;
         memory.RoomId = room?.Id;
-        memory.UpdatedUtc = DateTime.UtcNow;
+        memory.UpdatedUtc = now;
+
+        if (!isExistingMemory)
+        {
+            memory.VerificationStatus = MemoryVerificationStatus.Unverified;
+        }
+        else if (materialChangeDetected)
+        {
+            memory.VerificationStatus = MemoryVerificationStatus.NeedsReview;
+            memory.ReviewAfterUtc = now;
+        }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -837,6 +864,31 @@ public sealed class PalaceService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         return memory.Id;
+    }
+
+    public async Task MarkMemoryVerifiedAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var memory = await _dbContext.Memories.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            ?? throw new InvalidOperationException("Memory entry not found.");
+
+        var now = DateTime.UtcNow;
+        memory.VerificationStatus = MemoryVerificationStatus.Verified;
+        memory.LastVerifiedUtc = now;
+        memory.ReviewAfterUtc = now.AddDays(MemoryTrustHelper.DefaultReviewWindowDays);
+        memory.UpdatedUtc = now;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task MarkMemoryNeedsReviewAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var memory = await _dbContext.Memories.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            ?? throw new InvalidOperationException("Memory entry not found.");
+
+        var now = DateTime.UtcNow;
+        memory.VerificationStatus = MemoryVerificationStatus.NeedsReview;
+        memory.ReviewAfterUtc = now;
+        memory.UpdatedUtc = now;
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<Guid> CreateWingAsync(WingEditorInput input, CancellationToken cancellationToken)
@@ -968,26 +1020,13 @@ public sealed class PalaceService
 
     public async Task<IReadOnlyCollection<MemoryCardViewModel>> SearchMemoriesAsync(string? query, Guid? wingId, Guid? roomId, MemoryKind? kind, string? tag, DateTime? updatedSince, CancellationToken cancellationToken)
     {
-        return await BuildMemoryQuery(query, wingId, roomId, kind, tag, updatedSince)
+        var memories = await BuildMemoryQuery(query, wingId, roomId, kind, tag, updatedSince)
             .OrderByDescending(x => x.IsPinned)
             .ThenByDescending(x => x.UpdatedUtc)
             .Take(100)
-            .Select(x => new MemoryCardViewModel
-            {
-                Id = x.Id,
-                Title = x.Title,
-                Summary = x.Summary,
-                WingSlug = x.Wing != null ? x.Wing.Slug : string.Empty,
-                WingName = x.Wing != null ? x.Wing.Name : "Unsorted",
-                RoomName = x.Room != null ? x.Room.Name : "General",
-                Kind = x.Kind,
-                SourceKind = x.SourceKind,
-                Importance = x.Importance,
-                IsPinned = x.IsPinned,
-                UpdatedUtc = x.UpdatedUtc,
-                Tags = x.MemoryTags.OrderBy(mt => mt.Tag!.Name).Select(mt => mt.Tag!.Name).ToArray()
-            })
             .ToListAsync(cancellationToken);
+
+        return memories.Select(MapCard).ToArray();
     }
 
     private IQueryable<MemoryEntry> BuildMemoryQuery(string? query = null, Guid? wingId = null, Guid? roomId = null, MemoryKind? kind = null, string? tag = null, DateTime? updatedSince = null)
@@ -1322,6 +1361,8 @@ public sealed class PalaceService
         IReadOnlyCollection<WingSummaryViewModel> wings)
     {
         var warnings = new List<DashboardWarningViewModel>();
+        var stalePinnedMemories = pinnedMemories.Where(x => x.IsReviewDue || x.FreshnessLabel == "Unverified").ToArray();
+        var agingUnverifiedCount = recentMemories.Count(x => x.VerificationStatus == MemoryVerificationStatus.Unverified && x.FreshnessLabel == "Unverified");
 
         if (currentTodos.Count == 0 && activeTickets.Count == 0)
         {
@@ -1358,6 +1399,19 @@ public sealed class PalaceService
                 ActionUrl = "/Palace/NewMemory"
             });
         }
+        else if (stalePinnedMemories.Length > 0)
+        {
+            warnings.Add(new DashboardWarningViewModel
+            {
+                Code = "stale-pinned-memories",
+                Severity = "warning",
+                Message = stalePinnedMemories.Length == 1
+                    ? "1 pinned memory is no longer trusted as fresh context."
+                    : $"{stalePinnedMemories.Length} pinned memories are no longer trusted as fresh context.",
+                ActionLabel = "Open Inspect",
+                ActionUrl = "/Admin/Inspect"
+            });
+        }
 
         if (recentMemories.Count == 0)
         {
@@ -1366,6 +1420,19 @@ public sealed class PalaceService
                 Code = "no-recent-memories",
                 Severity = "info",
                 Message = "No recent memories are available, so the dashboard cannot surface fresh knowledge.",
+                ActionLabel = "Explore Palace",
+                ActionUrl = "/Palace/Explore"
+            });
+        }
+        else if (agingUnverifiedCount > 0)
+        {
+            warnings.Add(new DashboardWarningViewModel
+            {
+                Code = "aging-unverified-memories",
+                Severity = "info",
+                Message = agingUnverifiedCount == 1
+                    ? "1 recent memory is still unverified and may rot into unreliable context."
+                    : $"{agingUnverifiedCount} recent memories are still unverified and may rot into unreliable context.",
                 ActionLabel = "Explore Palace",
                 ActionUrl = "/Palace/Explore"
             });
@@ -1425,6 +1492,7 @@ public sealed class PalaceService
         {
             builder.Append("- ")
                 .Append(memory.Title)
+                .Append(string.IsNullOrWhiteSpace(memory.FreshnessLabel) ? string.Empty : $" [{memory.FreshnessLabel}]")
                 .Append(" | ")
                 .Append(memory.WingName)
                 .Append(" / ")
@@ -1495,6 +1563,7 @@ public sealed class PalaceService
 
     private static MemoryCardViewModel MapCard(MemoryEntry memory)
     {
+        var trust = MemoryTrustHelper.Build(memory);
         return new MemoryCardViewModel
         {
             Id = memory.Id,
@@ -1507,6 +1576,12 @@ public sealed class PalaceService
             SourceKind = memory.SourceKind,
             Importance = memory.Importance,
             IsPinned = memory.IsPinned,
+            VerificationStatus = memory.VerificationStatus,
+            VerificationStatusLabel = trust.VerificationStatusLabel,
+            LastVerifiedUtc = memory.LastVerifiedUtc,
+            ReviewAfterUtc = memory.ReviewAfterUtc,
+            IsReviewDue = trust.IsReviewDue,
+            FreshnessLabel = trust.FreshnessLabel,
             UpdatedUtc = memory.UpdatedUtc,
             Tags = memory.MemoryTags.OrderBy(x => x.Tag!.Name).Select(x => x.Tag!.Name).ToArray()
         };

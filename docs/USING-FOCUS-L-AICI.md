@@ -105,6 +105,21 @@ Recommended pattern:
 2. Use the workspace export block when you need to brief a fresh AI session quickly.
 3. Use the diagnostics URLs on that page when you want application-layer truth without opening SQLite.
 
+### Use memory trust state to fight context rot
+
+Memories are no longer just editable text records. Each memory now carries a visible trust state:
+
+- **Unverified** for new or never-reviewed entries
+- **Verified** for entries that were checked against current source truth
+- **Needs review** when material edits changed the memory and it should be re-verified
+
+Recommended pattern:
+
+1. Treat **Verified** memories as the strongest reusable context.
+2. If you materially edit an existing memory, expect it to move to **Needs review**.
+3. Re-verify durable memories after checking them against the current repo, app state, or production evidence.
+4. Pay attention to freshness warnings in context results and on the memory detail page before reusing old guidance.
+
 ### Use Code Graph before raw code search
 
 When you are about to change a codebase, start with **Code Graph** instead of opening files blindly.
@@ -148,6 +163,8 @@ Recommended pattern:
 
 Focus is no longer just a read surface. If your workflow is scriptable or AI-assisted, prefer the application APIs over raw database edits:
 
+- `POST /api/palace/memories/{id}/verify`
+- `POST /api/palace/memories/{id}/mark-review`
 - `GET/POST/PUT /api/todos`
 - `PUT /api/todos/{id}/status`
 - `GET/POST/PUT /api/tickets`
@@ -162,6 +179,7 @@ These endpoints now accept readable string-enum payloads such as `Pending`, `InP
 1. Store the final decision or outcome.
 2. Link it to earlier incidents or related design notes.
 3. Pin it if future work will depend on it repeatedly.
+4. Verify it once the final text matches current reality so later sessions can trust it quickly.
 
 ## When to create a new memory vs edit an old one
 
@@ -177,6 +195,8 @@ Edit an **existing** memory when:
 - you are clarifying the same finding
 - you are fixing wording, tags, or summary
 - the entry represents a living reference rather than a dated event
+
+If an edit materially changes the meaning, treat the updated memory as **Needs review** until it is checked and verified again.
 
 ## Tagging strategy that actually works
 

@@ -145,6 +145,52 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task MemoryTrustLifecycle_VerifyAndEditDriveTrustState()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var memoryId = await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Trust baseline",
+            Summary = "Initial memory trust state.",
+            Content = "Original verified content.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.Architecture,
+            Importance = 4,
+            TagsText = "trust, memory"
+        }, CancellationToken.None);
+
+        await service.MarkMemoryVerifiedAsync(memoryId, CancellationToken.None);
+
+        var verified = await service.GetMemoryAsync(memoryId, CancellationToken.None);
+        Assert.NotNull(verified);
+        Assert.Equal(MemoryVerificationStatus.Verified, verified!.Memory.VerificationStatus);
+        Assert.False(verified.Memory.IsReviewDue);
+        Assert.NotNull(verified.Memory.LastVerifiedUtc);
+        Assert.NotNull(verified.Memory.ReviewAfterUtc);
+
+        await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Id = memoryId,
+            Title = "Trust baseline",
+            Summary = "Initial memory trust state.",
+            Content = "Edited content that should require review.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.Architecture,
+            Importance = 4,
+            TagsText = "trust, memory"
+        }, CancellationToken.None);
+
+        var needsReview = await service.GetMemoryAsync(memoryId, CancellationToken.None);
+        Assert.NotNull(needsReview);
+        Assert.Equal(MemoryVerificationStatus.NeedsReview, needsReview!.Memory.VerificationStatus);
+        Assert.True(needsReview.Memory.IsReviewDue);
+        Assert.Equal("Needs review", needsReview.Memory.FreshnessLabel);
+    }
+
+    [Fact]
     public async Task GetVisualizerAsync_GroupsMemoriesByWingRoomAndTag()
     {
         await using var harness = await TestHarness.CreateAsync();
@@ -727,6 +773,60 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task ContextService_DemotesReviewDueMemoryAndShowsFreshnessWarning()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        var staleMemory = new MemoryEntry
+        {
+            Title = "Installer deployment trust check",
+            Summary = "Older matching memory.",
+            Content = "Older matching content.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.DebugSession,
+            UpdatedUtc = DateTime.UtcNow.AddDays(-120),
+            VerificationStatus = MemoryVerificationStatus.NeedsReview,
+            ReviewAfterUtc = DateTime.UtcNow.AddDays(-1),
+            Wing = new Wing
+            {
+                Name = "Grey Canary",
+                Slug = "grey-canary-stale",
+                Description = "Stale wing."
+            }
+        };
+
+        var freshMemory = new MemoryEntry
+        {
+            Title = "Installer deployment trust check",
+            Summary = "Fresh verified memory.",
+            Content = "Fresh verified content.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.DebugSession,
+            UpdatedUtc = DateTime.UtcNow.AddDays(-2),
+            VerificationStatus = MemoryVerificationStatus.Verified,
+            LastVerifiedUtc = DateTime.UtcNow.AddDays(-1),
+            ReviewAfterUtc = DateTime.UtcNow.AddDays(89),
+            Wing = new Wing
+            {
+                Name = "Grey Canary Fresh",
+                Slug = "grey-canary-fresh",
+                Description = "Fresh wing."
+            }
+        };
+
+        dbContext.Memories.AddRange(staleMemory, freshMemory);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync("installer deployment trust check", CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.True(string.IsNullOrWhiteSpace(pack!.Memories.First().FreshnessWarning));
+        Assert.Contains(pack.Memories, memory => memory.Title == staleMemory.Title && memory.FreshnessWarning == "Needs review");
+    }
+
+    [Fact]
     public async Task ContextService_IgnoresStopwordOnlyDifferencesInRanking()
     {
         await using var harness = await TestHarness.CreateAsync();
@@ -982,6 +1082,36 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task Dashboard_WarnsWhenPinnedMemoryTrustHasRotated()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        dbContext.Wings.Add(new Wing
+        {
+            Name = "Trust",
+            Slug = "trust",
+            Description = "Trust state wing."
+        });
+        dbContext.Memories.Add(new MemoryEntry
+        {
+            Title = "Pinned but stale",
+            Summary = "This pinned memory is overdue for review.",
+            Content = "Stale content.",
+            IsPinned = true,
+            VerificationStatus = MemoryVerificationStatus.NeedsReview,
+            ReviewAfterUtc = DateTime.UtcNow.AddDays(-2),
+            UpdatedUtc = DateTime.UtcNow.AddDays(-100)
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new PalaceService(dbContext);
+        var dashboard = await service.GetDashboardAsync(CancellationToken.None);
+
+        Assert.Contains(dashboard.MissingContextWarningItems, warning => warning.Code == "stale-pinned-memories");
+    }
+
+    [Fact]
     public async Task WorkspaceExport_IncludesCurrentOperationalContext()
     {
         await using var harness = await TestHarness.CreateAsync();
@@ -1033,6 +1163,44 @@ public sealed class PalaceServiceTests
         Assert.Contains("Export baseline memory", export.ExportText);
         Assert.Contains("Ship workspace export", export.ExportText);
         Assert.Contains("Add write-back API coverage", export.ExportText);
+    }
+
+    [Fact]
+    public async Task WorkspaceExport_AnnotatesMemoryTrustState()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Trust export",
+            Description = "Workspace export trust coverage."
+        }, CancellationToken.None);
+
+        var memoryId = await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Unverified export memory",
+            Summary = "Should be annotated in workspace export.",
+            Content = "Old unverified memory content.",
+            Kind = MemoryKind.Reference,
+            SourceKind = SourceKind.Research,
+            Importance = 3,
+            IsPinned = true,
+            WingId = wingId,
+            TagsText = "trust, export"
+        }, CancellationToken.None);
+
+        await using (var updateContext = harness.CreateDbContext())
+        {
+            var memory = await updateContext.Memories.FirstAsync(x => x.Id == memoryId, CancellationToken.None);
+            memory.UpdatedUtc = DateTime.UtcNow.AddDays(-45);
+            await updateContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var export = await service.GetWorkspaceExportAsync(CancellationToken.None);
+
+        Assert.Contains("Unverified export memory [Unverified]", export.ExportText);
     }
 
     private sealed class TestHarness : IAsyncDisposable

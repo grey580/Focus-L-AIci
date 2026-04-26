@@ -50,6 +50,7 @@ public sealed class ContextRecordViewModel
     public string MatchReason { get; init; } = string.Empty;
     public decimal Score { get; init; }
     public bool IsLinked { get; init; }
+    public string FreshnessWarning { get; init; } = string.Empty;
     public ContextMatchDetailViewModel? Provenance { get; init; }
 }
 

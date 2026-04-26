@@ -131,6 +131,8 @@ public sealed class FocusMemoryContext : DbContext
 
         builder.Entity<MemoryEntry>(entity =>
         {
+            entity.HasIndex(x => x.VerificationStatus);
+            entity.HasIndex(x => x.ReviewAfterUtc);
             entity.Property(x => x.Title).HasMaxLength(200);
             entity.Property(x => x.Summary).HasMaxLength(500);
             entity.Property(x => x.SourceReference).HasMaxLength(260);

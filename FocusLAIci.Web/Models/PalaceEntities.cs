@@ -193,6 +193,9 @@ public sealed class MemoryEntry
 
     public int Importance { get; set; } = 3;
     public bool IsPinned { get; set; }
+    public MemoryVerificationStatus VerificationStatus { get; set; } = MemoryVerificationStatus.Unverified;
+    public DateTime? LastVerifiedUtc { get; set; }
+    public DateTime? ReviewAfterUtc { get; set; }
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
     public DateTime? OccurredUtc { get; set; }
@@ -273,6 +276,13 @@ public enum SourceKind
     Meeting = 5,
     Import = 6,
     Research = 7
+}
+
+public enum MemoryVerificationStatus
+{
+    Unverified = 1,
+    Verified = 2,
+    NeedsReview = 3
 }
 
 public enum TicketStatus

@@ -1,4 +1,5 @@
 @inject SiteSettingsService SiteSettingsService
+@using FocusLAIci.Web.Models
 @model FocusLAIci.Web.Models.MemoryDetailViewModel
 @{
     ViewData["Title"] = Model.Memory.Title;
@@ -22,8 +23,36 @@
         <h1>@Model.Memory.Title</h1>
         <p class="page-copy">@Model.Memory.Summary</p>
     </div>
-    <a class="btn btn-primary" asp-action="EditMemory" asp-route-id="@Model.Memory.Id">Edit Memory</a>
+    <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-primary" asp-action="EditMemory" asp-route-id="@Model.Memory.Id">Edit Memory</a>
+        <form method="post" asp-action="VerifyMemory" asp-route-id="@Model.Memory.Id" class="d-inline">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-outline-success">Mark Verified</button>
+        </form>
+        <form method="post" asp-action="MarkMemoryNeedsReview" asp-route-id="@Model.Memory.Id" class="d-inline">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-outline-warning">Mark Needs Review</button>
+        </form>
+    </div>
 </section>
+
+@if (Model.Memory.IsReviewDue)
+{
+    <div class="alert alert-warning border-0 shadow-sm mb-4">
+        <strong>This memory needs review.</strong>
+        @if (Model.Memory.LastVerifiedUtc.HasValue)
+        {
+            <span> It was last verified on @SiteSettingsService.FormatUtc(Model.Memory.LastVerifiedUtc.Value, siteSettings).</span>
+        }
+    </div>
+}
+else if (Model.Memory.VerificationStatus == MemoryVerificationStatus.Verified && Model.Memory.LastVerifiedUtc.HasValue)
+{
+    <div class="alert alert-success border-0 shadow-sm mb-4">
+        <strong>This memory is currently verified.</strong>
+        <span> Last verified on @SiteSettingsService.FormatUtc(Model.Memory.LastVerifiedUtc.Value, siteSettings).</span>
+    </div>
+}
 
 <div class="row g-4">
     <div class="col-lg-8">
@@ -49,12 +78,24 @@
                     <dd>@Model.Memory.SourceKind</dd>
                     <dt>Importance</dt>
                     <dd>@Model.Memory.Importance / 5</dd>
+                    <dt>Trust</dt>
+                    <dd>@Model.Memory.FreshnessLabel</dd>
                     <dt>Pinned</dt>
                     <dd>@(Model.Memory.IsPinned ? "Yes" : "No")</dd>
                     <dt>Created</dt>
                     <dd>@SiteSettingsService.FormatUtc(Model.CreatedUtc, siteSettings)</dd>
                     <dt>Updated</dt>
                     <dd>@SiteSettingsService.FormatUtc(Model.Memory.UpdatedUtc, siteSettings)</dd>
+                    @if (Model.Memory.LastVerifiedUtc.HasValue)
+                    {
+                        <dt>Last verified</dt>
+                        <dd>@SiteSettingsService.FormatUtc(Model.Memory.LastVerifiedUtc.Value, siteSettings)</dd>
+                    }
+                    @if (Model.Memory.ReviewAfterUtc.HasValue)
+                    {
+                        <dt>Review after</dt>
+                        <dd>@SiteSettingsService.FormatUtc(Model.Memory.ReviewAfterUtc.Value, siteSettings)</dd>
+                    }
                     @if (Model.OccurredUtc.HasValue)
                     {
                         <dt>Occurred</dt>

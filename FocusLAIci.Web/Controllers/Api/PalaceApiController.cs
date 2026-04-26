@@ -126,6 +126,34 @@ public sealed class PalaceApiController : ControllerBase
         }
     }
 
+    [HttpPost("memories/{id:guid}/verify")]
+    public async Task<ActionResult<object>> VerifyMemory(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _palaceService.MarkMemoryVerifiedAsync(id, cancellationToken);
+            return Ok(new { id, verificationStatus = nameof(MemoryVerificationStatus.Verified) });
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+    }
+
+    [HttpPost("memories/{id:guid}/mark-review")]
+    public async Task<ActionResult<object>> MarkMemoryNeedsReview(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _palaceService.MarkMemoryNeedsReviewAsync(id, cancellationToken);
+            return Ok(new { id, verificationStatus = nameof(MemoryVerificationStatus.NeedsReview) });
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+    }
+
     [HttpPut("memories/{id:guid}")]
     public async Task<ActionResult<object>> UpdateMemory(Guid id, [FromBody] MemoryEditorInput input, CancellationToken cancellationToken)
     {

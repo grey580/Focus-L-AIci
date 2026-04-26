@@ -517,6 +517,12 @@ public sealed class MemoryCardViewModel
     public SourceKind SourceKind { get; init; }
     public int Importance { get; init; }
     public bool IsPinned { get; init; }
+    public MemoryVerificationStatus VerificationStatus { get; init; }
+    public string VerificationStatusLabel { get; init; } = string.Empty;
+    public DateTime? LastVerifiedUtc { get; init; }
+    public DateTime? ReviewAfterUtc { get; init; }
+    public bool IsReviewDue { get; init; }
+    public string FreshnessLabel { get; init; } = string.Empty;
     public DateTime UpdatedUtc { get; init; }
     public IReadOnlyCollection<string> Tags { get; init; } = Array.Empty<string>();
 }

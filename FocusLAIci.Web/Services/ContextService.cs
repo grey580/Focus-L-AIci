@@ -136,10 +136,11 @@ public sealed partial class ContextService
         var memoryResults = memories
             .Select(memory =>
             {
+                var trust = MemoryTrustHelper.Build(memory);
                 var score = ScoreFields(
                     normalizedQuestion,
                     tokens,
-                    memory.UpdatedUtc,
+                    MemoryTrustHelper.GetEffectiveTimestamp(memory.UpdatedUtc, memory.LastVerifiedUtc),
                     new WeightedField(memory.Title, "title", "Title", 20m, "Title matches your question closely.", "Title shares your search terms."),
                     new WeightedField(memory.Summary, "summary", "Summary", 12m, "Summary closely matches the request.", "Summary reinforces the match."),
                     new WeightedField(TrimPreview(memory.Content, 2000), "content", "Content", 7m, "Memory content contains the full request.", "Memory content covers the same terms."),
@@ -148,8 +149,9 @@ public sealed partial class ContextService
 
                 score = ApplyBoost(score, memory.IsPinned ? 4m : 0m, "Pinned memory");
                 score = ApplyBoost(score, Math.Max(memory.Importance - 3, 0), "High importance");
+                score = ApplyBoost(score, trust.RetrievalAdjustment, trust.RetrievalAdjustmentLabel);
 
-                return new { Memory = memory, Match = score };
+                return new { Memory = memory, Match = score, Trust = trust };
             })
             .Where(x => x.Match.Score > 0)
             .OrderByDescending(x => x.Match.Score)
@@ -167,6 +169,7 @@ public sealed partial class ContextService
                 Score = x.Match.Score,
                 ScoreLabel = FormatScore(x.Match.Score),
                 MatchReason = x.Match.Reason,
+                FreshnessWarning = x.Trust.FreshnessWarning,
                 Provenance = MapProvenance(x.Match)
             })
             .ToArray();
@@ -738,6 +741,10 @@ public sealed partial class ContextService
                 foreach (var item in items)
                 {
                     builder.Append("- ").Append(item.Title);
+                    if (!string.IsNullOrWhiteSpace(item.FreshnessWarning))
+                    {
+                        builder.Append(" [").Append(item.FreshnessWarning).Append(']');
+                    }
                     if (!string.IsNullOrWhiteSpace(item.MatchReason))
                     {
                         builder.Append(" | ").Append(item.MatchReason);
@@ -805,6 +812,7 @@ public sealed partial class ContextService
                     MatchReason = isLinked && !item.MatchReason.Contains("Linked context", StringComparison.OrdinalIgnoreCase)
                         ? $"{item.MatchReason} Linked context already exists."
                         : item.MatchReason,
+                    FreshnessWarning = item.FreshnessWarning,
                     IsLinked = isLinked,
                     Provenance = provenance
                 };
@@ -947,7 +955,7 @@ public sealed partial class ContextService
 
     private static ContextScoreOutcome ApplyBoost(ContextScoreOutcome score, decimal amount, string label)
     {
-        if (amount <= 0m)
+        if (amount == 0m || string.IsNullOrWhiteSpace(label))
         {
             return score;
         }

@@ -59,6 +59,36 @@ public sealed class PalaceController : Controller
         return model is null ? NotFound() : View(model);
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> VerifyMemory(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _palaceService.MarkMemoryVerifiedAsync(id, cancellationToken);
+            return RedirectToAction(nameof(Memory), new { id });
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MarkMemoryNeedsReview(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _palaceService.MarkMemoryNeedsReviewAsync(id, cancellationToken);
+            return RedirectToAction(nameof(Memory), new { id });
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+    }
+
     [HttpGet]
     public async Task<IActionResult> NewMemory(Guid? wingId, CancellationToken cancellationToken)
     {

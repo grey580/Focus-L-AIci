@@ -123,10 +123,16 @@ else
                                     <a asp-action="Memory" asp-route-id="@memory.Id">@memory.Title</a>
                                 </h3>
                             </div>
-                            @if (memory.IsPinned)
-                            {
-                                <span class="badge text-bg-warning">Pinned</span>
-                            }
+                            <div class="d-flex gap-1 flex-wrap justify-content-end">
+                                @if (memory.IsPinned)
+                                {
+                                    <span class="badge text-bg-warning">Pinned</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(memory.FreshnessLabel))
+                                {
+                                    <span class="badge @(memory.IsReviewDue ? "text-bg-warning" : memory.VerificationStatus == MemoryVerificationStatus.Verified ? "text-bg-success" : "text-bg-secondary")">@memory.FreshnessLabel</span>
+                                }
+                            </div>
                         </div>
                         <p class="memory-summary">@memory.Summary</p>
                         <div class="memory-path">@memory.WingName / @memory.RoomName</div>

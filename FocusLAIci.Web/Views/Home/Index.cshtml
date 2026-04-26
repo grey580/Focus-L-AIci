@@ -177,12 +177,16 @@
                             <div class="code-graph-side-list dashboard-scroll-list dashboard-scroll-list-lg">
                                 @foreach (var item in Model.ContextPack.TopMatches)
                                 {
-                                    <a class="code-graph-side-item" href="@item.Url">
-                                        <strong>@item.Title</strong>
-                                        <span>@item.KindLabel • @item.ScoreLabel</span>
-                                        @if (!string.IsNullOrWhiteSpace(item.MatchReason))
-                                        {
-                                            <small>@item.MatchReason</small>
+                                     <a class="code-graph-side-item" href="@item.Url">
+                                         <strong>@item.Title</strong>
+                                         <span>@item.KindLabel • @item.ScoreLabel</span>
+                                         @if (!string.IsNullOrWhiteSpace(item.FreshnessWarning))
+                                         {
+                                             <small class="text-warning-emphasis">@item.FreshnessWarning</small>
+                                         }
+                                         @if (!string.IsNullOrWhiteSpace(item.MatchReason))
+                                         {
+                                             <small>@item.MatchReason</small>
                                         }
                                         @if (!string.IsNullOrWhiteSpace(item.Subtitle))
                                         {
@@ -228,12 +232,16 @@
                                             <div class="code-graph-side-list dashboard-scroll-list">
                                                 @foreach (var item in contextSection.Items)
                                                 {
-                                                    <a class="code-graph-side-item" href="@item.Url">
-                                                        <strong>@item.Title</strong>
-                                                        <span>@item.KindLabel • @item.ScoreLabel</span>
-                                                        @if (!string.IsNullOrWhiteSpace(item.MatchReason))
-                                                        {
-                                                            <small>@item.MatchReason</small>
+                                                     <a class="code-graph-side-item" href="@item.Url">
+                                                         <strong>@item.Title</strong>
+                                                         <span>@item.KindLabel • @item.ScoreLabel</span>
+                                                         @if (!string.IsNullOrWhiteSpace(item.FreshnessWarning))
+                                                         {
+                                                             <small class="text-warning-emphasis">@item.FreshnessWarning</small>
+                                                         }
+                                                         @if (!string.IsNullOrWhiteSpace(item.MatchReason))
+                                                         {
+                                                             <small>@item.MatchReason</small>
                                                         }
                                                         @if (!string.IsNullOrWhiteSpace(item.Subtitle))
                                                         {
@@ -440,7 +448,7 @@
                     @foreach (var memory in Model.PinnedMemories.Take(8))
                     {
                         <div class="compact-memory">
-                            <div class="memory-meta">@memory.Kind • @memory.WingName / @memory.RoomName</div>
+                            <div class="memory-meta">@memory.Kind • @memory.WingName / @memory.RoomName • @memory.FreshnessLabel</div>
                             <a asp-controller="Palace" asp-action="Memory" asp-route-id="@memory.Id" class="compact-memory-title">@memory.Title</a>
                             <div class="text-secondary small dashboard-clamp-2">@memory.Summary</div>
                         </div>
@@ -540,7 +548,7 @@
                         {
                             <article class="card shadow-sm border-0 inner-card dashboard-memory-row">
                                 <div class="card-body">
-                                    <div class="memory-meta">@memory.Kind • @memory.SourceKind</div>
+                                    <div class="memory-meta">@memory.Kind • @memory.SourceKind • @memory.FreshnessLabel</div>
                                     <h3 class="memory-title"><a asp-controller="Palace" asp-action="Memory" asp-route-id="@memory.Id">@memory.Title</a></h3>
                                     <p class="memory-summary">@memory.Summary</p>
                                     <div class="memory-path">@memory.WingName / @memory.RoomName</div>

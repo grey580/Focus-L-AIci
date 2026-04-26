@@ -1,4 +1,5 @@
 using FocusLAIci.Web.Models;
+using FocusLAIci.Web.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace FocusLAIci.Web.Data;
@@ -288,6 +289,21 @@ public static class MemorySeeder
             ON ContextLinks(SourceKind, SourceId, TargetKind, TargetId);
             """,
             cancellationToken);
+        await EnsureColumnExistsAsync(dbContext, "Memories", "VerificationStatus", "INTEGER NOT NULL DEFAULT 1", cancellationToken);
+        await EnsureColumnExistsAsync(dbContext, "Memories", "LastVerifiedUtc", "TEXT NULL", cancellationToken);
+        await EnsureColumnExistsAsync(dbContext, "Memories", "ReviewAfterUtc", "TEXT NULL", cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_Memories_VerificationStatus
+            ON Memories(VerificationStatus);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_Memories_ReviewAfterUtc
+            ON Memories(ReviewAfterUtc);
+            """,
+            cancellationToken);
     }
 
     public static async Task SeedSampleDataAsync(IServiceProvider services, CancellationToken cancellationToken = default)
@@ -449,6 +465,9 @@ public static class MemorySeeder
             SourceKind = sourceKind,
             Importance = importance,
             IsPinned = pinned,
+            VerificationStatus = MemoryVerificationStatus.Verified,
+            LastVerifiedUtc = occurredUtc,
+            ReviewAfterUtc = occurredUtc.AddDays(MemoryTrustHelper.DefaultReviewWindowDays),
             OccurredUtc = occurredUtc,
             CreatedUtc = occurredUtc,
             UpdatedUtc = occurredUtc
@@ -464,5 +483,53 @@ public static class MemorySeeder
         }
 
         return memory;
+    }
+
+    private static async Task EnsureColumnExistsAsync(FocusMemoryContext dbContext, string tableName, string columnName, string columnDefinition, CancellationToken cancellationToken)
+    {
+        var safeTableName = ValidateSqlIdentifier(tableName);
+        var safeColumnName = ValidateSqlIdentifier(columnName);
+        var connection = dbContext.Database.GetDbConnection();
+        var shouldClose = connection.State != System.Data.ConnectionState.Open;
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"PRAGMA table_info({tableName});";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+        }
+        finally
+        {
+            if (shouldClose)
+            {
+                await connection.CloseAsync();
+            }
+        }
+
+        var sql = "ALTER TABLE " + safeTableName + " ADD COLUMN " + safeColumnName + " " + columnDefinition + ";";
+        await dbContext.Database.ExecuteSqlRawAsync(
+            sql,
+            cancellationToken);
+    }
+
+    private static string ValidateSqlIdentifier(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Any(ch => !(char.IsLetterOrDigit(ch) || ch == '_')))
+        {
+            throw new InvalidOperationException("Unsafe SQL identifier.");
+        }
+
+        return value;
     }
 }
