@@ -589,6 +589,9 @@ public sealed class PalaceServiceTests
             Assert.False(snapshot.UsesDefaultDatabase);
             Assert.Equal(Path.GetFullPath(targetPath), snapshot.DatabasePath);
             Assert.True(File.Exists(targetPath));
+            Assert.True(snapshot.DatabaseSizeBytes.HasValue);
+            Assert.True(snapshot.DatabaseSizeBytes.Value > 0);
+            Assert.NotEqual("Unavailable", snapshot.DatabaseSizeLabel);
 
             var options = new DbContextOptionsBuilder<FocusMemoryContext>()
                 .UseSqlite(snapshot.ConnectionString)
@@ -640,6 +643,8 @@ public sealed class PalaceServiceTests
             Assert.True(resetSnapshot.UsesDefaultDatabase);
             Assert.Equal(Path.Combine(contentRoot, "focus-palace.db"), resetSnapshot.DatabasePath);
             Assert.False(File.Exists(Path.Combine(contentRoot, "focus-palace.database-target.json")));
+            Assert.True(resetSnapshot.DatabaseSizeBytes.HasValue);
+            Assert.True(resetSnapshot.DatabaseSizeBytes.Value > 0);
         }
         finally
         {

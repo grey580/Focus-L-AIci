@@ -22,29 +22,37 @@ public sealed class FocusDatabaseTargetService
     public FocusDatabaseTargetSnapshot GetCurrentTarget()
     {
         var defaultConnectionString = _configuration.GetConnectionString("FocusPalace") ?? "Data Source=focus-palace.db";
-        var defaultPath = ResolveAbsoluteDatabasePath(defaultConnectionString);
+        var normalizedDefaultConnectionString = NormalizeConnectionString(defaultConnectionString);
+        var defaultPath = ResolveAbsoluteDatabasePath(normalizedDefaultConnectionString);
         var overrideTarget = LoadOverride();
 
         if (overrideTarget is null)
         {
+            var sizeBytes = TryGetDatabaseSizeBytes(defaultPath);
             return new FocusDatabaseTargetSnapshot
             {
-                ConnectionString = defaultConnectionString,
+                ConnectionString = normalizedDefaultConnectionString,
                 DatabasePath = defaultPath,
                 DefaultDatabasePath = defaultPath,
                 UsesDefaultDatabase = true,
-                OverrideFilePath = _overrideFilePath
+                OverrideFilePath = _overrideFilePath,
+                DatabaseSizeBytes = sizeBytes,
+                DatabaseSizeLabel = FormatDatabaseSize(sizeBytes)
             };
         }
 
         var effectiveConnectionString = BuildConnectionString(overrideTarget.DatabasePath);
+        var effectivePath = ResolveAbsoluteDatabasePath(effectiveConnectionString);
+        var effectiveSizeBytes = TryGetDatabaseSizeBytes(effectivePath);
         return new FocusDatabaseTargetSnapshot
         {
             ConnectionString = effectiveConnectionString,
-            DatabasePath = ResolveAbsoluteDatabasePath(effectiveConnectionString),
+            DatabasePath = effectivePath,
             DefaultDatabasePath = defaultPath,
             UsesDefaultDatabase = false,
-            OverrideFilePath = _overrideFilePath
+            OverrideFilePath = _overrideFilePath,
+            DatabaseSizeBytes = effectiveSizeBytes,
+            DatabaseSizeLabel = FormatDatabaseSize(effectiveSizeBytes)
         };
     }
 
@@ -57,9 +65,8 @@ public sealed class FocusDatabaseTargetService
                 File.Delete(_overrideFilePath);
             }
 
-            var snapshot = GetCurrentTarget();
-            await EnsureDatabaseReadyAsync(snapshot.ConnectionString, cancellationToken);
-            return snapshot;
+            await EnsureDatabaseReadyAsync(GetCurrentTarget().ConnectionString, cancellationToken);
+            return GetCurrentTarget();
         }
 
         if (string.IsNullOrWhiteSpace(input.DatabasePath))
@@ -81,9 +88,8 @@ public sealed class FocusDatabaseTargetService
             new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(_overrideFilePath, payload, cancellationToken);
 
-        var snapshotAfterSave = GetCurrentTarget();
-        await EnsureDatabaseReadyAsync(snapshotAfterSave.ConnectionString, cancellationToken);
-        return snapshotAfterSave;
+        await EnsureDatabaseReadyAsync(GetCurrentTarget().ConnectionString, cancellationToken);
+        return GetCurrentTarget();
     }
 
     public Task EnsureCurrentDatabaseReadyAsync(CancellationToken cancellationToken = default)
@@ -130,6 +136,22 @@ public sealed class FocusDatabaseTargetService
                 : Path.Combine(_environment.ContentRootPath, dataSource));
     }
 
+    private string NormalizeConnectionString(string connectionString)
+    {
+        var absolutePath = ResolveAbsoluteDatabasePath(connectionString);
+        if (string.Equals(absolutePath, ":memory:", StringComparison.Ordinal))
+        {
+            return connectionString;
+        }
+
+        var builder = new SqliteConnectionStringBuilder(connectionString)
+        {
+            DataSource = absolutePath
+        };
+
+        return builder.ToString();
+    }
+
     private static string BuildConnectionString(string databasePath)
     {
         var builder = new SqliteConnectionStringBuilder
@@ -138,6 +160,33 @@ public sealed class FocusDatabaseTargetService
         };
 
         return builder.ToString();
+    }
+
+    private static long? TryGetDatabaseSizeBytes(string databasePath)
+    {
+        return File.Exists(databasePath)
+            ? new FileInfo(databasePath).Length
+            : null;
+    }
+
+    private static string FormatDatabaseSize(long? sizeBytes)
+    {
+        if (!sizeBytes.HasValue)
+        {
+            return "Unavailable";
+        }
+
+        string[] suffixes = ["B", "KB", "MB", "GB", "TB"];
+        double size = sizeBytes.Value;
+        var suffixIndex = 0;
+        while (size >= 1024 && suffixIndex < suffixes.Length - 1)
+        {
+            size /= 1024;
+            suffixIndex++;
+        }
+
+        var format = suffixIndex == 0 ? "0" : "0.##";
+        return $"{size.ToString(format, System.Globalization.CultureInfo.InvariantCulture)} {suffixes[suffixIndex]}";
     }
 
     private sealed class DatabaseTargetOverride

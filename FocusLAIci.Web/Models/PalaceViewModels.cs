@@ -172,6 +172,8 @@ public sealed class FocusDatabaseTargetSnapshot
     public string DefaultDatabasePath { get; init; } = string.Empty;
     public bool UsesDefaultDatabase { get; init; }
     public string OverrideFilePath { get; init; } = string.Empty;
+    public long? DatabaseSizeBytes { get; init; }
+    public string DatabaseSizeLabel { get; init; } = "Unavailable";
 }
 
 public sealed class PalaceStatsViewModel
