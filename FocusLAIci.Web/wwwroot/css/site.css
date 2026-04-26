@@ -56,24 +56,10 @@ body[data-theme="dark"] .theme-toggle-icon-moon {
   text-decoration: none;
 }
 
-.focus-brand-copy {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.05;
-}
-
 .focus-brand-title {
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-}
-
-.focus-brand-tag {
-  color: rgba(191, 219, 254, 0.78);
-  font-size: 0.63rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
 }
 
 .focus-brand-mark {
