@@ -62,10 +62,11 @@ This tells Focus L-AIci to use that existing SQLite database instead of the defa
 Once the site is open:
 
 1. Review the **Dashboard** to understand the current palace state.
-2. Open **Todos** to see active work.
-3. Open **Tickets** for larger tracked workstreams.
-4. Open **Code Graph** before broad code searching when repository orientation matters.
-5. Add or update memories only when the information is durable and worth preserving.
+2. Open **Inspect** to confirm the active database, missing-context warnings, recent changes, and workspace export.
+3. Open **Todos** to see active work.
+4. Open **Tickets** for larger tracked workstreams.
+5. Open **Code Graph** before broad code searching when repository orientation matters.
+6. Add or update memories only when the information is durable and worth preserving.
 
 ## How AI models should use Focus L-AIci
 
@@ -74,6 +75,13 @@ The right workflow is:
 1. **Retrieve first** - search Focus for relevant memories, todos, tickets, and code graph context before making assumptions.
 2. **Work second** - perform implementation, debugging, or research using that retrieved context.
 3. **Write back third** - store durable conclusions, fixes, patterns, and decisions back into Focus.
+
+The highest-signal retrieval surfaces are now:
+
+- **Inspect** for active database truth, dashboard diagnostics, recent changes, and the workspace export block
+- `GET /api/palace/workspace` for a prompt-ready snapshot of pinned memories, active work, code graph projects, and recent changes
+- `POST /api/context/brief` when you want the app to assemble a context pack instead of searching manually
+- `GET/POST/PUT /api/todos` and `GET/POST/PUT /api/tickets` when the workflow needs durable write-back without touching SQLite directly
 
 An AI model should treat Focus as:
 
@@ -100,15 +108,18 @@ Required behavior:
 5. Restore and start the web app.
 6. Confirm the site is responding and that CSS/static assets load correctly.
 7. Open the dashboard, todos, tickets, and code graph areas to understand the current state.
-8. Treat Focus as the primary durable memory system for ongoing engineering work.
+8. Open Inspect and review the workspace export before starting broad implementation work.
+9. Treat Focus as the primary durable memory system for ongoing engineering work.
 
 Operating rules:
 
 - Search Focus before making assumptions.
+- Use Inspect and the workspace export first when you need fast orientation.
 - Use Code Graph before broad raw code searching when repository structure matters.
 - Store durable outcomes, decisions, incidents, and reusable patterns back into Focus.
 - Use Todos for prompt-sized execution work.
 - Use Tickets for larger tracked work with notes, subtasks, and completion history.
+- Prefer the JSON APIs for automation; mutation endpoints accept string enum payloads like `Pending`, `InProgress`, `Medium`, and `Completed`.
 - Do not create throwaway memories for trivial chatter.
 - Preserve existing data and avoid resetting or replacing the active database unless explicitly instructed.
 
@@ -133,6 +144,7 @@ Use Focus L-AIci as the durable memory layer for this task.
 
 Before implementation:
 - search for relevant memories
+- check Inspect and copy the workspace export when fast cold-start context is useful
 - inspect related todos and tickets
 - check code graph context if repository orientation matters
 
@@ -140,6 +152,7 @@ During implementation:
 - preserve existing conventions
 - rely on retrieved Focus context instead of guessing
 - add or update todos and tickets when the work needs durable tracking
+- prefer the todo and ticket APIs for automation-friendly write-back
 
 After implementation:
 - write back durable findings, decisions, fixes, or reusable patterns into Focus

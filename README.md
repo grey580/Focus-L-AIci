@@ -160,6 +160,7 @@ It also now exposes:
 - `GET /api/palace/recent-changes` for a cross-source recent-change feed across memories, todos, tickets, and code graph projects
 - `GET/POST/PUT /api/todos` plus `PUT /api/todos/{id}/status` for direct application-layer todo inspection and updates
 - `GET/POST/PUT /api/tickets`, `PUT /api/tickets/{id}/status`, `POST /api/tickets/{id}/notes`, and `POST /api/tickets/{id}/time-logs` for closing the ticket write-back loop without opening SQLite manually
+- string-enum JSON payloads for the mutation APIs, so callers can send values like `"InProgress"` and `"Medium"` instead of remembering numeric enum IDs
 
 That makes it much easier to tell whether a problem is in the **database**, the **application layer**, or just the **page layout/rendering**.
 

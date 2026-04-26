@@ -86,8 +86,24 @@ When creating a memory:
 ### Before you start work
 
 1. Search for the product, subsystem, or problem you are about to touch.
-2. Open pinned memories and recent related entries.
-3. Review linked memories if the issue spans multiple areas.
+2. Open **Inspect** and verify the active database, warnings, recent changes, and workspace export.
+3. Open pinned memories and recent related entries.
+4. Review linked memories if the issue spans multiple areas.
+
+### Use Inspect as the trust surface
+
+The **Inspect** page is now the fastest way to answer:
+
+- Am I looking at the right database?
+- Is the dashboard missing context?
+- What changed recently across memories, todos, tickets, and code graph?
+- What is the current workspace snapshot I should give to an AI model?
+
+Recommended pattern:
+
+1. Open Inspect before assuming the homepage tells the whole story.
+2. Use the workspace export block when you need to brief a fresh AI session quickly.
+3. Use the diagnostics URLs on that page when you want application-layer truth without opening SQLite.
 
 ### Use Code Graph before raw code search
 
@@ -127,6 +143,19 @@ Recommended pattern:
 2. Record failed approaches only if they teach something reusable.
 3. Add a memory when you discover a non-obvious fix, pattern, or constraint.
 4. Use **Tickets** when the work needs subtasks, notes, tracked time, or a richer audit trail than a todo card.
+
+### Use the APIs for write-back when automation matters
+
+Focus is no longer just a read surface. If your workflow is scriptable or AI-assisted, prefer the application APIs over raw database edits:
+
+- `GET/POST/PUT /api/todos`
+- `PUT /api/todos/{id}/status`
+- `GET/POST/PUT /api/tickets`
+- `PUT /api/tickets/{id}/status`
+- `POST /api/tickets/{id}/notes`
+- `POST /api/tickets/{id}/time-logs`
+
+These endpoints now accept readable string-enum payloads such as `Pending`, `InProgress`, `Medium`, and `Completed`, so callers do not need to know numeric enum values.
 
 ### After work
 
@@ -191,6 +220,8 @@ This helps the model:
 - preserve prior decisions
 - continue architecture consistently
 - understand your local conventions
+
+For the fastest version of this flow, copy the **workspace export** from Inspect or call `GET /api/palace/workspace` and use that as the first context block in the prompt.
 
 ### 2. Distill after working
 
