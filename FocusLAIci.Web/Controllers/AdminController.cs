@@ -34,9 +34,11 @@ public sealed class AdminController : Controller
                 ? null
                 : input,
             cancellationToken);
+        var workspace = await _palaceService.GetWorkspaceExportAsync(cancellationToken);
 
         var diagnosticsUrl = "/api/palace/dashboard-diagnostics";
         var recentChangesUrl = "/api/palace/recent-changes";
+        var workspaceUrl = "/api/palace/workspace";
         var diagnosticsQuery = new List<string>();
         if (!string.IsNullOrWhiteSpace(model.Diagnostics.ContextInput.Question))
         {
@@ -58,6 +60,7 @@ public sealed class AdminController : Controller
             ContextSummary = model.Diagnostics.ContextSummary,
             TopMatchCount = model.Diagnostics.TopMatchCount,
             DetectedGaps = model.Diagnostics.DetectedGaps,
+            DetectedGapItems = model.Diagnostics.DetectedGapItems,
             RecentChanges = model.Diagnostics.RecentChanges,
             Sections = model.Diagnostics.Sections
         };
@@ -67,7 +70,20 @@ public sealed class AdminController : Controller
             Diagnostics = diagnosticsWithTarget,
             RecentChanges = model.RecentChanges,
             DiagnosticsApiUrl = diagnosticsUrl,
-            RecentChangesApiUrl = recentChangesUrl
+            RecentChangesApiUrl = recentChangesUrl,
+            WorkspaceApiUrl = workspaceUrl,
+            WorkspaceExport = new WorkspaceExportViewModel
+            {
+                GeneratedUtc = workspace.GeneratedUtc,
+                DatabaseTarget = _databaseTargetService.GetCurrentTarget(),
+                Stats = workspace.Stats,
+                ExportText = workspace.ExportText,
+                PinnedMemories = workspace.PinnedMemories,
+                ActiveTodos = workspace.ActiveTodos,
+                ActiveTickets = workspace.ActiveTickets,
+                CodeGraphProjects = workspace.CodeGraphProjects,
+                RecentChanges = workspace.RecentChanges
+            }
         });
     }
 

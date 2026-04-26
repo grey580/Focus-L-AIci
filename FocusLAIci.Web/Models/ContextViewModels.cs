@@ -26,6 +26,7 @@ public sealed class ContextPackViewModel
     public string Summary { get; init; } = string.Empty;
     public ContextBriefInput Input { get; init; } = new();
     public IReadOnlyCollection<string> SearchTokens { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<DashboardWarningViewModel> DetectedGapItems { get; init; } = Array.Empty<DashboardWarningViewModel>();
     public IReadOnlyCollection<ContextRecordViewModel> TopMatches { get; init; } = Array.Empty<ContextRecordViewModel>();
     public IReadOnlyCollection<ContextRecordViewModel> Memories { get; init; } = Array.Empty<ContextRecordViewModel>();
     public IReadOnlyCollection<ContextRecordViewModel> Todos { get; init; } = Array.Empty<ContextRecordViewModel>();
@@ -49,6 +50,28 @@ public sealed class ContextRecordViewModel
     public string MatchReason { get; init; } = string.Empty;
     public decimal Score { get; init; }
     public bool IsLinked { get; init; }
+    public ContextMatchDetailViewModel? Provenance { get; init; }
+}
+
+public sealed class ContextMatchDetailViewModel
+{
+    public IReadOnlyCollection<string> MatchedTokens { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<ContextMatchFieldHitViewModel> FieldHits { get; init; } = Array.Empty<ContextMatchFieldHitViewModel>();
+    public IReadOnlyCollection<ContextMatchBoostViewModel> Boosts { get; init; } = Array.Empty<ContextMatchBoostViewModel>();
+    public bool ExactPhraseMatched { get; init; }
+}
+
+public sealed class ContextMatchFieldHitViewModel
+{
+    public string FieldKey { get; init; } = string.Empty;
+    public string Label { get; init; } = string.Empty;
+    public IReadOnlyCollection<string> Tokens { get; init; } = Array.Empty<string>();
+}
+
+public sealed class ContextMatchBoostViewModel
+{
+    public string Label { get; init; } = string.Empty;
+    public decimal Value { get; init; }
 }
 
 public sealed class ContextLinksPanelViewModel

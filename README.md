@@ -64,7 +64,9 @@ This makes the system much better than a basic note app for operational work, be
 - full-text style search flows across stored knowledge
 - linked-memory relationships for context tracing
 - API diagnostics for checking the active database target and homepage backing content
-- read APIs for todos, tickets, and recent changes
+- read/write APIs for todos and tickets
+- workspace export API and Inspect-page export panel for cold-start AI sessions
+- recent-changes feed plus structured context provenance for inspectable retrieval reasoning
 - sample data seeding for quick onboarding
 
 ## Dashboard preview
@@ -154,12 +156,14 @@ It also now exposes:
 
 - `POST /api/context/brief` for structured context-pack retrieval
 - `GET /api/palace/dashboard-diagnostics` for checking the **active database path**, homepage section contents, top context-match count, and detected content gaps
+- `GET /api/palace/workspace` for a prompt-ready export of pinned memories, active work, code-graph projects, and recent changes
 - `GET /api/palace/recent-changes` for a cross-source recent-change feed across memories, todos, tickets, and code graph projects
-- `GET /api/todos` and `GET /api/tickets` for direct application-layer inspection of work state without opening SQLite manually
+- `GET/POST/PUT /api/todos` plus `PUT /api/todos/{id}/status` for direct application-layer todo inspection and updates
+- `GET/POST/PUT /api/tickets`, `PUT /api/tickets/{id}/status`, `POST /api/tickets/{id}/notes`, and `POST /api/tickets/{id}/time-logs` for closing the ticket write-back loop without opening SQLite manually
 
 That makes it much easier to tell whether a problem is in the **database**, the **application layer**, or just the **page layout/rendering**.
 
-There is also now a first-class **Inspect** page in the app navigation that brings those diagnostics together into one operator-facing screen: active database target, missing-context warnings, recent changes, and section-by-section dashboard truth.
+There is also now a first-class **Inspect** page in the app navigation that brings those diagnostics together into one operator-facing screen: active database target, missing-context warnings, recent changes, section-by-section dashboard truth, and a copyable workspace export block for fast AI/session handoff.
 
 ## Quick start
 

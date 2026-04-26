@@ -51,8 +51,27 @@ public sealed class PalaceApiController : ControllerBase
             ContextSummary = diagnostics.ContextSummary,
             TopMatchCount = diagnostics.TopMatchCount,
             DetectedGaps = diagnostics.DetectedGaps,
+            DetectedGapItems = diagnostics.DetectedGapItems,
             RecentChanges = diagnostics.RecentChanges,
             Sections = diagnostics.Sections
+        });
+    }
+
+    [HttpGet("workspace")]
+    public async Task<ActionResult<WorkspaceExportViewModel>> Workspace(CancellationToken cancellationToken)
+    {
+        var workspace = await _palaceService.GetWorkspaceExportAsync(cancellationToken);
+        return Ok(new WorkspaceExportViewModel
+        {
+            GeneratedUtc = workspace.GeneratedUtc,
+            DatabaseTarget = _databaseTargetService.GetCurrentTarget(),
+            Stats = workspace.Stats,
+            ExportText = workspace.ExportText,
+            PinnedMemories = workspace.PinnedMemories,
+            ActiveTodos = workspace.ActiveTodos,
+            ActiveTickets = workspace.ActiveTickets,
+            CodeGraphProjects = workspace.CodeGraphProjects,
+            RecentChanges = workspace.RecentChanges
         });
     }
 

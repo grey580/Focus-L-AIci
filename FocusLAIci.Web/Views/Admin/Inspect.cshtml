@@ -102,11 +102,27 @@
                 <ul class="api-list mb-0">
                     <li><code>@Model.DiagnosticsApiUrl</code></li>
                     <li><code>@Model.RecentChangesApiUrl</code></li>
+                    <li><code>@Model.WorkspaceApiUrl</code></li>
                     <li><code>/api/todos</code></li>
                     <li><code>/api/tickets</code></li>
                 </ul>
             </div>
         </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <div class="section-heading">
+            <h2>Workspace export</h2>
+            <span class="text-secondary small">@Model.WorkspaceExport.PinnedMemories.Count pinned memories • @Model.WorkspaceExport.ActiveTodos.Count active todos • @Model.WorkspaceExport.ActiveTickets.Count active tickets</span>
+        </div>
+        <p class="text-secondary small">Use this when a new AI session needs fast orientation without asking a question first.</p>
+        <div class="d-flex gap-2 flex-wrap mb-3">
+            <button type="button" class="btn btn-outline-primary" onclick="navigator.clipboard.writeText(document.getElementById('workspace-export-text').value)">Copy workspace export</button>
+            <a class="btn btn-outline-secondary" href="@Model.WorkspaceApiUrl">Open workspace API</a>
+        </div>
+        <textarea id="workspace-export-text" class="form-control" rows="10" readonly>@Model.WorkspaceExport.ExportText</textarea>
     </div>
 </div>
 

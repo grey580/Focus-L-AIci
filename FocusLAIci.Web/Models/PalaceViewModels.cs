@@ -15,6 +15,7 @@ public sealed class DashboardViewModel
     public IReadOnlyCollection<MemoryCardViewModel> PinnedMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
     public IReadOnlyCollection<TodoItemViewModel> CurrentTodos { get; init; } = Array.Empty<TodoItemViewModel>();
     public IReadOnlyCollection<string> MissingContextWarnings { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<DashboardWarningViewModel> MissingContextWarningItems { get; init; } = Array.Empty<DashboardWarningViewModel>();
     public IReadOnlyCollection<string> SearchExamples { get; init; } = Array.Empty<string>();
 }
 
@@ -27,8 +28,18 @@ public sealed class DashboardDiagnosticsViewModel
     public string ContextSummary { get; init; } = string.Empty;
     public int TopMatchCount { get; init; }
     public IReadOnlyCollection<string> DetectedGaps { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<DashboardWarningViewModel> DetectedGapItems { get; init; } = Array.Empty<DashboardWarningViewModel>();
     public IReadOnlyCollection<RecentChangeItemViewModel> RecentChanges { get; init; } = Array.Empty<RecentChangeItemViewModel>();
     public IReadOnlyCollection<DashboardSectionSnapshotViewModel> Sections { get; init; } = Array.Empty<DashboardSectionSnapshotViewModel>();
+}
+
+public sealed class DashboardWarningViewModel
+{
+    public string Code { get; init; } = string.Empty;
+    public string Severity { get; init; } = "warning";
+    public string Message { get; init; } = string.Empty;
+    public string ActionLabel { get; init; } = string.Empty;
+    public string ActionUrl { get; init; } = string.Empty;
 }
 
 public sealed class DashboardSectionSnapshotViewModel
@@ -55,6 +66,8 @@ public sealed class InspectorViewModel
     public IReadOnlyCollection<RecentChangeItemViewModel> RecentChanges { get; init; } = Array.Empty<RecentChangeItemViewModel>();
     public string DiagnosticsApiUrl { get; init; } = string.Empty;
     public string RecentChangesApiUrl { get; init; } = string.Empty;
+    public string WorkspaceApiUrl { get; init; } = string.Empty;
+    public WorkspaceExportViewModel WorkspaceExport { get; init; } = new();
 }
 
 public sealed class RecentChangeItemViewModel
@@ -64,6 +77,31 @@ public sealed class RecentChangeItemViewModel
     public string Detail { get; init; } = string.Empty;
     public string Url { get; init; } = string.Empty;
     public DateTime ChangedUtc { get; init; }
+}
+
+public sealed class WorkspaceExportViewModel
+{
+    public DateTime GeneratedUtc { get; init; }
+    public FocusDatabaseTargetSnapshot DatabaseTarget { get; init; } = new();
+    public PalaceStatsViewModel Stats { get; init; } = new();
+    public string ExportText { get; init; } = string.Empty;
+    public IReadOnlyCollection<MemoryCardViewModel> PinnedMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
+    public IReadOnlyCollection<TodoItemViewModel> ActiveTodos { get; init; } = Array.Empty<TodoItemViewModel>();
+    public IReadOnlyCollection<TicketSummaryViewModel> ActiveTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
+    public IReadOnlyCollection<CodeGraphProjectCardViewModel> CodeGraphProjects { get; init; } = Array.Empty<CodeGraphProjectCardViewModel>();
+    public IReadOnlyCollection<RecentChangeItemViewModel> RecentChanges { get; init; } = Array.Empty<RecentChangeItemViewModel>();
+}
+
+public sealed class TodoStatusUpdateInput
+{
+    [Required]
+    public TodoStatus Status { get; set; }
+}
+
+public sealed class TicketStatusUpdateInput
+{
+    [Required]
+    public TicketStatus Status { get; set; }
 }
 
 public sealed class DashboardActivityViewModel

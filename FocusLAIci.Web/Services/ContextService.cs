@@ -140,18 +140,14 @@ public sealed partial class ContextService
                     normalizedQuestion,
                     tokens,
                     memory.UpdatedUtc,
-                    new WeightedField(memory.Title, 20m, "Title matches your question closely.", "Title shares your search terms."),
-                    new WeightedField(memory.Summary, 12m, "Summary closely matches the request.", "Summary reinforces the match."),
-                    new WeightedField(TrimPreview(memory.Content, 2000), 7m, "Memory content contains the full request.", "Memory content covers the same terms."),
-                    new WeightedField($"{memory.Wing?.Name} {memory.Room?.Name}", 8m, "Wing or room naming matches the request.", "Wing or room naming overlaps the request."),
-                    new WeightedField(string.Join(' ', memory.MemoryTags.Select(x => x.Tag!.Name)), 10m, "Tags line up with the request.", "Tags overlap the request."));
+                    new WeightedField(memory.Title, "title", "Title", 20m, "Title matches your question closely.", "Title shares your search terms."),
+                    new WeightedField(memory.Summary, "summary", "Summary", 12m, "Summary closely matches the request.", "Summary reinforces the match."),
+                    new WeightedField(TrimPreview(memory.Content, 2000), "content", "Content", 7m, "Memory content contains the full request.", "Memory content covers the same terms."),
+                    new WeightedField($"{memory.Wing?.Name} {memory.Room?.Name}", "location", "Wing/room", 8m, "Wing or room naming matches the request.", "Wing or room naming overlaps the request."),
+                    new WeightedField(string.Join(' ', memory.MemoryTags.Select(x => x.Tag!.Name)), "tags", "Tags", 10m, "Tags line up with the request.", "Tags overlap the request."));
 
-                score = score with
-                {
-                    Score = score.Score
-                        + (memory.IsPinned ? 4m : 0m)
-                        + Math.Max(memory.Importance - 3, 0)
-                };
+                score = ApplyBoost(score, memory.IsPinned ? 4m : 0m, "Pinned memory");
+                score = ApplyBoost(score, Math.Max(memory.Importance - 3, 0), "High importance");
 
                 return new { Memory = memory, Match = score };
             })
@@ -170,7 +166,8 @@ public sealed partial class ContextService
                 Url = $"/Palace/Memory/{x.Memory.Id}",
                 Score = x.Match.Score,
                 ScoreLabel = FormatScore(x.Match.Score),
-                MatchReason = x.Match.Reason
+                MatchReason = x.Match.Reason,
+                Provenance = MapProvenance(x.Match)
             })
             .ToArray();
 
@@ -181,13 +178,10 @@ public sealed partial class ContextService
                     normalizedQuestion,
                     tokens,
                     todo.UpdatedUtc,
-                    new WeightedField(todo.Title, 20m, "Todo title matches your question closely.", "Todo title shares your search terms."),
-                    new WeightedField(todo.Details, 8m, "Todo details contain the full request.", "Todo details reinforce the match."));
+                    new WeightedField(todo.Title, "title", "Title", 20m, "Todo title matches your question closely.", "Todo title shares your search terms."),
+                    new WeightedField(todo.Details, "details", "Details", 8m, "Todo details contain the full request.", "Todo details reinforce the match."));
 
-                score = score with
-                {
-                    Score = score.Score + (todo.Status == TodoStatus.InProgress ? 4m : todo.Status == TodoStatus.Pending ? 2m : 0m)
-                };
+                score = ApplyBoost(score, todo.Status == TodoStatus.InProgress ? 4m : todo.Status == TodoStatus.Pending ? 2m : 0m, todo.Status == TodoStatus.InProgress ? "In-progress work" : "Pending work");
 
                 return new { Todo = todo, Match = score };
             })
@@ -206,7 +200,8 @@ public sealed partial class ContextService
                 Url = $"/Todos/Details/{x.Todo.Id}",
                 Score = x.Match.Score,
                 ScoreLabel = FormatScore(x.Match.Score),
-                MatchReason = x.Match.Reason
+                MatchReason = x.Match.Reason,
+                Provenance = MapProvenance(x.Match)
             })
             .ToArray();
 
@@ -217,21 +212,17 @@ public sealed partial class ContextService
                     normalizedQuestion,
                     tokens,
                     ticket.UpdatedUtc,
-                    new WeightedField($"{ticket.TicketNumber} {ticket.Title}", 20m, "Ticket title or number matches your request closely.", "Ticket title or number overlaps the request."),
-                    new WeightedField(ticket.Description, 8m, "Ticket description contains the full request.", "Ticket description reinforces the match."),
-                    new WeightedField(ticket.GitBranch, 14m, "Git branch name matches your request closely.", "Git branch overlaps the request."),
-                    new WeightedField($"{ticket.Assignee} {ticket.TagsText}", 10m, "Ticket tags or assignee line up with the request.", "Ticket tags or assignee overlap the request."),
-                    new WeightedField(subTicketTexts.GetValueOrDefault(ticket.Id), 6m, "Sub-ticket work directly matches the request.", "Sub-ticket work reinforces the request."),
-                    new WeightedField(ticketNotes.GetValueOrDefault(ticket.Id), 6m, "Ticket notes directly match the request.", "Ticket notes reinforce the request."),
-                    new WeightedField(ticketActivities.GetValueOrDefault(ticket.Id), 6m, "Ticket activity history directly matches the request.", "Ticket activity history reinforces the request."),
-                    new WeightedField(ticketTimeLogs.GetValueOrDefault(ticket.Id), 5m, "Ticket time logs directly match the request.", "Ticket time logs reinforce the request."));
+                    new WeightedField($"{ticket.TicketNumber} {ticket.Title}", "title", "Title/number", 20m, "Ticket title or number matches your request closely.", "Ticket title or number overlaps the request."),
+                    new WeightedField(ticket.Description, "description", "Description", 8m, "Ticket description contains the full request.", "Ticket description reinforces the match."),
+                    new WeightedField(ticket.GitBranch, "branch", "Git branch", 14m, "Git branch name matches your request closely.", "Git branch overlaps the request."),
+                    new WeightedField($"{ticket.Assignee} {ticket.TagsText}", "tags", "Tags/assignee", 10m, "Ticket tags or assignee line up with the request.", "Ticket tags or assignee overlap the request."),
+                    new WeightedField(subTicketTexts.GetValueOrDefault(ticket.Id), "subtickets", "Sub-tickets", 6m, "Sub-ticket work directly matches the request.", "Sub-ticket work reinforces the request."),
+                    new WeightedField(ticketNotes.GetValueOrDefault(ticket.Id), "notes", "Notes", 6m, "Ticket notes directly match the request.", "Ticket notes reinforce the request."),
+                    new WeightedField(ticketActivities.GetValueOrDefault(ticket.Id), "activity", "Activity", 6m, "Ticket activity history directly matches the request.", "Ticket activity history reinforces the request."),
+                    new WeightedField(ticketTimeLogs.GetValueOrDefault(ticket.Id), "time-logs", "Time logs", 5m, "Ticket time logs directly match the request.", "Ticket time logs reinforce the request."));
 
-                score = score with
-                {
-                    Score = score.Score
-                        + (ticket.Status == TicketStatus.InProgress ? 5m : ticket.Status == TicketStatus.New ? 3m : 0m)
-                        + (ticket.Priority == TicketPriority.Critical ? 2m : ticket.Priority == TicketPriority.High ? 1m : 0m)
-                };
+                score = ApplyBoost(score, ticket.Status == TicketStatus.InProgress ? 5m : ticket.Status == TicketStatus.New ? 3m : 0m, ticket.Status == TicketStatus.InProgress ? "In-progress ticket" : "New ticket");
+                score = ApplyBoost(score, ticket.Priority == TicketPriority.Critical ? 2m : ticket.Priority == TicketPriority.High ? 1m : 0m, ticket.Priority == TicketPriority.Critical ? "Critical priority" : "High priority");
 
                 return new { Ticket = ticket, Match = score };
             })
@@ -250,7 +241,8 @@ public sealed partial class ContextService
                 Url = $"/Tickets/Details/{x.Ticket.Id}",
                 Score = x.Match.Score,
                 ScoreLabel = FormatScore(x.Match.Score),
-                MatchReason = x.Match.Reason
+                MatchReason = x.Match.Reason,
+                Provenance = MapProvenance(x.Match)
             })
             .ToArray();
 
@@ -261,14 +253,11 @@ public sealed partial class ContextService
                     normalizedQuestion,
                     tokens,
                     project.UpdatedUtc,
-                    new WeightedField(project.Name, 22m, "Project name matches your request closely.", "Project name overlaps the request."),
-                    new WeightedField(project.RootPath, 18m, "Project path matches the request.", "Project path overlaps the request."),
-                    new WeightedField($"{project.Description} {project.Summary}", 8m, "Project description contains the full request.", "Project description reinforces the match."));
+                    new WeightedField(project.Name, "name", "Project name", 22m, "Project name matches your request closely.", "Project name overlaps the request."),
+                    new WeightedField(project.RootPath, "path", "Project path", 18m, "Project path matches the request.", "Project path overlaps the request."),
+                    new WeightedField($"{project.Description} {project.Summary}", "summary", "Description/summary", 8m, "Project description contains the full request.", "Project description reinforces the match."));
 
-                score = score with
-                {
-                    Score = score.Score + Math.Min(project.RelationshipCount / 50m, 3m)
-                };
+                score = ApplyBoost(score, Math.Min(project.RelationshipCount / 50m, 3m), "High relationship count");
 
                 return new { Project = project, Match = score };
             })
@@ -287,7 +276,8 @@ public sealed partial class ContextService
                 Url = $"/CodeGraph/Project/{x.Project.Id}",
                 Score = x.Match.Score,
                 ScoreLabel = FormatScore(x.Match.Score),
-                MatchReason = x.Match.Reason
+                MatchReason = x.Match.Reason,
+                Provenance = MapProvenance(x.Match)
             })
             .ToArray();
 
@@ -298,9 +288,9 @@ public sealed partial class ContextService
                     normalizedQuestion,
                     tokens,
                     file.ScannedUtc,
-                    new WeightedField(file.RelativePath, 20m, "File path matches your request closely.", "File path overlaps the request."),
-                    new WeightedField(file.Language, 5m, "File language matches your request.", "File language reinforces the request."),
-                    new WeightedField(file.Project?.Name, 8m, "Project name matches your request closely.", "Project name overlaps the request."));
+                    new WeightedField(file.RelativePath, "path", "File path", 20m, "File path matches your request closely.", "File path overlaps the request."),
+                    new WeightedField(file.Language, "language", "Language", 5m, "File language matches your request.", "File language reinforces the request."),
+                    new WeightedField(file.Project?.Name, "project", "Project", 8m, "Project name matches your request closely.", "Project name overlaps the request."));
 
                 return new { File = file, Match = score };
             })
@@ -319,7 +309,8 @@ public sealed partial class ContextService
                 Url = $"/CodeGraph/Project/{x.File.ProjectId}?selectedFileId={x.File.Id}",
                 Score = x.Match.Score,
                 ScoreLabel = FormatScore(x.Match.Score),
-                MatchReason = x.Match.Reason
+                MatchReason = x.Match.Reason,
+                Provenance = MapProvenance(x.Match)
             })
             .ToArray();
 
@@ -330,14 +321,11 @@ public sealed partial class ContextService
                     normalizedQuestion,
                     tokens,
                     null,
-                    new WeightedField(node.Label, 24m, "Symbol name matches your request closely.", "Symbol name overlaps the request."),
-                    new WeightedField(node.File?.RelativePath, 20m, "File path matches the request.", "File path overlaps the request."),
-                    new WeightedField($"{node.NodeType} {node.SecondaryLabel}", 8m, "Symbol metadata contains the full request.", "Symbol metadata reinforces the match."));
+                    new WeightedField(node.Label, "name", "Symbol name", 24m, "Symbol name matches your request closely.", "Symbol name overlaps the request."),
+                    new WeightedField(node.File?.RelativePath, "path", "File path", 20m, "File path matches the request.", "File path overlaps the request."),
+                    new WeightedField($"{node.NodeType} {node.SecondaryLabel}", "metadata", "Symbol metadata", 8m, "Symbol metadata contains the full request.", "Symbol metadata reinforces the match."));
 
-                score = score with
-                {
-                    Score = score.Score + Math.Min(nodeDegrees.GetValueOrDefault(node.Id) / 4m, 3m)
-                };
+                score = ApplyBoost(score, Math.Min(nodeDegrees.GetValueOrDefault(node.Id) / 4m, 3m), "High graph connectivity");
 
                 return new { Node = node, Match = score };
             })
@@ -356,7 +344,8 @@ public sealed partial class ContextService
                 Url = $"/CodeGraph/Project/{x.Node.ProjectId}?selectedNodeId={x.Node.Id}",
                 Score = x.Match.Score,
                 ScoreLabel = FormatScore(x.Match.Score),
-                MatchReason = x.Match.Reason
+                MatchReason = x.Match.Reason,
+                Provenance = MapProvenance(x.Match)
             })
             .ToArray();
 
@@ -782,6 +771,26 @@ public sealed partial class ContextService
             .Select(item =>
             {
                 var isLinked = linkedKeys.Contains(new ContextRecordKey(item.Kind, item.Id));
+                var boostedScore = item.Score + (isLinked ? 5m : 0m);
+                var provenance = item.Provenance is null
+                    ? null
+                    : new ContextMatchDetailViewModel
+                    {
+                        MatchedTokens = item.Provenance.MatchedTokens,
+                        FieldHits = item.Provenance.FieldHits,
+                        ExactPhraseMatched = item.Provenance.ExactPhraseMatched,
+                        Boosts = isLinked
+                            ? item.Provenance.Boosts.Concat(new[]
+                            {
+                                new ContextMatchBoostViewModel
+                                {
+                                    Label = "Linked context",
+                                    Value = 5m
+                                }
+                            }).ToArray()
+                            : item.Provenance.Boosts
+                    };
+
                 return new ContextRecordViewModel
                 {
                     Kind = item.Kind,
@@ -791,12 +800,13 @@ public sealed partial class ContextService
                     Subtitle = item.Subtitle,
                     Preview = item.Preview,
                     Url = item.Url,
-                    Score = item.Score + (isLinked ? 5m : 0m),
-                    ScoreLabel = FormatScore(item.Score + (isLinked ? 5m : 0m)),
+                    Score = boostedScore,
+                    ScoreLabel = FormatScore(boostedScore),
                     MatchReason = isLinked && !item.MatchReason.Contains("Linked context", StringComparison.OrdinalIgnoreCase)
                         ? $"{item.MatchReason} Linked context already exists."
                         : item.MatchReason,
-                    IsLinked = isLinked
+                    IsLinked = isLinked,
+                    Provenance = provenance
                 };
             })
             .OrderByDescending(x => x.Score)
@@ -821,6 +831,8 @@ public sealed partial class ContextService
         string reason = string.Empty;
         var exactPhraseMatched = false;
         var highSignalFieldMatched = false;
+        var fieldHits = new List<ContextMatchFieldHitViewModel>();
+        var boosts = new List<ContextMatchBoostViewModel>();
 
         foreach (var field in fields)
         {
@@ -849,6 +861,13 @@ public sealed partial class ContextService
                 {
                     reason = overlap.Length == tokens.Count ? field.ExactReason : field.PartialReason;
                 }
+
+                fieldHits.Add(new ContextMatchFieldHitViewModel
+                {
+                    FieldKey = field.Key,
+                    Label = field.Label,
+                    Tokens = overlap.Order(StringComparer.OrdinalIgnoreCase).ToArray()
+                });
             }
 
             var normalizedField = NormalizePhrase(field.Text);
@@ -858,6 +877,11 @@ public sealed partial class ContextService
                 reason = field.ExactReason;
                 exactPhraseMatched = true;
                 highSignalFieldMatched = true;
+                boosts.Add(new ContextMatchBoostViewModel
+                {
+                    Label = $"{field.Label} exact phrase",
+                    Value = field.PerTokenWeight + 10m
+                });
                 continue;
             }
 
@@ -866,6 +890,11 @@ public sealed partial class ContextService
                 score += 12m;
                 reason = field.ExactReason;
                 highSignalFieldMatched = true;
+                boosts.Add(new ContextMatchBoostViewModel
+                {
+                    Label = $"{field.Label} full token coverage",
+                    Value = 12m
+                });
             }
         }
 
@@ -879,8 +908,24 @@ public sealed partial class ContextService
             return ContextScoreOutcome.None;
         }
 
-        score += (decimal)matchedTokens.Count / tokens.Count * 20m;
-        score += ScoreRecency(updatedUtc);
+        var tokenCoverageBoost = (decimal)matchedTokens.Count / tokens.Count * 20m;
+        score += tokenCoverageBoost;
+        boosts.Add(new ContextMatchBoostViewModel
+        {
+            Label = "Token coverage",
+            Value = tokenCoverageBoost
+        });
+
+        var recencyBoost = ScoreRecency(updatedUtc);
+        if (recencyBoost > 0m)
+        {
+            score += recencyBoost;
+            boosts.Add(new ContextMatchBoostViewModel
+            {
+                Label = "Recent activity",
+                Value = recencyBoost
+            });
+        }
 
         if (string.IsNullOrWhiteSpace(reason))
         {
@@ -891,7 +936,50 @@ public sealed partial class ContextService
                     : $"Matched {matchedTokens.Count} search terms.";
         }
 
-        return new ContextScoreOutcome(score, reason);
+        return new ContextScoreOutcome(
+            score,
+            reason,
+            matchedTokens.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+            fieldHits.ToArray(),
+            boosts.ToArray(),
+            exactPhraseMatched);
+    }
+
+    private static ContextScoreOutcome ApplyBoost(ContextScoreOutcome score, decimal amount, string label)
+    {
+        if (amount <= 0m)
+        {
+            return score;
+        }
+
+        return score with
+        {
+            Score = score.Score + amount,
+            Boosts = score.Boosts.Concat(new[]
+            {
+                new ContextMatchBoostViewModel
+                {
+                    Label = label,
+                    Value = amount
+                }
+            }).ToArray()
+        };
+    }
+
+    private static ContextMatchDetailViewModel? MapProvenance(ContextScoreOutcome score)
+    {
+        if (score.Score <= 0m || score.MatchedTokens.Count == 0)
+        {
+            return null;
+        }
+
+        return new ContextMatchDetailViewModel
+        {
+            MatchedTokens = score.MatchedTokens.ToArray(),
+            FieldHits = score.FieldHits.ToArray(),
+            Boosts = score.Boosts.ToArray(),
+            ExactPhraseMatched = score.ExactPhraseMatched
+        };
     }
 
     private static string FormatScore(decimal score) => score switch
@@ -984,10 +1072,16 @@ public sealed partial class ContextService
     [GeneratedRegex("[a-z0-9]+", RegexOptions.Compiled)]
     private static partial Regex WordRegex();
 
-    private sealed record WeightedField(string? Text, decimal PerTokenWeight, string ExactReason, string PartialReason);
-    private sealed record ContextScoreOutcome(decimal Score, string Reason)
+    private sealed record WeightedField(string? Text, string Key, string Label, decimal PerTokenWeight, string ExactReason, string PartialReason);
+    private sealed record ContextScoreOutcome(
+        decimal Score,
+        string Reason,
+        IReadOnlyCollection<string> MatchedTokens,
+        IReadOnlyCollection<ContextMatchFieldHitViewModel> FieldHits,
+        IReadOnlyCollection<ContextMatchBoostViewModel> Boosts,
+        bool ExactPhraseMatched)
     {
-        public static ContextScoreOutcome None { get; } = new(0m, string.Empty);
+        public static ContextScoreOutcome None { get; } = new(0m, string.Empty, Array.Empty<string>(), Array.Empty<ContextMatchFieldHitViewModel>(), Array.Empty<ContextMatchBoostViewModel>(), false);
     }
     private sealed record ContextRecordKey(ContextRecordKind Kind, Guid Id);
     private sealed record LinkedContextRef(Guid LinkId, string Label, ContextRecordKind Kind, Guid TargetId);

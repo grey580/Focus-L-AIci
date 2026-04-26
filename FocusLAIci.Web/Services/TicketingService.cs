@@ -319,6 +319,31 @@ public sealed class TicketingService
         }
     }
 
+    public async Task UpdateTicketStatusAsync(Guid id, TicketStatus status, CancellationToken cancellationToken)
+    {
+        var ticket = await _dbContext.Tickets.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            ?? throw new InvalidOperationException("That ticket no longer exists.");
+
+        if (ticket.Status == status)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        var previousStatus = ticket.Status;
+        ticket.Status = status;
+        ticket.UpdatedUtc = now;
+        ticket.CompletedUtc = status == TicketStatus.Completed ? ticket.CompletedUtc ?? now : null;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await AddActivityAsync(ticket.Id, "status-updated", $"Changed status from {MapStatusLabel(previousStatus)} to {MapStatusLabel(status)}.", string.Empty, cancellationToken);
+
+        if (status == TicketStatus.Completed)
+        {
+            await EnsureTicketSummaryMemoryAsync(ticket.Id, cancellationToken);
+        }
+    }
+
     public async Task<Guid> AddNoteAsync(Guid ticketId, TicketNoteInput input, CancellationToken cancellationToken)
     {
         await EnsureTicketExistsAsync(ticketId, cancellationToken);

@@ -408,6 +408,36 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task TicketingService_UpdateTicketStatusAsync_CompletesTicketAndCreatesSummaryMemory()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new TicketingService(serviceContext);
+
+        var ticketId = await service.CreateTicketAsync(new TicketEditorInput
+        {
+            Title = "Close ticket through status API",
+            Description = "Exercise the dedicated ticket status update path.",
+            Status = TicketStatus.InProgress,
+            Priority = TicketPriority.High,
+            Assignee = "Copilot",
+            TagsText = "api, status"
+        }, CancellationToken.None);
+
+        await service.UpdateTicketStatusAsync(ticketId, TicketStatus.Completed, CancellationToken.None);
+
+        await using var verifyContext = harness.CreateDbContext();
+        var ticket = await verifyContext.Tickets.FirstAsync(x => x.Id == ticketId);
+        var memory = await verifyContext.Memories.FirstOrDefaultAsync(x => x.Id == ticket.SummaryMemoryId);
+        var activities = await verifyContext.TicketActivities.Where(x => x.TicketId == ticketId).ToListAsync();
+
+        Assert.Equal(TicketStatus.Completed, ticket.Status);
+        Assert.NotNull(ticket.CompletedUtc);
+        Assert.NotNull(memory);
+        Assert.Contains(activities, activity => activity.ActivityType == "status-updated");
+    }
+
+    [Fact]
     public async Task TicketingService_BoardSearchAndPagination_FilterCompletedTicketsAndSummarizeDescriptions()
     {
         await using var harness = await TestHarness.CreateAsync();
@@ -801,6 +831,49 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task DashboardContextPack_SurfacesStructuredProvenance()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Context",
+            Description = "Context retrieval coverage."
+        }, CancellationToken.None);
+
+        await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Installer diagnostics baseline",
+            Summary = "Use diagnostics before trusting the UI.",
+            Content = "The inspect workflow should verify installer diagnostics and workspace export before acting.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.DebugSession,
+            Importance = 5,
+            IsPinned = true,
+            WingId = wingId,
+            TagsText = "installer, diagnostics, inspect"
+        }, CancellationToken.None);
+
+        var dashboard = await service.GetDashboardAsync(new ContextBriefInput
+        {
+            Question = "installer diagnostics",
+            ResultsPerSection = 3
+        }, CancellationToken.None);
+
+        Assert.NotEmpty(dashboard.ContextPack!.TopMatches);
+        var firstMatch = dashboard.ContextPack.TopMatches.First();
+        var provenance = Assert.IsType<ContextMatchDetailViewModel>(firstMatch.Provenance);
+
+        Assert.Contains("installer", provenance.MatchedTokens);
+        Assert.Contains(provenance.FieldHits, hit => hit.FieldKey == "title" && hit.Tokens.Contains("installer"));
+        Assert.Contains(provenance.Boosts, boost => boost.Label == "Pinned memory");
+        Assert.Contains(provenance.Boosts, boost => boost.Label == "Token coverage");
+        Assert.True(provenance.ExactPhraseMatched);
+    }
+
+    [Fact]
     public async Task SearchMemoriesAsync_CanFilterByUpdatedSince()
     {
         await using var harness = await TestHarness.CreateAsync();
@@ -900,11 +973,66 @@ public sealed class PalaceServiceTests
         var changes = await service.GetRecentChangesAsync(10, CancellationToken.None);
 
         Assert.Contains(dashboard.MissingContextWarnings, warning => warning.Contains("No pinned memories", StringComparison.Ordinal));
+        Assert.Contains(dashboard.MissingContextWarningItems, warning => warning.Code == "no-pinned-memories" && warning.ActionUrl == "/Palace/NewMemory");
         Assert.Contains(changes, change => change.Kind == "Memory");
         Assert.Contains(changes, change => change.Kind == "Todo");
         Assert.Contains(changes, change => change.Kind == "Ticket");
         Assert.Contains(changes, change => change.Kind == "Code graph");
         Assert.Equal("Focus repo", changes.First().Title);
+    }
+
+    [Fact]
+    public async Task WorkspaceExport_IncludesCurrentOperationalContext()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Export",
+            Description = "Workspace export coverage."
+        }, CancellationToken.None);
+
+        await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Export baseline memory",
+            Summary = "Pinned memory should show up in the workspace export.",
+            Content = "Operators need a one-shot workspace export for cold-start AI sessions.",
+            Kind = MemoryKind.Reference,
+            SourceKind = SourceKind.Architecture,
+            Importance = 4,
+            IsPinned = true,
+            WingId = wingId,
+            TagsText = "workspace, export"
+        }, CancellationToken.None);
+
+        await service.CreateTodoAsync(new TodoEditorInput
+        {
+            Title = "Ship workspace export",
+            Details = "Expose the current operating picture through the API and Inspect page.",
+            Status = TodoStatus.InProgress
+        }, CancellationToken.None);
+
+        var ticketingService = new TicketingService(serviceContext);
+        await ticketingService.CreateTicketAsync(new TicketEditorInput
+        {
+            Title = "Add write-back API coverage",
+            Description = "Close the read/write loop for AI-assisted workflows.",
+            Status = TicketStatus.InProgress,
+            Priority = TicketPriority.High,
+            Assignee = "Copilot",
+            TagsText = "api, focus"
+        }, CancellationToken.None);
+
+        var export = await service.GetWorkspaceExportAsync(CancellationToken.None);
+
+        Assert.Single(export.PinnedMemories);
+        Assert.Single(export.ActiveTodos);
+        Assert.Single(export.ActiveTickets);
+        Assert.Contains("Export baseline memory", export.ExportText);
+        Assert.Contains("Ship workspace export", export.ExportText);
+        Assert.Contains("Add write-back API coverage", export.ExportText);
     }
 
     private sealed class TestHarness : IAsyncDisposable

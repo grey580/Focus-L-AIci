@@ -1,4 +1,5 @@
-﻿using FocusLAIci.Web.Data;
+﻿using System.Text.Json.Serialization;
+using FocusLAIci.Web.Data;
 using FocusLAIci.Web.Services;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -13,7 +14,12 @@ if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]))
 }
 
 // Add services to the container.
-builder.Services.AddControllersWithViews();
+builder.Services
+    .AddControllersWithViews()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 builder.Services.AddSingleton<FocusDatabaseTargetService>();
 builder.Services.AddDbContext<FocusMemoryContext>((serviceProvider, options) =>
     options.UseSqlite(serviceProvider.GetRequiredService<FocusDatabaseTargetService>().GetCurrentTarget().ConnectionString));

@@ -1,3 +1,4 @@
+using System.Text;
 using FocusLAIci.Web.Data;
 using FocusLAIci.Web.Models;
 using Microsoft.AspNetCore.Mvc.Rendering;
@@ -105,6 +106,15 @@ public sealed class PalaceService
             .OrderByDescending(x => x.OccurredUtc)
             .Take(8)
             .ToArray();
+        var warningItems = BuildDashboardWarnings(
+            effectiveContextInput,
+            contextPack,
+            currentTodos.Select(MapTodo).ToArray(),
+            activeTickets.Select(MapDashboardTicketSummary).ToArray(),
+            recentActivity,
+            memories.Where(x => x.IsPinned).Select(MapCard).ToArray(),
+            memories.Select(MapCard).ToArray(),
+            wings);
 
         return new DashboardViewModel
         {
@@ -117,18 +127,8 @@ public sealed class PalaceService
             RecentMemories = memories.Select(MapCard).ToArray(),
             PinnedMemories = memories.Where(x => x.IsPinned).Select(MapCard).ToArray(),
             CurrentTodos = currentTodos.Select(MapTodo).ToArray(),
-            MissingContextWarnings = BuildDashboardDetectedGaps(
-                new DashboardViewModel
-                {
-                    ContextInput = effectiveContextInput,
-                    ContextPack = contextPack,
-                    ActiveTickets = activeTickets.Select(MapDashboardTicketSummary).ToArray(),
-                    RecentActivity = recentActivity,
-                    Wings = wings,
-                    RecentMemories = memories.Select(MapCard).ToArray(),
-                    PinnedMemories = memories.Where(x => x.IsPinned).Select(MapCard).ToArray(),
-                    CurrentTodos = currentTodos.Select(MapTodo).ToArray()
-                }),
+            MissingContextWarnings = warningItems.Select(x => x.Message).ToArray(),
+            MissingContextWarningItems = warningItems,
             SearchExamples =
             [
                 "installer reliability",
@@ -151,6 +151,7 @@ public sealed class PalaceService
             ContextSummary = dashboard.ContextPack?.Summary ?? string.Empty,
             TopMatchCount = dashboard.ContextPack?.TopMatches.Count ?? 0,
             DetectedGaps = dashboard.MissingContextWarnings,
+            DetectedGapItems = dashboard.MissingContextWarningItems,
             RecentChanges = recentChanges,
             Sections =
             [
@@ -260,6 +261,66 @@ public sealed class PalaceService
                     }).ToArray() ?? Array.Empty<DashboardDiagnosticRecordViewModel>()
                 }
             ]
+        };
+    }
+
+    public async Task<WorkspaceExportViewModel> GetWorkspaceExportAsync(CancellationToken cancellationToken)
+    {
+        var pinnedMemories = await BuildMemoryQuery()
+            .Where(x => x.IsPinned)
+            .OrderByDescending(x => x.UpdatedUtc)
+            .Take(12)
+            .ToListAsync(cancellationToken);
+
+        var activeTodos = await BuildTodoQuery(includeDone: false)
+            .Take(12)
+            .ToListAsync(cancellationToken);
+
+        var activeTickets = await _dbContext.Tickets
+            .AsNoTracking()
+            .Include(x => x.SubTickets)
+            .Include(x => x.TimeLogs)
+            .Where(x => x.ParentTicketId == null && x.Status != TicketStatus.Completed)
+            .OrderBy(x => x.Status == TicketStatus.InProgress ? 0 : x.Status == TicketStatus.New ? 1 : 2)
+            .ThenByDescending(x => x.UpdatedUtc)
+            .Take(12)
+            .ToListAsync(cancellationToken);
+
+        var codeGraphProjects = await _dbContext.CodeGraphProjects
+            .AsNoTracking()
+            .OrderByDescending(x => x.LastScannedUtc ?? x.UpdatedUtc)
+            .Take(8)
+            .Select(x => new CodeGraphProjectCardViewModel
+            {
+                Id = x.Id,
+                Name = x.Name,
+                RootPath = x.RootPath,
+                Description = x.Description,
+                Summary = x.Summary,
+                FileCount = x.FileCount,
+                SymbolCount = x.SymbolCount,
+                RelationshipCount = x.RelationshipCount,
+                CreatedUtc = x.CreatedUtc,
+                UpdatedUtc = x.UpdatedUtc,
+                LastScannedUtc = x.LastScannedUtc
+            })
+            .ToListAsync(cancellationToken);
+
+        var recentChanges = await GetRecentChangesAsync(12, cancellationToken);
+        var mappedPinned = pinnedMemories.Select(MapCard).ToArray();
+        var mappedTodos = activeTodos.Select(MapTodo).ToArray();
+        var mappedTickets = activeTickets.Select(MapDashboardTicketSummary).ToArray();
+
+        return new WorkspaceExportViewModel
+        {
+            GeneratedUtc = DateTime.UtcNow,
+            Stats = await BuildStatsAsync(cancellationToken),
+            ExportText = BuildWorkspaceExportText(mappedPinned, mappedTodos, mappedTickets, codeGraphProjects, recentChanges),
+            PinnedMemories = mappedPinned,
+            ActiveTodos = mappedTodos,
+            ActiveTickets = mappedTickets,
+            CodeGraphProjects = codeGraphProjects,
+            RecentChanges = recentChanges
         };
     }
 
@@ -1250,45 +1311,186 @@ public sealed class PalaceService
         _ => status.ToString()
     };
 
-    private static IReadOnlyCollection<string> BuildDashboardDetectedGaps(DashboardViewModel dashboard)
+    private static IReadOnlyCollection<DashboardWarningViewModel> BuildDashboardWarnings(
+        ContextBriefInput contextInput,
+        ContextPackViewModel? contextPack,
+        IReadOnlyCollection<TodoItemViewModel> currentTodos,
+        IReadOnlyCollection<TicketSummaryViewModel> activeTickets,
+        IReadOnlyCollection<DashboardActivityViewModel> recentActivity,
+        IReadOnlyCollection<MemoryCardViewModel> pinnedMemories,
+        IReadOnlyCollection<MemoryCardViewModel> recentMemories,
+        IReadOnlyCollection<WingSummaryViewModel> wings)
     {
-        var gaps = new List<string>();
+        var warnings = new List<DashboardWarningViewModel>();
 
-        if (dashboard.CurrentTodos.Count == 0 && dashboard.ActiveTickets.Count == 0)
+        if (currentTodos.Count == 0 && activeTickets.Count == 0)
         {
-            gaps.Add("No active todos or tickets are currently visible on the dashboard.");
+            warnings.Add(new DashboardWarningViewModel
+            {
+                Code = "no-active-work",
+                Severity = "warning",
+                Message = "No active todos or tickets are currently visible on the dashboard.",
+                ActionLabel = "Open Inspect",
+                ActionUrl = "/Admin/Inspect"
+            });
         }
 
-        if (dashboard.RecentActivity.Count == 0)
+        if (recentActivity.Count == 0)
         {
-            gaps.Add("No recent activity is available, so recency-based context is missing.");
+            warnings.Add(new DashboardWarningViewModel
+            {
+                Code = "no-recent-activity",
+                Severity = "warning",
+                Message = "No recent activity is available, so recency-based context is missing.",
+                ActionLabel = "Open Inspect",
+                ActionUrl = "/Admin/Inspect"
+            });
         }
 
-        if (dashboard.PinnedMemories.Count == 0)
+        if (pinnedMemories.Count == 0)
         {
-            gaps.Add("No pinned memories are available, so high-value durable context is not surfaced.");
+            warnings.Add(new DashboardWarningViewModel
+            {
+                Code = "no-pinned-memories",
+                Severity = "warning",
+                Message = "No pinned memories are available, so high-value durable context is not surfaced.",
+                ActionLabel = "Add Memory",
+                ActionUrl = "/Palace/NewMemory"
+            });
         }
 
-        if (dashboard.RecentMemories.Count == 0)
+        if (recentMemories.Count == 0)
         {
-            gaps.Add("No recent memories are available, so the dashboard cannot surface fresh knowledge.");
+            warnings.Add(new DashboardWarningViewModel
+            {
+                Code = "no-recent-memories",
+                Severity = "info",
+                Message = "No recent memories are available, so the dashboard cannot surface fresh knowledge.",
+                ActionLabel = "Explore Palace",
+                ActionUrl = "/Palace/Explore"
+            });
         }
 
-        if (dashboard.Wings.Count == 0)
+        if (wings.Count == 0)
         {
-            gaps.Add("No wings are configured, so knowledge is not organized into top-level buckets.");
+            warnings.Add(new DashboardWarningViewModel
+            {
+                Code = "no-wings",
+                Severity = "warning",
+                Message = "No wings are configured, so knowledge is not organized into top-level buckets.",
+                ActionLabel = "Add Wing",
+                ActionUrl = "/Palace/NewWing"
+            });
         }
 
-        if (string.IsNullOrWhiteSpace(dashboard.ContextInput.Question))
+        if (string.IsNullOrWhiteSpace(contextInput.Question))
         {
-            gaps.Add("No context question was supplied, so diagnostics do not include task-specific retrieval.");
+            warnings.Add(new DashboardWarningViewModel
+            {
+                Code = "no-context-question",
+                Severity = "info",
+                Message = "No context question was supplied, so diagnostics do not include task-specific retrieval.",
+                ActionLabel = "Open Inspect",
+                ActionUrl = "/Admin/Inspect"
+            });
         }
-        else if (dashboard.ContextPack is null || dashboard.ContextPack.TopMatches.Count == 0)
+        else if (contextPack is null || contextPack.TopMatches.Count == 0)
         {
-            gaps.Add("A context question was supplied, but no strong top matches were returned.");
+            warnings.Add(new DashboardWarningViewModel
+            {
+                Code = "no-context-matches",
+                Severity = "warning",
+                Message = "A context question was supplied, but no strong top matches were returned.",
+                ActionLabel = "Open Inspect",
+                ActionUrl = $"/Admin/Inspect?Question={Uri.EscapeDataString(contextInput.Question)}&IncludeCompletedWork={contextInput.IncludeCompletedWork.ToString().ToLowerInvariant()}&ExpandHistory={contextInput.ExpandHistory.ToString().ToLowerInvariant()}&ResultsPerSection={contextInput.ResultsPerSection}"
+            });
         }
 
-        return gaps;
+        return warnings;
+    }
+
+    private static string BuildWorkspaceExportText(
+        IReadOnlyCollection<MemoryCardViewModel> pinnedMemories,
+        IReadOnlyCollection<TodoItemViewModel> activeTodos,
+        IReadOnlyCollection<TicketSummaryViewModel> activeTickets,
+        IReadOnlyCollection<CodeGraphProjectCardViewModel> codeGraphProjects,
+        IReadOnlyCollection<RecentChangeItemViewModel> recentChanges)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("Focus workspace export");
+        builder.AppendLine();
+
+        builder.AppendLine("Pinned memories:");
+        foreach (var memory in pinnedMemories)
+        {
+            builder.Append("- ")
+                .Append(memory.Title)
+                .Append(" | ")
+                .Append(memory.WingName)
+                .Append(" / ")
+                .Append(memory.RoomName)
+                .Append(" | ")
+                .Append(memory.Summary)
+                .AppendLine();
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Active todos:");
+        foreach (var todo in activeTodos)
+        {
+            builder.Append("- ")
+                .Append(todo.Title)
+                .Append(" | ")
+                .Append(todo.StatusLabel)
+                .Append(" | ")
+                .Append(todo.PreviewDetails)
+                .AppendLine();
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Active tickets:");
+        foreach (var ticket in activeTickets)
+        {
+            builder.Append("- ")
+                .Append(ticket.TicketNumber)
+                .Append(" ")
+                .Append(ticket.Title)
+                .Append(" | ")
+                .Append(ticket.StatusLabel)
+                .Append(" | ")
+                .Append(ticket.PreviewDescription)
+                .AppendLine();
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Code graph projects:");
+        foreach (var project in codeGraphProjects)
+        {
+            builder.Append("- ")
+                .Append(project.Name)
+                .Append(" | files ")
+                .Append(project.FileCount)
+                .Append(" | symbols ")
+                .Append(project.SymbolCount)
+                .Append(" | ")
+                .Append(project.Summary)
+                .AppendLine();
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Recent changes:");
+        foreach (var change in recentChanges)
+        {
+            builder.Append("- ")
+                .Append(change.Kind)
+                .Append(" | ")
+                .Append(change.Title)
+                .Append(" | ")
+                .Append(change.Detail)
+                .AppendLine();
+        }
+
+        return builder.ToString().TrimEnd();
     }
 
     private static MemoryCardViewModel MapCard(MemoryEntry memory)
