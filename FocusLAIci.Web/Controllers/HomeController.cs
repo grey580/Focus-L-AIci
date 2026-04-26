@@ -14,9 +14,17 @@ public sealed class HomeController : Controller
         _palaceService = palaceService;
     }
 
+    [HttpGet]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
         return View(await _palaceService.GetDashboardAsync(cancellationToken));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Index(ContextBriefInput input, CancellationToken cancellationToken)
+    {
+        return View(await _palaceService.GetDashboardAsync(input, cancellationToken));
     }
 
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]

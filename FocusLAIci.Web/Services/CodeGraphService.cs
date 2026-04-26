@@ -60,10 +60,17 @@ public sealed partial class CodeGraphService
     };
 
     private readonly FocusMemoryContext _dbContext;
+    private readonly ContextService _contextService;
 
     public CodeGraphService(FocusMemoryContext dbContext)
+        : this(dbContext, new ContextService(dbContext))
+    {
+    }
+
+    public CodeGraphService(FocusMemoryContext dbContext, ContextService contextService)
     {
         _dbContext = dbContext;
+        _contextService = contextService;
     }
 
     public async Task<CodeGraphBoardViewModel> GetBoardAsync(CancellationToken cancellationToken)
@@ -124,7 +131,7 @@ public sealed partial class CodeGraphService
         await ScanProjectAsync(projectId, cancellationToken);
     }
 
-    public async Task<CodeGraphProjectDetailViewModel?> GetProjectAsync(Guid projectId, string? query, Guid? selectedNodeId, CancellationToken cancellationToken)
+    public async Task<CodeGraphProjectDetailViewModel?> GetProjectAsync(Guid projectId, string? query, Guid? selectedNodeId, Guid? selectedFileId, CancellationToken cancellationToken)
     {
         var project = await _dbContext.CodeGraphProjects
             .AsNoTracking()
@@ -160,14 +167,19 @@ public sealed partial class CodeGraphService
             .ToDictionary(x => x.Key, x => x.Count());
 
         var normalizedQuery = query?.Trim() ?? string.Empty;
+        var effectiveSelectedFile = selectedFileId.HasValue && fileLookup.ContainsKey(selectedFileId.Value)
+            ? fileLookup[selectedFileId.Value]
+            : null;
         var filteredNodes = nodes
             .Where(x =>
-                string.IsNullOrWhiteSpace(normalizedQuery)
-                || x.Label.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase)
-                || x.SecondaryLabel.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase)
-                || (x.FileId.HasValue
-                    && fileLookup.TryGetValue(x.FileId.Value, out var file)
-                    && file.RelativePath.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase)))
+                (effectiveSelectedFile is null || x.FileId == effectiveSelectedFile.Id)
+                && (
+                    string.IsNullOrWhiteSpace(normalizedQuery)
+                    || x.Label.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase)
+                    || x.SecondaryLabel.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase)
+                    || (x.FileId.HasValue
+                        && fileLookup.TryGetValue(x.FileId.Value, out var file)
+                        && file.RelativePath.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase))))
             .ToArray();
 
         var effectiveSelectedNode = selectedNodeId.HasValue && nodeLookup.ContainsKey(selectedNodeId.Value)
@@ -177,15 +189,21 @@ public sealed partial class CodeGraphService
                 .ThenBy(x => x.Label)
                 .FirstOrDefault();
 
-        IEnumerable<CodeGraphEdge> projectRelationships = effectiveSelectedNode is null
-            ? edges
-            : edges.Where(x => x.FromNodeId == effectiveSelectedNode.Id || x.ToNodeId == effectiveSelectedNode.Id).ToArray();
+        var selectedFileNodeIds = effectiveSelectedFile is null
+            ? []
+            : nodes.Where(x => x.FileId == effectiveSelectedFile.Id).Select(x => x.Id).ToHashSet();
+        IEnumerable<CodeGraphEdge> projectRelationships = effectiveSelectedNode is not null
+            ? edges.Where(x => x.FromNodeId == effectiveSelectedNode.Id || x.ToNodeId == effectiveSelectedNode.Id).ToArray()
+            : effectiveSelectedFile is not null
+                ? edges.Where(x => selectedFileNodeIds.Contains(x.FromNodeId) || selectedFileNodeIds.Contains(x.ToNodeId)).ToArray()
+                : edges;
 
         return new CodeGraphProjectDetailViewModel
         {
             Project = MapProjectCard(project),
             Query = normalizedQuery,
             SelectedNodeId = effectiveSelectedNode?.Id,
+            SelectedFileId = effectiveSelectedFile?.Id,
             Stats =
             [
                 new CodeGraphStatCardViewModel { Label = "Files", Value = project.FileCount.ToString("N0"), HelpText = "Tracked source files in this graph." },
@@ -206,7 +224,8 @@ public sealed partial class CodeGraphService
                     RelativePath = file.RelativePath,
                     Language = file.Language,
                     LineCount = file.LineCount,
-                    NodeCount = nodes.Count(node => node.FileId == file.Id && node.NodeType != CodeGraphNodeType.File)
+                    NodeCount = nodes.Count(node => node.FileId == file.Id && node.NodeType != CodeGraphNodeType.File),
+                    IsSelected = effectiveSelectedFile?.Id == file.Id
                 })
                 .ToArray(),
             Nodes = filteredNodes
@@ -222,7 +241,26 @@ public sealed partial class CodeGraphService
                 .Select(edge => MapEdge(edge, nodeLookup))
                 .ToArray(),
             Scene = BuildThreeDimensionalScene(project.Name, filteredNodes, edges, nodeDegree, effectiveSelectedNode),
-            Graph = BuildGraphSvg(effectiveSelectedNode, edges, nodeLookup)
+            Graph = BuildGraphSvg(effectiveSelectedNode, edges, nodeLookup),
+            ContextLinks = await _contextService.BuildLinksPanelAsync(
+                effectiveSelectedNode is not null
+                    ? ContextRecordKind.CodeGraphNode
+                    : effectiveSelectedFile is not null
+                        ? ContextRecordKind.CodeGraphFile
+                        : ContextRecordKind.CodeGraphProject,
+                effectiveSelectedNode?.Id ?? effectiveSelectedFile?.Id ?? project.Id,
+                effectiveSelectedNode?.Label ?? effectiveSelectedFile?.RelativePath ?? project.Name,
+                effectiveSelectedNode is not null
+                    ? $"{effectiveSelectedNode.Label} {effectiveSelectedNode.SecondaryLabel} {fileLookup.GetValueOrDefault(effectiveSelectedNode.FileId ?? Guid.Empty)?.RelativePath}"
+                    : effectiveSelectedFile is not null
+                        ? $"{effectiveSelectedFile.RelativePath} {effectiveSelectedFile.Language} {project.Name} {project.Description}"
+                        : $"{project.Name} {project.Description} {project.Summary} {project.RootPath}",
+                effectiveSelectedNode is null
+                    ? effectiveSelectedFile is null
+                        ? $"/CodeGraph/Project/{project.Id}"
+                        : $"/CodeGraph/Project/{project.Id}?selectedFileId={effectiveSelectedFile.Id}"
+                    : $"/CodeGraph/Project/{project.Id}?selectedNodeId={effectiveSelectedNode.Id}",
+                cancellationToken)
         };
     }
 

@@ -8,14 +8,35 @@ namespace FocusLAIci.Web.Services;
 public sealed class PalaceService
 {
     private readonly FocusMemoryContext _dbContext;
+    private readonly ContextService _contextService;
 
     public PalaceService(FocusMemoryContext dbContext)
+        : this(dbContext, new ContextService(dbContext))
     {
-        _dbContext = dbContext;
     }
 
-    public async Task<DashboardViewModel> GetDashboardAsync(CancellationToken cancellationToken)
+    public PalaceService(FocusMemoryContext dbContext, ContextService contextService)
     {
+        _dbContext = dbContext;
+        _contextService = contextService;
+    }
+
+    public Task<DashboardViewModel> GetDashboardAsync(CancellationToken cancellationToken)
+        => GetDashboardAsync((ContextBriefInput?)null, cancellationToken);
+
+    public async Task<DashboardViewModel> GetDashboardAsync(string? contextQuestion, CancellationToken cancellationToken)
+        => await GetDashboardAsync(
+            string.IsNullOrWhiteSpace(contextQuestion)
+                ? null
+                : new ContextBriefInput
+                {
+                    Question = contextQuestion.Trim()
+                },
+            cancellationToken);
+
+    public async Task<DashboardViewModel> GetDashboardAsync(ContextBriefInput? contextInput, CancellationToken cancellationToken)
+    {
+        var effectiveContextInput = contextInput ?? new ContextBriefInput();
         var memories = await BuildMemoryQuery()
             .OrderByDescending(x => x.IsPinned)
             .ThenByDescending(x => x.UpdatedUtc)
@@ -24,12 +45,74 @@ public sealed class PalaceService
         var currentTodos = await BuildTodoQuery(includeDone: false)
             .Take(5)
             .ToListAsync(cancellationToken);
+        var activeTickets = await _dbContext.Tickets
+            .AsNoTracking()
+            .Include(x => x.SubTickets)
+            .Include(x => x.TimeLogs)
+            .Where(x => x.ParentTicketId == null && x.Status != TicketStatus.Completed)
+            .OrderBy(x => x.Status == TicketStatus.InProgress ? 0 : x.Status == TicketStatus.New ? 1 : 2)
+            .ThenByDescending(x => x.UpdatedUtc)
+            .Take(5)
+            .ToListAsync(cancellationToken);
+
+        var recentMemoryActivity = await _dbContext.Memories
+            .AsNoTracking()
+            .OrderByDescending(x => x.UpdatedUtc)
+            .Take(4)
+            .Select(x => new DashboardActivityViewModel
+            {
+                Label = "Memory",
+                Title = x.Title,
+                Detail = x.Summary,
+                Url = $"/Palace/Memory/{x.Id}",
+                OccurredUtc = x.UpdatedUtc
+            })
+            .ToListAsync(cancellationToken);
+
+        var recentTodoActivity = await _dbContext.Todos
+            .AsNoTracking()
+            .OrderByDescending(x => x.UpdatedUtc)
+            .Take(4)
+            .Select(x => new DashboardActivityViewModel
+            {
+                Label = "Todo",
+                Title = x.Title,
+                Detail = x.Status == TodoStatus.Done ? "Completed work item" : $"Status: {MapDashboardTodoStatusLabel(x.Status)}",
+                Url = $"/Todos/Details/{x.Id}",
+                OccurredUtc = x.UpdatedUtc
+            })
+            .ToListAsync(cancellationToken);
+
+        var recentTicketActivity = await _dbContext.TicketActivities
+            .AsNoTracking()
+            .OrderByDescending(x => x.CreatedUtc)
+            .Take(6)
+            .Select(x => new DashboardActivityViewModel
+            {
+                Label = "Ticket activity",
+                Title = x.Message,
+                Detail = string.IsNullOrWhiteSpace(x.Metadata) ? x.ActivityType : $"{x.ActivityType} • {x.Metadata}",
+                Url = $"/Tickets/Details/{x.TicketId}",
+                OccurredUtc = x.CreatedUtc
+            })
+            .ToListAsync(cancellationToken);
 
         var wings = await BuildWingSummariesAsync(cancellationToken);
+        var contextPack = await _contextService.BuildContextPackAsync(effectiveContextInput, cancellationToken);
+        var recentActivity = recentTicketActivity
+            .Concat(recentMemoryActivity)
+            .Concat(recentTodoActivity)
+            .OrderByDescending(x => x.OccurredUtc)
+            .Take(8)
+            .ToArray();
 
         return new DashboardViewModel
         {
             Stats = await BuildStatsAsync(cancellationToken),
+            ContextInput = effectiveContextInput,
+            ContextPack = contextPack,
+            ActiveTickets = activeTickets.Select(MapDashboardTicketSummary).ToArray(),
+            RecentActivity = recentActivity,
             Wings = wings,
             RecentMemories = memories.Select(MapCard).ToArray(),
             PinnedMemories = memories.Where(x => x.IsPinned).Select(MapCard).ToArray(),
@@ -39,6 +122,130 @@ public sealed class PalaceService
                 "installer reliability",
                 "why did we choose local-first memory",
                 "frontend browse patterns"
+            ]
+        };
+    }
+
+    public async Task<DashboardDiagnosticsViewModel> GetDashboardDiagnosticsAsync(ContextBriefInput? contextInput, CancellationToken cancellationToken)
+    {
+        var dashboard = await GetDashboardAsync(contextInput, cancellationToken);
+        var gaps = BuildDashboardDetectedGaps(dashboard);
+
+        return new DashboardDiagnosticsViewModel
+        {
+            GeneratedUtc = DateTime.UtcNow,
+            Stats = dashboard.Stats,
+            ContextInput = dashboard.ContextInput,
+            ContextSummary = dashboard.ContextPack?.Summary ?? string.Empty,
+            TopMatchCount = dashboard.ContextPack?.TopMatches.Count ?? 0,
+            DetectedGaps = gaps,
+            Sections =
+            [
+                new DashboardSectionSnapshotViewModel
+                {
+                    Key = "current-todos",
+                    Title = "Current todos",
+                    Count = dashboard.CurrentTodos.Count,
+                    IsEmpty = dashboard.CurrentTodos.Count == 0,
+                    Items = dashboard.CurrentTodos.Select(todo => new DashboardDiagnosticRecordViewModel
+                    {
+                        Id = todo.Id.ToString(),
+                        Title = todo.Title,
+                        Subtitle = todo.StatusLabel,
+                        Detail = todo.PreviewDetails,
+                        Url = $"/Todos/Details/{todo.Id}"
+                    }).ToArray()
+                },
+                new DashboardSectionSnapshotViewModel
+                {
+                    Key = "active-tickets",
+                    Title = "Active tickets",
+                    Count = dashboard.ActiveTickets.Count,
+                    IsEmpty = dashboard.ActiveTickets.Count == 0,
+                    Items = dashboard.ActiveTickets.Select(ticket => new DashboardDiagnosticRecordViewModel
+                    {
+                        Id = ticket.Id.ToString(),
+                        Title = $"{ticket.TicketNumber} - {ticket.Title}",
+                        Subtitle = $"{ticket.StatusLabel} • {ticket.PriorityLabel}",
+                        Detail = ticket.PreviewDescription,
+                        Url = $"/Tickets/Details/{ticket.Id}"
+                    }).ToArray()
+                },
+                new DashboardSectionSnapshotViewModel
+                {
+                    Key = "recent-activity",
+                    Title = "Recent activity",
+                    Count = dashboard.RecentActivity.Count,
+                    IsEmpty = dashboard.RecentActivity.Count == 0,
+                    Items = dashboard.RecentActivity.Select(activity => new DashboardDiagnosticRecordViewModel
+                    {
+                        Id = activity.Url,
+                        Title = activity.Title,
+                        Subtitle = $"{activity.Label} • {activity.OccurredUtc:O}",
+                        Detail = activity.Detail,
+                        Url = activity.Url
+                    }).ToArray()
+                },
+                new DashboardSectionSnapshotViewModel
+                {
+                    Key = "pinned-memories",
+                    Title = "Pinned memories",
+                    Count = dashboard.PinnedMemories.Count,
+                    IsEmpty = dashboard.PinnedMemories.Count == 0,
+                    Items = dashboard.PinnedMemories.Select(memory => new DashboardDiagnosticRecordViewModel
+                    {
+                        Id = memory.Id.ToString(),
+                        Title = memory.Title,
+                        Subtitle = $"{memory.Kind} • {memory.WingName} / {memory.RoomName}",
+                        Detail = memory.Summary,
+                        Url = $"/Palace/Memory/{memory.Id}"
+                    }).ToArray()
+                },
+                new DashboardSectionSnapshotViewModel
+                {
+                    Key = "recent-memories",
+                    Title = "Recent memories",
+                    Count = dashboard.RecentMemories.Count,
+                    IsEmpty = dashboard.RecentMemories.Count == 0,
+                    Items = dashboard.RecentMemories.Select(memory => new DashboardDiagnosticRecordViewModel
+                    {
+                        Id = memory.Id.ToString(),
+                        Title = memory.Title,
+                        Subtitle = $"{memory.Kind} • {memory.SourceKind}",
+                        Detail = memory.Summary,
+                        Url = $"/Palace/Memory/{memory.Id}"
+                    }).ToArray()
+                },
+                new DashboardSectionSnapshotViewModel
+                {
+                    Key = "wings",
+                    Title = "Wings",
+                    Count = dashboard.Wings.Count,
+                    IsEmpty = dashboard.Wings.Count == 0,
+                    Items = dashboard.Wings.Select(wing => new DashboardDiagnosticRecordViewModel
+                    {
+                        Id = wing.Id.ToString(),
+                        Title = wing.Name,
+                        Subtitle = $"{wing.RoomCount} rooms • {wing.MemoryCount} memories",
+                        Detail = wing.Description,
+                        Url = $"/Palace/Wing/{wing.Slug}"
+                    }).ToArray()
+                },
+                new DashboardSectionSnapshotViewModel
+                {
+                    Key = "top-context-matches",
+                    Title = "Top context matches",
+                    Count = dashboard.ContextPack?.TopMatches.Count ?? 0,
+                    IsEmpty = dashboard.ContextPack is null || dashboard.ContextPack.TopMatches.Count == 0,
+                    Items = dashboard.ContextPack?.TopMatches.Select(match => new DashboardDiagnosticRecordViewModel
+                    {
+                        Id = match.Url,
+                        Title = match.Title,
+                        Subtitle = $"{match.KindLabel} • {match.ScoreLabel}",
+                        Detail = string.IsNullOrWhiteSpace(match.MatchReason) ? match.Subtitle : match.MatchReason,
+                        Url = match.Url
+                    }).ToArray() ?? Array.Empty<DashboardDiagnosticRecordViewModel>()
+                }
             ]
         };
     }
@@ -73,7 +280,14 @@ public sealed class PalaceService
                 Title = todo.Title,
                 Details = todo.Details,
                 Status = todo.Status
-            }
+            },
+            ContextLinks = await _contextService.BuildLinksPanelAsync(
+                ContextRecordKind.Todo,
+                todo.Id,
+                todo.Title,
+                $"{todo.Title} {todo.Details}",
+                $"/Todos/Details/{todo.Id}",
+                cancellationToken)
         };
     }
 
@@ -339,7 +553,14 @@ public sealed class PalaceService
                     Title = x.FromMemoryEntry?.Title ?? "Related memory",
                     Label = x.Label
                 })
-                .ToArray()
+                .ToArray(),
+            ContextLinks = await _contextService.BuildLinksPanelAsync(
+                ContextRecordKind.Memory,
+                memory.Id,
+                memory.Title,
+                $"{memory.Title} {memory.Summary} {memory.Content} {string.Join(' ', memory.MemoryTags.Select(x => x.Tag!.Name))}",
+                $"/Palace/Memory/{memory.Id}",
+                cancellationToken)
         };
     }
 
@@ -582,7 +803,7 @@ public sealed class PalaceService
 
     public async Task<PalaceApiSummaryViewModel> GetApiSummaryAsync(CancellationToken cancellationToken)
     {
-        var dashboard = await GetDashboardAsync(cancellationToken);
+        var dashboard = await GetDashboardAsync((ContextBriefInput?)null, cancellationToken);
         return new PalaceApiSummaryViewModel
         {
             Stats = dashboard.Stats,
@@ -866,6 +1087,109 @@ public sealed class PalaceService
             .Split([',', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static TicketSummaryViewModel MapDashboardTicketSummary(TicketEntry ticket)
+    {
+        const int maxLength = 180;
+        var preview = string.IsNullOrWhiteSpace(ticket.Description)
+            ? string.Empty
+            : ticket.Description.Trim().Length <= maxLength
+                ? ticket.Description.Trim()
+                : $"{ticket.Description.Trim()[..maxLength].TrimEnd()}...";
+
+        return new TicketSummaryViewModel
+        {
+            Id = ticket.Id,
+            ParentTicketId = ticket.ParentTicketId,
+            TicketNumber = ticket.TicketNumber,
+            Title = ticket.Title,
+            Description = ticket.Description,
+            PreviewDescription = preview,
+            HasMoreDescription = !string.Equals(preview, ticket.Description?.Trim(), StringComparison.Ordinal),
+            Status = ticket.Status,
+            StatusLabel = MapTicketStatusLabel(ticket.Status),
+            Priority = ticket.Priority,
+            PriorityLabel = MapTicketPriorityLabel(ticket.Priority),
+            Assignee = ticket.Assignee,
+            Tags = ParseTags(ticket.TagsText).ToArray(),
+            GitBranch = ticket.GitBranch,
+            HasGitCommit = !string.IsNullOrWhiteSpace(ticket.GitCommit) && !string.Equals(ticket.GitCommit, "No", StringComparison.OrdinalIgnoreCase),
+            CreatedUtc = ticket.CreatedUtc,
+            UpdatedUtc = ticket.UpdatedUtc,
+            CompletedUtc = ticket.CompletedUtc,
+            SubTicketCount = ticket.SubTickets.Count,
+            CompletedSubTicketCount = ticket.SubTickets.Count(x => x.Status == TicketStatus.Completed),
+            TotalMinutesSpent = ticket.TimeLogs.Sum(x => x.MinutesSpent)
+        };
+    }
+
+    private static string MapTicketStatusLabel(TicketStatus status) => status switch
+    {
+        TicketStatus.New => "New",
+        TicketStatus.InProgress => "In progress",
+        TicketStatus.Blocked => "Blocked",
+        TicketStatus.Completed => "Completed",
+        _ => status.ToString()
+    };
+
+    private static string MapTicketPriorityLabel(TicketPriority priority) => priority switch
+    {
+        TicketPriority.Low => "Low",
+        TicketPriority.Medium => "Medium",
+        TicketPriority.High => "High",
+        TicketPriority.Critical => "Critical",
+        _ => priority.ToString()
+    };
+
+    private static string MapDashboardTodoStatusLabel(TodoStatus status) => status switch
+    {
+        TodoStatus.Pending => "Pending",
+        TodoStatus.InProgress => "In progress",
+        TodoStatus.Blocked => "Blocked",
+        TodoStatus.Done => "Done",
+        _ => status.ToString()
+    };
+
+    private static IReadOnlyCollection<string> BuildDashboardDetectedGaps(DashboardViewModel dashboard)
+    {
+        var gaps = new List<string>();
+
+        if (dashboard.CurrentTodos.Count == 0 && dashboard.ActiveTickets.Count == 0)
+        {
+            gaps.Add("No active todos or tickets are currently visible on the dashboard.");
+        }
+
+        if (dashboard.RecentActivity.Count == 0)
+        {
+            gaps.Add("No recent activity is available, so recency-based context is missing.");
+        }
+
+        if (dashboard.PinnedMemories.Count == 0)
+        {
+            gaps.Add("No pinned memories are available, so high-value durable context is not surfaced.");
+        }
+
+        if (dashboard.RecentMemories.Count == 0)
+        {
+            gaps.Add("No recent memories are available, so the dashboard cannot surface fresh knowledge.");
+        }
+
+        if (dashboard.Wings.Count == 0)
+        {
+            gaps.Add("No wings are configured, so knowledge is not organized into top-level buckets.");
+        }
+
+        if (string.IsNullOrWhiteSpace(dashboard.ContextInput.Question))
+        {
+            gaps.Add("No context question was supplied, so diagnostics do not include task-specific retrieval.");
+        }
+        else if (dashboard.ContextPack is null || dashboard.ContextPack.TopMatches.Count == 0)
+        {
+            gaps.Add("A context question was supplied, but no strong top matches were returned.");
+        }
+
+        return gaps;
     }
 
     private static MemoryCardViewModel MapCard(MemoryEntry memory)

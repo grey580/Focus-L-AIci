@@ -140,6 +140,7 @@ public sealed class CodeGraphProjectDetailViewModel
     public CodeGraphProjectCardViewModel Project { get; init; } = new();
     public string Query { get; init; } = string.Empty;
     public Guid? SelectedNodeId { get; init; }
+    public Guid? SelectedFileId { get; init; }
     public IReadOnlyCollection<CodeGraphStatCardViewModel> Stats { get; init; } = Array.Empty<CodeGraphStatCardViewModel>();
     public IReadOnlyCollection<CodeGraphNodeListItemViewModel> Hotspots { get; init; } = Array.Empty<CodeGraphNodeListItemViewModel>();
     public IReadOnlyCollection<CodeGraphFileListItemViewModel> Files { get; init; } = Array.Empty<CodeGraphFileListItemViewModel>();
@@ -147,6 +148,7 @@ public sealed class CodeGraphProjectDetailViewModel
     public IReadOnlyCollection<CodeGraphEdgeListItemViewModel> Relationships { get; init; } = Array.Empty<CodeGraphEdgeListItemViewModel>();
     public CodeGraphThreeDimensionalSceneViewModel Scene { get; init; } = new();
     public CodeGraphSvgViewModel Graph { get; init; } = new();
+    public ContextLinksPanelViewModel ContextLinks { get; init; } = new();
 }
 
 public sealed class CodeGraphProjectInput
@@ -180,6 +182,7 @@ public sealed class CodeGraphFileListItemViewModel
     public string Language { get; init; } = string.Empty;
     public int LineCount { get; init; }
     public int NodeCount { get; init; }
+    public bool IsSelected { get; init; }
 }
 
 public sealed class CodeGraphNodeListItemViewModel

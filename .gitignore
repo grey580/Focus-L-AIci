@@ -10,3 +10,5 @@ publish/
 *.user
 
 FocusLAIci.Web/focus-palace.dev.db
+FocusLAIci.Web/focus-palace.database-target.json
+ticket-inspect.cs

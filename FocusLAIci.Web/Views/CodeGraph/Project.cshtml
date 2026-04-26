@@ -255,16 +255,18 @@
                     <div class="code-graph-side-list">
                         @foreach (var file in Model.Files.Take(20))
                         {
-                            <div class="code-graph-side-item code-graph-side-item-static">
+                            <a class="code-graph-side-item @(file.IsSelected ? "" : "code-graph-side-item-static")" asp-action="Project" asp-route-id="@Model.Project.Id" asp-route-query="@Model.Query" asp-route-selectedFileId="@file.Id">
                                 <strong>@file.RelativePath</strong>
                                 <span>@file.Language • @file.LineCount lines</span>
                                 <small>@file.NodeCount tracked nodes</small>
-                            </div>
+                            </a>
                         }
                     </div>
                 }
             </div>
         </section>
+
+        <partial name="_ContextLinksPanel" model="Model.ContextLinks" />
     </div>
 </div>
 

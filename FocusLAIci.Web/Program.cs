@@ -21,6 +21,7 @@ builder.Services.AddScoped<PalaceService>();
 builder.Services.AddScoped<TicketingService>();
 builder.Services.AddScoped<SiteSettingsService>();
 builder.Services.AddScoped<CodeGraphService>();
+builder.Services.AddScoped<ContextService>();
 
 var app = builder.Build();
 
@@ -45,12 +46,11 @@ app.UseRouting();
 
 app.UseAuthorization();
 
-app.MapStaticAssets();
+app.UseStaticFiles();
 
 app.MapControllerRoute(
     name: "default",
-    pattern: "{controller=Home}/{action=Index}/{id?}")
-    .WithStaticAssets();
+    pattern: "{controller=Home}/{action=Index}/{id?}");
 
 app.Lifetime.ApplicationStarted.Register(() =>
 {

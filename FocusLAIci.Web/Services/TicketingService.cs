@@ -11,10 +11,17 @@ public sealed class TicketingService
     private static readonly Regex TicketNumberPattern = new(@"^TKT-(\d+)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex BulletPattern = new(@"^(?:[-*•]|\d+[.)])\s+", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private readonly FocusMemoryContext _dbContext;
+    private readonly ContextService _contextService;
 
     public TicketingService(FocusMemoryContext dbContext)
+        : this(dbContext, new ContextService(dbContext))
+    {
+    }
+
+    public TicketingService(FocusMemoryContext dbContext, ContextService contextService)
     {
         _dbContext = dbContext;
+        _contextService = contextService;
     }
 
     public async Task<TicketBoardViewModel> GetBoardAsync(string? completedSearch, int completedPage, CancellationToken cancellationToken)
@@ -184,7 +191,14 @@ public sealed class TicketingService
             SubTickets = subTickets.Select(MapTicketSummary).ToArray(),
             Notes = notes,
             TimeLogs = timeLogs,
-            Activities = activities
+            Activities = activities,
+            ContextLinks = await _contextService.BuildLinksPanelAsync(
+                ContextRecordKind.Ticket,
+                ticket.Id,
+                ticket.Title,
+                $"{ticket.TicketNumber} {ticket.Title} {ticket.Description} {ticket.TagsText} {string.Join(' ', notes.Select(x => x.Content))}",
+                $"/Tickets/Details/{ticket.Id}",
+                cancellationToken)
         };
     }
 

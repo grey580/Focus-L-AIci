@@ -4,6 +4,13 @@
     ViewData["Title"] = "Dashboard";
     var isEmpty = Model.Stats.MemoryCount == 0;
     var siteSettings = await SiteSettingsService.GetSettingsAsync();
+    var contextResultOptions = new[] { 3, 4, 5, 6, 8, 10 };
+    var nowTodos = Model.CurrentTodos.Where(x => x.Status == TodoStatus.InProgress).ToArray();
+    var waitingTodos = Model.CurrentTodos.Where(x => x.Status == TodoStatus.Pending).ToArray();
+    var blockedTodos = Model.CurrentTodos.Where(x => x.Status == TodoStatus.Blocked).ToArray();
+    var nowTickets = Model.ActiveTickets.Where(x => x.Status == TicketStatus.InProgress).ToArray();
+    var waitingTickets = Model.ActiveTickets.Where(x => x.Status == TicketStatus.New).ToArray();
+    var blockedTickets = Model.ActiveTickets.Where(x => x.Status == TicketStatus.Blocked).ToArray();
 }
 
 <section class="hero-panel mb-4">
@@ -44,28 +51,406 @@
     </div>
 </section>
 
-<div class="row g-4 mb-4">
-    <div class="col-lg-7">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body">
+<section class="dashboard-main-grid mb-4">
+    <div class="dashboard-primary-stack">
+        <div class="card shadow-sm border-0 dashboard-panel">
+            <div class="card-body dashboard-panel-body">
                 <div class="section-heading">
-                    <h2>Wings</h2>
-                    <a asp-controller="Palace" asp-action="NewWing">Add Wing</a>
+                    <h2>What are you trying to do?</h2>
+                    <span class="text-secondary small">Build a richer context pack across memories, active work, ticket history, and code graph.</span>
                 </div>
-                @if (Model.Wings.Count == 0)
+                <form method="post" asp-action="Index" class="row g-3 mb-3">
+                    @Html.AntiForgeryToken()
+                    <div class="col-12">
+                        <label for="Question" class="form-label">@Html.DisplayNameFor(x => x.ContextInput.Question)</label>
+                        <input id="Question" name="Question" value="@Model.ContextInput.Question" class="form-control" placeholder="e.g. fix auth token refresh, investigate installer reliability, find prior deployment lessons" />
+                    </div>
+                    <div class="col-md-4">
+                        <label for="ResultsPerSection" class="form-label">@Html.DisplayNameFor(x => x.ContextInput.ResultsPerSection)</label>
+                        <select id="ResultsPerSection" name="ResultsPerSection" class="form-select">
+                            @foreach (var option in contextResultOptions)
+                            {
+                                if (Model.ContextInput.ResultsPerSection == option)
+                                {
+                                    <option value="@option" selected>@option per source</option>
+                                }
+                                else
+                                {
+                                    <option value="@option">@option per source</option>
+                                }
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <div class="form-check">
+                            <input type="hidden" name="IncludeCompletedWork" value="false" />
+                            @if (Model.ContextInput.IncludeCompletedWork)
+                            {
+                                <input id="IncludeCompletedWork" name="IncludeCompletedWork" value="true" checked class="form-check-input" type="checkbox" />
+                            }
+                            else
+                            {
+                                <input id="IncludeCompletedWork" name="IncludeCompletedWork" value="true" class="form-check-input" type="checkbox" />
+                            }
+                            <label for="IncludeCompletedWork" class="form-check-label">@Html.DisplayNameFor(x => x.ContextInput.IncludeCompletedWork)</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <div class="form-check">
+                            <input type="hidden" name="ExpandHistory" value="false" />
+                            @if (Model.ContextInput.ExpandHistory)
+                            {
+                                <input id="ExpandHistory" name="ExpandHistory" value="true" checked class="form-check-input" type="checkbox" />
+                            }
+                            else
+                            {
+                                <input id="ExpandHistory" name="ExpandHistory" value="true" class="form-check-input" type="checkbox" />
+                            }
+                            <label for="ExpandHistory" class="form-check-label">@Html.DisplayNameFor(x => x.ContextInput.ExpandHistory)</label>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary">Build context</button>
+                    </div>
+                </form>
+
+                @if (Model.ContextPack is not null)
                 {
-                    <div class="empty-state">
-                        <h3>No wings yet</h3>
-                        <p>Create a wing for a product, client, or long-running initiative to give the palace a top-level structure.</p>
-                        <a class="btn btn-primary" asp-controller="Palace" asp-action="NewWing">Add Wing</a>
+                    <div class="alert alert-primary border-0">@Model.ContextPack.Summary</div>
+                    @if (Model.ContextPack.SearchTokens.Count > 0)
+                    {
+                        <div class="tag-row mb-3">
+                            @foreach (var token in Model.ContextPack.SearchTokens)
+                            {
+                                <span class="tag-pill">@token</span>
+                            }
+                        </div>
+                    }
+
+                    <div class="d-flex gap-2 flex-wrap mb-3">
+                        <form method="post" asp-controller="Context" asp-action="SavePack" class="d-inline">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="Question" value="@Model.ContextInput.Question" />
+                            <input type="hidden" name="ResultsPerSection" value="@Model.ContextInput.ResultsPerSection" />
+                            <input type="hidden" name="IncludeCompletedWork" value="@Model.ContextInput.IncludeCompletedWork.ToString().ToLowerInvariant()" />
+                            <input type="hidden" name="ExpandHistory" value="@Model.ContextInput.ExpandHistory.ToString().ToLowerInvariant()" />
+                            <button type="submit" class="btn btn-outline-primary">Save as memory</button>
+                        </form>
+                        <form method="post" asp-controller="Context" asp-action="ExportPack" class="d-inline">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="Question" value="@Model.ContextInput.Question" />
+                            <input type="hidden" name="ResultsPerSection" value="@Model.ContextInput.ResultsPerSection" />
+                            <input type="hidden" name="IncludeCompletedWork" value="@Model.ContextInput.IncludeCompletedWork.ToString().ToLowerInvariant()" />
+                            <input type="hidden" name="ExpandHistory" value="@Model.ContextInput.ExpandHistory.ToString().ToLowerInvariant()" />
+                            <button type="submit" class="btn btn-outline-secondary">Export .txt</button>
+                        </form>
+                        <button type="button" class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('context-pack-export').value)">Copy pack</button>
+                    </div>
+
+                    <div class="card shadow-sm border-0 inner-card mb-3">
+                        <div class="card-body dashboard-mini-panel">
+                            <div class="section-heading">
+                                <h2 class="h5">Top matches</h2>
+                                <span class="text-secondary small">@Model.ContextPack.TopMatches.Count prioritized items</span>
+                            </div>
+                            <div class="code-graph-side-list dashboard-scroll-list dashboard-scroll-list-lg">
+                                @foreach (var item in Model.ContextPack.TopMatches)
+                                {
+                                    <a class="code-graph-side-item" href="@item.Url">
+                                        <strong>@item.Title</strong>
+                                        <span>@item.KindLabel • @item.ScoreLabel</span>
+                                        @if (!string.IsNullOrWhiteSpace(item.MatchReason))
+                                        {
+                                            <small>@item.MatchReason</small>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(item.Subtitle))
+                                        {
+                                            <small>@item.Subtitle</small>
+                                        }
+                                    </a>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    <textarea id="context-pack-export" class="form-control d-none">@Model.ContextPack.ExportText</textarea>
+
+                    <div class="dashboard-context-grid">
+                        @{
+                            var sections = new[]
+                            {
+                                new { Title = "Memories", Items = Model.ContextPack.Memories },
+                                new { Title = "Todos", Items = Model.ContextPack.Todos },
+                                new { Title = "Tickets", Items = Model.ContextPack.Tickets },
+                                new { Title = "Code graph projects", Items = Model.ContextPack.CodeGraphProjects },
+                                new { Title = "Code files", Items = Model.ContextPack.CodeGraphFiles },
+                                new { Title = "Code symbols", Items = Model.ContextPack.CodeGraphNodes }
+                            };
+                        }
+                        @foreach (var contextSection in sections)
+                        {
+                            <div class="card shadow-sm border-0 inner-card dashboard-context-card">
+                                <div class="card-body dashboard-mini-panel">
+                                        <div class="section-heading">
+                                            <h2 class="h5">@contextSection.Title</h2>
+                                            <span class="text-secondary small">@contextSection.Items.Count items</span>
+                                        </div>
+                                        @if (contextSection.Items.Count == 0)
+                                        {
+                                            <div class="empty-state compact-empty-state">
+                                                <h3>No matches</h3>
+                                                <p>Try different wording or widen the result scope.</p>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="code-graph-side-list dashboard-scroll-list">
+                                                @foreach (var item in contextSection.Items)
+                                                {
+                                                    <a class="code-graph-side-item" href="@item.Url">
+                                                        <strong>@item.Title</strong>
+                                                        <span>@item.KindLabel • @item.ScoreLabel</span>
+                                                        @if (!string.IsNullOrWhiteSpace(item.MatchReason))
+                                                        {
+                                                            <small>@item.MatchReason</small>
+                                                        }
+                                                        @if (!string.IsNullOrWhiteSpace(item.Subtitle))
+                                                        {
+                                                            <small>@item.Subtitle</small>
+                                                        }
+                                                        @if (!string.IsNullOrWhiteSpace(item.Preview))
+                                                        {
+                                                            <small>@item.Preview</small>
+                                                        }
+                                                    </a>
+                                                }
+                                            </div>
+                                        }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+    <aside class="dashboard-sidebar-stack">
+        <div class="card shadow-sm border-0 dashboard-panel">
+            <div class="card-body dashboard-panel-body">
+                <div class="section-heading">
+                    <h2 class="h5">Active work</h2>
+                    <span class="text-secondary small">@Model.CurrentTodos.Count open todos • @Model.ActiveTickets.Count open tickets</span>
+                </div>
+                @if (Model.CurrentTodos.Count == 0 && Model.ActiveTickets.Count == 0)
+                {
+                    <div class="empty-state compact-empty-state">
+                        <h3>No active work tracked</h3>
+                        <p>Open todos and tickets appear here so the dashboard becomes a usable launch pad.</p>
                     </div>
                 }
                 else
                 {
-                    <div class="row g-3">
-                        @foreach (var wing in Model.Wings)
+                    <div class="dashboard-scroll-list">
+                    @if (nowTodos.Length > 0 || nowTickets.Length > 0)
+                    {
+                        <div class="dashboard-group-heading">Now</div>
+                        @foreach (var todo in nowTodos)
                         {
-                            <div class="col-md-6">
+                            <div class="todo-preview-item dashboard-work-row">
+                                <div class="d-flex justify-content-between align-items-start gap-3">
+                                    <div>
+                                        <div class="memory-meta">Todo</div>
+                                        <a class="todo-title-link" asp-controller="Todos" asp-action="Details" asp-route-id="@todo.Id">@todo.Title</a>
+                                        @if (!string.IsNullOrWhiteSpace(todo.PreviewDetails))
+                                        {
+                                            <div class="text-secondary small">@todo.PreviewDetails</div>
+                                        }
+                                    </div>
+                                    <span class="todo-status todo-status-@todo.Status.ToString().ToLowerInvariant()">@todo.StatusLabel</span>
+                                </div>
+                            </div>
+                        }
+                        @foreach (var ticket in nowTickets)
+                        {
+                            <div class="todo-preview-item dashboard-work-row">
+                                <div class="d-flex justify-content-between align-items-start gap-3">
+                                    <div>
+                                        <div class="memory-meta">Ticket</div>
+                                        <a class="todo-title-link" asp-controller="Tickets" asp-action="Details" asp-route-id="@ticket.Id">@ticket.TicketNumber • @ticket.Title</a>
+                                        @if (!string.IsNullOrWhiteSpace(ticket.PreviewDescription))
+                                        {
+                                            <div class="text-secondary small">@ticket.PreviewDescription</div>
+                                        }
+                                    </div>
+                                    <span class="todo-status todo-status-@ticket.Status.ToString().ToLowerInvariant()">@ticket.StatusLabel</span>
+                                </div>
+                            </div>
+                        }
+                    }
+
+                    @if (waitingTodos.Length > 0 || waitingTickets.Length > 0)
+                    {
+                        <div class="dashboard-group-heading">Waiting</div>
+                        @foreach (var todo in waitingTodos)
+                        {
+                            <div class="todo-preview-item dashboard-work-row">
+                                <div class="d-flex justify-content-between align-items-start gap-3">
+                                    <div>
+                                        <div class="memory-meta">Todo</div>
+                                        <a class="todo-title-link" asp-controller="Todos" asp-action="Details" asp-route-id="@todo.Id">@todo.Title</a>
+                                        @if (!string.IsNullOrWhiteSpace(todo.PreviewDetails))
+                                        {
+                                            <div class="text-secondary small dashboard-clamp-2">@todo.PreviewDetails</div>
+                                        }
+                                    </div>
+                                    <span class="todo-status todo-status-@todo.Status.ToString().ToLowerInvariant()">@todo.StatusLabel</span>
+                                </div>
+                            </div>
+                        }
+                        @foreach (var ticket in waitingTickets)
+                        {
+                            <div class="todo-preview-item dashboard-work-row">
+                                <div class="d-flex justify-content-between align-items-start gap-3">
+                                    <div>
+                                        <div class="memory-meta">Ticket</div>
+                                        <a class="todo-title-link" asp-controller="Tickets" asp-action="Details" asp-route-id="@ticket.Id">@ticket.TicketNumber • @ticket.Title</a>
+                                        @if (!string.IsNullOrWhiteSpace(ticket.PreviewDescription))
+                                        {
+                                            <div class="text-secondary small dashboard-clamp-2">@ticket.PreviewDescription</div>
+                                        }
+                                    </div>
+                                    <span class="todo-status todo-status-@ticket.Status.ToString().ToLowerInvariant()">@ticket.StatusLabel</span>
+                                </div>
+                            </div>
+                        }
+                    }
+
+                    @if (blockedTodos.Length > 0 || blockedTickets.Length > 0)
+                    {
+                        <div class="dashboard-group-heading">Blocked</div>
+                        @foreach (var todo in blockedTodos)
+                        {
+                            <div class="todo-preview-item dashboard-work-row">
+                                <div class="d-flex justify-content-between align-items-start gap-3">
+                                    <div>
+                                        <div class="memory-meta">Todo</div>
+                                        <a class="todo-title-link" asp-controller="Todos" asp-action="Details" asp-route-id="@todo.Id">@todo.Title</a>
+                                        @if (!string.IsNullOrWhiteSpace(todo.PreviewDetails))
+                                        {
+                                            <div class="text-secondary small dashboard-clamp-2">@todo.PreviewDetails</div>
+                                        }
+                                    </div>
+                                    <span class="todo-status todo-status-@todo.Status.ToString().ToLowerInvariant()">@todo.StatusLabel</span>
+                                </div>
+                            </div>
+                        }
+                        @foreach (var ticket in blockedTickets)
+                        {
+                            <div class="todo-preview-item dashboard-work-row">
+                                <div class="d-flex justify-content-between align-items-start gap-3">
+                                    <div>
+                                        <div class="memory-meta">Ticket</div>
+                                        <a class="todo-title-link" asp-controller="Tickets" asp-action="Details" asp-route-id="@ticket.Id">@ticket.TicketNumber • @ticket.Title</a>
+                                        @if (!string.IsNullOrWhiteSpace(ticket.PreviewDescription))
+                                        {
+                                            <div class="text-secondary small dashboard-clamp-2">@ticket.PreviewDescription</div>
+                                        }
+                                    </div>
+                                    <span class="todo-status todo-status-@ticket.Status.ToString().ToLowerInvariant()">@ticket.StatusLabel</span>
+                                </div>
+                            </div>
+                        }
+                    }
+                    </div>
+                }
+            </div>
+        </div>
+    </aside>
+</section>
+
+<section class="dashboard-support-grid mb-4">
+    <div class="card shadow-sm border-0 dashboard-panel">
+        <div class="card-body dashboard-panel-body">
+            <div class="section-heading">
+                <h2 class="h5">Recent activity</h2>
+                <span class="text-secondary small">Latest updates across tickets, todos, and memory.</span>
+            </div>
+            @if (Model.RecentActivity.Count == 0)
+            {
+                <div class="empty-state compact-empty-state">
+                    <h3>No activity yet</h3>
+                    <p>Recent memory, todo, and ticket updates will appear here.</p>
+                </div>
+            }
+            else
+            {
+                <div class="dashboard-scroll-list dashboard-scroll-list-lg">
+                @foreach (var item in Model.RecentActivity)
+                {
+                    <div class="todo-preview-item">
+                        <div class="memory-meta">@item.Label • @SiteSettingsService.FormatUtc(item.OccurredUtc, siteSettings)</div>
+                        <a class="todo-title-link" href="@item.Url">@item.Title</a>
+                        @if (!string.IsNullOrWhiteSpace(item.Detail))
+                        {
+                            <div class="text-secondary small dashboard-clamp-3">@item.Detail</div>
+                        }
+                    </div>
+                }
+                </div>
+            }
+        </div>
+    </div>
+    <div class="card shadow-sm border-0 dashboard-panel">
+        <div class="card-body dashboard-panel-body">
+            <div class="section-heading">
+                <h2 class="h5">Pinned memories</h2>
+                <a asp-controller="Palace" asp-action="Explore">View all</a>
+            </div>
+            @if (Model.PinnedMemories.Count == 0)
+            {
+                <div class="empty-state compact-empty-state">
+                    <h3>No pinned memories</h3>
+                    <p>Pin your highest-value notes so they stay near the top of the dashboard.</p>
+                </div>
+            }
+            else
+            {
+                <div class="dashboard-scroll-list dashboard-scroll-list-lg">
+                    @foreach (var memory in Model.PinnedMemories.Take(8))
+                    {
+                        <div class="compact-memory">
+                            <div class="memory-meta">@memory.Kind • @memory.WingName / @memory.RoomName</div>
+                            <a asp-controller="Palace" asp-action="Memory" asp-route-id="@memory.Id" class="compact-memory-title">@memory.Title</a>
+                            <div class="text-secondary small dashboard-clamp-2">@memory.Summary</div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</section>
+
+<section class="dashboard-knowledge-grid mb-4">
+    <div class="dashboard-secondary-stack">
+        <div class="card shadow-sm border-0 dashboard-panel">
+            <div class="card-body dashboard-panel-body">
+                    <div class="section-heading">
+                        <h2>Wings</h2>
+                        <a asp-controller="Palace" asp-action="NewWing">Add Wing</a>
+                    </div>
+                    @if (Model.Wings.Count == 0)
+                    {
+                        <div class="empty-state">
+                            <h3>No wings yet</h3>
+                            <p>Create a wing for a product, client, or long-running initiative to give the palace a top-level structure.</p>
+                            <a class="btn btn-primary" asp-controller="Palace" asp-action="NewWing">Add Wing</a>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="dashboard-scroll-list dashboard-scroll-list-lg">
+                            @foreach (var wing in Model.Wings)
+                            {
                                 <div class="wing-card">
                                     <div class="memory-meta">@wing.RoomCount rooms • @wing.MemoryCount memories</div>
                                     <h3><a asp-controller="Palace" asp-action="Wing" asp-route-slug="@wing.Slug">@wing.Name</a></h3>
@@ -75,47 +460,43 @@
                                         <div class="text-secondary small">Latest activity @SiteSettingsService.FormatUtc(wing.LatestActivityUtc.Value, siteSettings)</div>
                                     }
                                 </div>
-                            </div>
-                        }
-                    </div>
-                }
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-5">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body">
-                <div class="section-heading">
-                    <h2>Pinned memories</h2>
-                    <a asp-controller="Palace" asp-action="Explore">View all</a>
-                </div>
-                @if (Model.PinnedMemories.Count == 0)
-                {
-                    <div class="empty-state compact-empty-state">
-                        <h3>No pinned memories</h3>
-                        <p>Pin your highest-value notes so they stay near the top of the dashboard.</p>
-                    </div>
-                }
-                else
-                {
-                    @foreach (var memory in Model.PinnedMemories)
-                    {
-                        <div class="compact-memory">
-                            <div class="memory-meta">@memory.Kind • @memory.WingName / @memory.RoomName</div>
-                            <a asp-controller="Palace" asp-action="Memory" asp-route-id="@memory.Id" class="compact-memory-title">@memory.Title</a>
-                            <div class="text-secondary small">@memory.Summary</div>
+                            }
                         </div>
                     }
-                }
+                </div>
+            </div>
+        <div class="card shadow-sm border-0 dashboard-panel">
+            <div class="card-body dashboard-panel-body">
+                <h2 class="h5">Quick searches</h2>
+                <p class="text-secondary small">Click a suggestion to jump straight to related memories.</p>
+                <div class="tag-row">
+                    @foreach (var example in Model.SearchExamples)
+                    {
+                        <a class="tag-pill tag-link" asp-controller="Palace" asp-action="Explore" asp-route-query="@example">@example</a>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="card shadow-sm border-0 dashboard-panel">
+            <div class="card-body dashboard-panel-body">
+                <details class="developer-panel">
+                    <summary>Developer API surface</summary>
+                    <p class="text-secondary small">Use these endpoints later to feed development decisions and debugging context into the palace programmatically.</p>
+                    <ul class="api-list">
+                        <li><code>GET /api/palace/summary</code></li>
+                        <li><code>GET /api/palace/dashboard-diagnostics</code></li>
+                        <li><code>GET /api/palace/memories?query=installer</code></li>
+                        <li><code>POST /api/context/brief</code></li>
+                        <li><code>POST /api/palace/memories</code></li>
+                        <li><code>POST /api/palace/wings</code></li>
+                        <li><code>POST /api/palace/rooms</code></li>
+                    </ul>
+                </details>
             </div>
         </div>
     </div>
-</div>
-
-<div class="row g-4">
-    <div class="col-lg-8">
-        <div class="card shadow-sm border-0">
-            <div class="card-body">
+    <div class="card shadow-sm border-0 dashboard-panel dashboard-panel-wide">
+        <div class="card-body dashboard-panel-body">
                 <div class="section-heading">
                     <h2>Recent memories</h2>
                     <a asp-controller="Palace" asp-action="NewMemory">Add Memory</a>
@@ -130,91 +511,26 @@
                 }
                 else
                 {
-                    <div class="row g-3">
+                    <div class="dashboard-scroll-list dashboard-scroll-list-xl">
                         @foreach (var memory in Model.RecentMemories)
                         {
-                            <div class="col-md-6">
-                                <article class="card shadow-sm border-0 h-100 inner-card">
-                                    <div class="card-body">
-                                        <div class="memory-meta">@memory.Kind • @memory.SourceKind</div>
-                                        <h3 class="memory-title"><a asp-controller="Palace" asp-action="Memory" asp-route-id="@memory.Id">@memory.Title</a></h3>
-                                        <p class="memory-summary">@memory.Summary</p>
-                                        <div class="memory-path">@memory.WingName / @memory.RoomName</div>
-                                        <div class="tag-row">
-                                            @foreach (var tag in memory.Tags)
-                                            {
-                                                <a class="tag-pill tag-link" asp-controller="Palace" asp-action="Explore" asp-route-tag="@tag">@tag</a>
-                                            }
-                                        </div>
+                            <article class="card shadow-sm border-0 inner-card dashboard-memory-row">
+                                <div class="card-body">
+                                    <div class="memory-meta">@memory.Kind • @memory.SourceKind</div>
+                                    <h3 class="memory-title"><a asp-controller="Palace" asp-action="Memory" asp-route-id="@memory.Id">@memory.Title</a></h3>
+                                    <p class="memory-summary">@memory.Summary</p>
+                                    <div class="memory-path">@memory.WingName / @memory.RoomName</div>
+                                    <div class="tag-row">
+                                        @foreach (var tag in memory.Tags)
+                                        {
+                                            <a class="tag-pill tag-link" asp-controller="Palace" asp-action="Explore" asp-route-tag="@tag">@tag</a>
+                                        }
                                     </div>
-                                </article>
-                            </div>
+                                </div>
+                            </article>
                         }
                     </div>
                 }
             </div>
-        </div>
     </div>
-    <div class="col-lg-4">
-        <div class="card shadow-sm border-0 mb-4">
-            <div class="card-body">
-                <div class="section-heading">
-                    <h2 class="h5">Current todos</h2>
-                    <a asp-controller="Todos" asp-action="Index">Open board</a>
-                </div>
-                @if (Model.CurrentTodos.Count == 0)
-                {
-                    <div class="empty-state compact-empty-state">
-                        <h3>No open todos</h3>
-                        <p>Add a todo in Focus when work splits or gets interrupted so the next session has a clear re-entry point.</p>
-                    </div>
-                }
-                else
-                {
-                    @foreach (var todo in Model.CurrentTodos)
-                    {
-                        <div class="todo-preview-item">
-                            <div class="d-flex justify-content-between align-items-start gap-3">
-                                <div>
-                                    <a class="todo-title-link" asp-controller="Todos" asp-action="Details" asp-route-id="@todo.Id">@todo.Title</a>
-                                    @if (!string.IsNullOrWhiteSpace(todo.PreviewDetails))
-                                    {
-                                        <div class="text-secondary small">@todo.PreviewDetails</div>
-                                    }
-                                </div>
-                                <span class="todo-status todo-status-@todo.Status.ToString().ToLowerInvariant()">@todo.StatusLabel</span>
-                            </div>
-                        </div>
-                    }
-                }
-            </div>
-        </div>
-        <div class="card shadow-sm border-0 mb-4">
-            <div class="card-body">
-                <h2 class="h5">Quick searches</h2>
-                <p class="text-secondary small">Click a suggestion to jump straight to related memories.</p>
-                <div class="tag-row">
-                    @foreach (var example in Model.SearchExamples)
-                    {
-                        <a class="tag-pill tag-link" asp-controller="Palace" asp-action="Explore" asp-route-query="@example">@example</a>
-                    }
-                </div>
-            </div>
-        </div>
-        <div class="card shadow-sm border-0">
-            <div class="card-body">
-                <details class="developer-panel">
-                    <summary>Developer API surface</summary>
-                    <p class="text-secondary small">Use these endpoints later to feed development decisions and debugging context into the palace programmatically.</p>
-                    <ul class="api-list">
-                        <li><code>GET /api/palace/summary</code></li>
-                        <li><code>GET /api/palace/memories?query=installer</code></li>
-                        <li><code>POST /api/palace/memories</code></li>
-                        <li><code>POST /api/palace/wings</code></li>
-                        <li><code>POST /api/palace/rooms</code></li>
-                    </ul>
-                </details>
-            </div>
-        </div>
-    </div>
-</div>
+</section>

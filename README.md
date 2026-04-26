@@ -51,6 +51,7 @@ This makes the system much better than a basic note app for operational work, be
 ## Core capabilities
 
 - dashboard with palace stats and recent activity
+- dashboard context workspace with multi-source retrieval, match explanations, and export/save actions
 - wing and room browsing
 - memory creation and editing
 - todo tracking with large prompt-sized details
@@ -61,6 +62,7 @@ This makes the system much better than a basic note app for operational work, be
 - tag-based discovery
 - full-text style search flows across stored knowledge
 - linked-memory relationships for context tracing
+- API diagnostics for checking the active database target and homepage backing content
 - sample data seeding for quick onboarding
 
 ## Dashboard preview
@@ -141,6 +143,17 @@ Code Graph supports:
 This makes Focus useful not just for preserving human reasoning, but also for preserving a durable map of how a codebase is stitched together.
 
 The intended workflow is to use Code Graph first for orientation and narrowing, then open the exact files that matter once the graph has identified the hotspot, symbol, or relationship worth changing.
+
+## New: dashboard context and diagnostics
+
+Focus L-AIci's homepage now includes a richer **context workspace** that can pull from memories, todos, tickets, ticket history, and code graph data to build a task-specific pack before you start working.
+
+It also now exposes:
+
+- `POST /api/context/brief` for structured context-pack retrieval
+- `GET /api/palace/dashboard-diagnostics` for checking the **active database path**, homepage section contents, top context-match count, and detected content gaps
+
+That makes it much easier to tell whether a problem is in the **database**, the **application layer**, or just the **page layout/rendering**.
 
 ## Quick start
 

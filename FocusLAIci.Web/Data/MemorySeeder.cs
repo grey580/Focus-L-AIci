@@ -172,6 +172,19 @@ public static class MemorySeeder
             cancellationToken);
         await dbContext.Database.ExecuteSqlRawAsync(
             """
+            CREATE TABLE IF NOT EXISTS ContextLinks (
+                Id TEXT NOT NULL CONSTRAINT PK_ContextLinks PRIMARY KEY,
+                SourceKind INTEGER NOT NULL,
+                SourceId TEXT NOT NULL,
+                TargetKind INTEGER NOT NULL,
+                TargetId TEXT NOT NULL,
+                Label TEXT NOT NULL,
+                CreatedUtc TEXT NOT NULL
+            );
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
             INSERT OR IGNORE INTO SiteSettings (Id, DisplayName, HomeHeroCopy, TimeZoneId, ShowUtcTimestamps, DefaultMemoryImportance)
             VALUES (1, 'Focus L-AIci', 'A local-first C# memory system for app development: wings, rooms, verbatim notes, searchable context, and an explorer UI for finding past reasoning fast.', 'UTC', 0, 3);
             """,
@@ -255,6 +268,24 @@ public static class MemorySeeder
             """
             CREATE INDEX IF NOT EXISTS IX_CodeGraphEdges_ProjectId_FromNodeId_ToNodeId_RelationshipType
             ON CodeGraphEdges(ProjectId, FromNodeId, ToNodeId, RelationshipType);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_ContextLinks_SourceKind_SourceId
+            ON ContextLinks(SourceKind, SourceId);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_ContextLinks_TargetKind_TargetId
+            ON ContextLinks(TargetKind, TargetId);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_ContextLinks_SourceKind_SourceId_TargetKind_TargetId
+            ON ContextLinks(SourceKind, SourceId, TargetKind, TargetId);
             """,
             cancellationToken);
     }

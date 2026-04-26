@@ -69,9 +69,9 @@ public sealed class CodeGraphController : Controller
     }
 
     [HttpGet]
-    public async Task<IActionResult> Project(Guid id, string? query, Guid? selectedNodeId, CancellationToken cancellationToken)
+    public async Task<IActionResult> Project(Guid id, string? query, Guid? selectedNodeId, Guid? selectedFileId, CancellationToken cancellationToken)
     {
-        var model = await _codeGraphService.GetProjectAsync(id, query, selectedNodeId, cancellationToken);
+        var model = await _codeGraphService.GetProjectAsync(id, query, selectedNodeId, selectedFileId, cancellationToken);
         return model is null ? NotFound() : View(model);
     }
 }

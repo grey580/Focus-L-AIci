@@ -9,16 +9,50 @@ namespace FocusLAIci.Web.Controllers.Api;
 public sealed class PalaceApiController : ControllerBase
 {
     private readonly PalaceService _palaceService;
+    private readonly FocusDatabaseTargetService _databaseTargetService;
 
-    public PalaceApiController(PalaceService palaceService)
+    public PalaceApiController(PalaceService palaceService, FocusDatabaseTargetService databaseTargetService)
     {
         _palaceService = palaceService;
+        _databaseTargetService = databaseTargetService;
     }
 
     [HttpGet("summary")]
     public async Task<ActionResult<PalaceApiSummaryViewModel>> Summary(CancellationToken cancellationToken)
     {
         return Ok(await _palaceService.GetApiSummaryAsync(cancellationToken));
+    }
+
+    [HttpGet("dashboard-diagnostics")]
+    public async Task<ActionResult<DashboardDiagnosticsViewModel>> DashboardDiagnostics(
+        string? question,
+        bool includeCompletedWork,
+        bool expandHistory,
+        int? resultsPerSection,
+        CancellationToken cancellationToken)
+    {
+        var contextInput = string.IsNullOrWhiteSpace(question) && !resultsPerSection.HasValue && !includeCompletedWork && !expandHistory
+            ? null
+            : new ContextBriefInput
+            {
+                Question = question?.Trim() ?? string.Empty,
+                IncludeCompletedWork = includeCompletedWork,
+                ExpandHistory = expandHistory,
+                ResultsPerSection = resultsPerSection.GetValueOrDefault(4)
+            };
+
+        var diagnostics = await _palaceService.GetDashboardDiagnosticsAsync(contextInput, cancellationToken);
+        return Ok(new DashboardDiagnosticsViewModel
+        {
+            GeneratedUtc = diagnostics.GeneratedUtc,
+            DatabaseTarget = _databaseTargetService.GetCurrentTarget(),
+            Stats = diagnostics.Stats,
+            ContextInput = diagnostics.ContextInput,
+            ContextSummary = diagnostics.ContextSummary,
+            TopMatchCount = diagnostics.TopMatchCount,
+            DetectedGaps = diagnostics.DetectedGaps,
+            Sections = diagnostics.Sections
+        });
     }
 
     [HttpGet("memories")]

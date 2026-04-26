@@ -6,11 +6,54 @@ namespace FocusLAIci.Web.Models;
 public sealed class DashboardViewModel
 {
     public PalaceStatsViewModel Stats { get; init; } = new();
+    public ContextBriefInput ContextInput { get; init; } = new();
+    public ContextPackViewModel? ContextPack { get; init; }
+    public IReadOnlyCollection<TicketSummaryViewModel> ActiveTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
+    public IReadOnlyCollection<DashboardActivityViewModel> RecentActivity { get; init; } = Array.Empty<DashboardActivityViewModel>();
     public IReadOnlyCollection<WingSummaryViewModel> Wings { get; init; } = Array.Empty<WingSummaryViewModel>();
     public IReadOnlyCollection<MemoryCardViewModel> RecentMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
     public IReadOnlyCollection<MemoryCardViewModel> PinnedMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
     public IReadOnlyCollection<TodoItemViewModel> CurrentTodos { get; init; } = Array.Empty<TodoItemViewModel>();
     public IReadOnlyCollection<string> SearchExamples { get; init; } = Array.Empty<string>();
+}
+
+public sealed class DashboardDiagnosticsViewModel
+{
+    public DateTime GeneratedUtc { get; init; }
+    public FocusDatabaseTargetSnapshot DatabaseTarget { get; init; } = new();
+    public PalaceStatsViewModel Stats { get; init; } = new();
+    public ContextBriefInput ContextInput { get; init; } = new();
+    public string ContextSummary { get; init; } = string.Empty;
+    public int TopMatchCount { get; init; }
+    public IReadOnlyCollection<string> DetectedGaps { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<DashboardSectionSnapshotViewModel> Sections { get; init; } = Array.Empty<DashboardSectionSnapshotViewModel>();
+}
+
+public sealed class DashboardSectionSnapshotViewModel
+{
+    public string Key { get; init; } = string.Empty;
+    public string Title { get; init; } = string.Empty;
+    public int Count { get; init; }
+    public bool IsEmpty { get; init; }
+    public IReadOnlyCollection<DashboardDiagnosticRecordViewModel> Items { get; init; } = Array.Empty<DashboardDiagnosticRecordViewModel>();
+}
+
+public sealed class DashboardDiagnosticRecordViewModel
+{
+    public string Id { get; init; } = string.Empty;
+    public string Title { get; init; } = string.Empty;
+    public string Subtitle { get; init; } = string.Empty;
+    public string Detail { get; init; } = string.Empty;
+    public string Url { get; init; } = string.Empty;
+}
+
+public sealed class DashboardActivityViewModel
+{
+    public string Label { get; init; } = string.Empty;
+    public string Title { get; init; } = string.Empty;
+    public string Detail { get; init; } = string.Empty;
+    public string Url { get; init; } = string.Empty;
+    public DateTime OccurredUtc { get; init; }
 }
 
 public sealed class SiteSettingsSnapshot
@@ -101,6 +144,7 @@ public sealed class TodoDetailsViewModel
 {
     public TodoItemViewModel Todo { get; init; } = new();
     public TodoEditorInput Input { get; init; } = new();
+    public ContextLinksPanelViewModel ContextLinks { get; init; } = new();
 }
 
 public sealed class TodoItemViewModel
@@ -164,6 +208,7 @@ public sealed class TicketDetailsViewModel
     public IReadOnlyCollection<TicketNoteViewModel> Notes { get; init; } = Array.Empty<TicketNoteViewModel>();
     public IReadOnlyCollection<TicketTimeLogViewModel> TimeLogs { get; init; } = Array.Empty<TicketTimeLogViewModel>();
     public IReadOnlyCollection<TicketActivityViewModel> Activities { get; init; } = Array.Empty<TicketActivityViewModel>();
+    public ContextLinksPanelViewModel ContextLinks { get; init; } = new();
 }
 
 public class TicketSummaryViewModel
@@ -428,6 +473,7 @@ public sealed class MemoryDetailViewModel
     public DateTime? OccurredUtc { get; init; }
     public IReadOnlyCollection<MemoryRelationshipViewModel> OutgoingLinks { get; init; } = Array.Empty<MemoryRelationshipViewModel>();
     public IReadOnlyCollection<MemoryRelationshipViewModel> IncomingLinks { get; init; } = Array.Empty<MemoryRelationshipViewModel>();
+    public ContextLinksPanelViewModel ContextLinks { get; init; } = new();
 }
 
 public sealed class MemoryRelationshipViewModel

@@ -626,7 +626,7 @@ public sealed class PalaceServiceTests
                 RootPath = repositoryRoot
             }, CancellationToken.None);
 
-            var detail = await service.GetProjectAsync(projectId, "AlphaService", null, CancellationToken.None);
+            var detail = await service.GetProjectAsync(projectId, "AlphaService", null, null, CancellationToken.None);
 
             Assert.NotNull(detail);
             Assert.Equal("AlphaService", detail!.Graph.SelectedNodeLabel);
@@ -642,6 +642,162 @@ public sealed class PalaceServiceTests
         {
             TryDeleteDirectory(repositoryRoot);
         }
+    }
+
+    [Fact]
+    public async Task ContextService_PrioritizesExactSignalAndExplainsWhy()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        var exactMemory = new MemoryEntry
+        {
+            Title = "Installer token registration and deployment",
+            Summary = "Exact context match for deployment troubleshooting.",
+            Content = "Covers installer token registration and deployment flow.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.DebugSession,
+            UpdatedUtc = DateTime.UtcNow,
+            Importance = 5,
+            Wing = new Wing
+            {
+                Name = "Grey Canary",
+                Slug = "grey-canary",
+                Description = "Primary product wing."
+            }
+        };
+
+        var noisyMemory = new MemoryEntry
+        {
+            Title = "Deployment notes",
+            Summary = "Only one broad token overlaps.",
+            Content = "General deployment checklist without token registration detail.",
+            Kind = MemoryKind.Reference,
+            SourceKind = SourceKind.DebugSession,
+            UpdatedUtc = DateTime.UtcNow.AddDays(-120),
+            Wing = new Wing
+            {
+                Name = "Operations",
+                Slug = "operations",
+                Description = "General operations wing."
+            }
+        };
+
+        dbContext.Memories.AddRange(exactMemory, noisyMemory);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync("installer token registration and deployment", CancellationToken.None);
+
+        Assert.NotNull(pack);
+        var topMemory = Assert.Single(pack!.Memories.Take(1));
+        Assert.Equal(exactMemory.Title, topMemory.Title);
+        Assert.Equal("Top match", topMemory.ScoreLabel);
+        Assert.False(string.IsNullOrWhiteSpace(topMemory.MatchReason));
+    }
+
+    [Fact]
+    public async Task ContextService_IgnoresStopwordOnlyDifferencesInRanking()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        dbContext.Todos.Add(new TodoEntry
+        {
+            Title = "Installer token deployment reliability",
+            Details = "Track installer token deployment fixes and registration stability.",
+            Status = TodoStatus.InProgress,
+            UpdatedUtc = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var concise = await service.BuildContextPackAsync("installer token deployment", CancellationToken.None);
+        var withStopwords = await service.BuildContextPackAsync("the installer token and deployment", CancellationToken.None);
+
+        Assert.NotNull(concise);
+        Assert.NotNull(withStopwords);
+        Assert.Equal(concise!.Todos.Select(x => x.Title), withStopwords!.Todos.Select(x => x.Title));
+        Assert.DoesNotContain("and", withStopwords.SearchTokens);
+        Assert.DoesNotContain("the", withStopwords.SearchTokens);
+    }
+
+    [Fact]
+    public async Task DashboardDiagnostics_ReportsEmptyStateGaps()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var diagnostics = await service.GetDashboardDiagnosticsAsync(null, CancellationToken.None);
+
+        Assert.Contains(diagnostics.DetectedGaps, gap => gap.Contains("No active todos or tickets", StringComparison.Ordinal));
+        Assert.Contains(diagnostics.DetectedGaps, gap => gap.Contains("No recent activity", StringComparison.Ordinal));
+        Assert.Contains(diagnostics.DetectedGaps, gap => gap.Contains("No pinned memories", StringComparison.Ordinal));
+        Assert.Contains(diagnostics.DetectedGaps, gap => gap.Contains("No context question", StringComparison.Ordinal));
+        Assert.All(diagnostics.Sections, section => Assert.Equal(0, section.Count));
+    }
+
+    [Fact]
+    public async Task DashboardDiagnostics_SurfacesStructuredSectionContent()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Diagnostics Wing",
+            Description = "Primary structured memory area."
+        }, CancellationToken.None);
+
+        var roomId = await service.CreateRoomAsync(new RoomEditorInput
+        {
+            WingId = wingId,
+            Name = "Investigations",
+            Description = "Debugging and analysis notes."
+        }, CancellationToken.None);
+
+        await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Installer investigation baseline",
+            Summary = "Pinned baseline memory for diagnostics.",
+            Content = "Installer diagnostics should check the active database and the dashboard sections.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.DebugSession,
+            Importance = 5,
+            IsPinned = true,
+            WingId = wingId,
+            RoomId = roomId,
+            TagsText = "installer, diagnostics"
+        }, CancellationToken.None);
+
+        await service.CreateTodoAsync(new TodoEditorInput
+        {
+            Title = "Inspect dashboard API output",
+            Details = "Use the new diagnostics endpoint before trusting the UI.",
+            Status = TodoStatus.InProgress
+        }, CancellationToken.None);
+
+        var diagnostics = await service.GetDashboardDiagnosticsAsync(new ContextBriefInput
+        {
+            Question = "installer diagnostics",
+            ResultsPerSection = 3
+        }, CancellationToken.None);
+
+        var todoSection = Assert.Single(diagnostics.Sections, section => section.Key == "current-todos");
+        var pinnedSection = Assert.Single(diagnostics.Sections, section => section.Key == "pinned-memories");
+        var wingsSection = Assert.Single(diagnostics.Sections, section => section.Key == "wings");
+        var contextSection = Assert.Single(diagnostics.Sections, section => section.Key == "top-context-matches");
+
+        Assert.Equal(1, todoSection.Count);
+        Assert.Equal("Inspect dashboard API output", todoSection.Items.Single().Title);
+        Assert.Equal(1, pinnedSection.Count);
+        Assert.Equal("Installer investigation baseline", pinnedSection.Items.Single().Title);
+        Assert.Equal(1, wingsSection.Count);
+        Assert.Equal("Diagnostics Wing", wingsSection.Items.Single().Title);
+        Assert.True(contextSection.Count >= 1);
+        Assert.DoesNotContain(diagnostics.DetectedGaps, gap => gap.Contains("No context question", StringComparison.Ordinal));
     }
 
     private sealed class TestHarness : IAsyncDisposable

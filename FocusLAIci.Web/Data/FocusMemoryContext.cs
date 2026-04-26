@@ -26,6 +26,7 @@ public sealed class FocusMemoryContext : DbContext
     public DbSet<CodeGraphFile> CodeGraphFiles => Set<CodeGraphFile>();
     public DbSet<CodeGraphNode> CodeGraphNodes => Set<CodeGraphNode>();
     public DbSet<CodeGraphEdge> CodeGraphEdges => Set<CodeGraphEdge>();
+    public DbSet<ContextLinkEntry> ContextLinks => Set<ContextLinkEntry>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -167,6 +168,14 @@ public sealed class FocusMemoryContext : DbContext
                 .WithMany(x => x.IncomingLinks)
                 .HasForeignKey(x => x.ToMemoryEntryId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ContextLinkEntry>(entity =>
+        {
+            entity.Property(x => x.Label).HasMaxLength(120);
+            entity.HasIndex(x => new { x.SourceKind, x.SourceId });
+            entity.HasIndex(x => new { x.TargetKind, x.TargetId });
+            entity.HasIndex(x => new { x.SourceKind, x.SourceId, x.TargetKind, x.TargetId }).IsUnique();
         });
 
         builder.Entity<CodeGraphProject>(entity =>

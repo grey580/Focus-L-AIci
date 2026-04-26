@@ -1,0 +1,103 @@
+@model FocusLAIci.Web.Models.ContextLinksPanelViewModel
+
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <div class="section-heading">
+            <h2>Linked context</h2>
+            <span class="text-secondary small">@Model.LinkedItems.Count linked • @Model.SuggestedItems.Count suggested</span>
+        </div>
+
+        @if (Model.LinkedItems.Count == 0)
+        {
+            <div class="empty-state compact-empty-state mb-3">
+                <h3>No linked context yet</h3>
+                <p>Add high-signal related items so future retrieval can jump across memories, todos, tickets, and code graph context.</p>
+            </div>
+        }
+        else
+        {
+            <div class="code-graph-side-list mb-4">
+                @foreach (var item in Model.LinkedItems)
+                {
+                    <div class="code-graph-side-item">
+                        <a href="@item.Url">
+                            <strong>@item.Title</strong>
+                            <span>@item.KindLabel • @item.Label</span>
+                            @if (!string.IsNullOrWhiteSpace(item.Subtitle))
+                            {
+                                <small>@item.Subtitle</small>
+                            }
+                        </a>
+                        <form asp-controller="Context" asp-action="RemoveLink" method="post" class="mt-2">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="LinkId" value="@item.LinkId" />
+                            <input type="hidden" name="ReturnUrl" value="@Model.ReturnUrl" />
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Unlink</button>
+                        </form>
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="section-heading">
+            <h2>Suggested links</h2>
+            <span class="text-secondary small">Quick-connect likely related items</span>
+        </div>
+
+        @if (Model.SuggestedItems.Count == 0)
+        {
+            <div class="empty-state compact-empty-state">
+                <h3>No suggestions right now</h3>
+                <p>Use the dashboard context box or add more descriptive details to improve suggestions.</p>
+            </div>
+        }
+        else
+        {
+            <form asp-controller="Context" asp-action="AddSuggestedLinks" method="post" class="mb-3">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="SourceKind" value="@Model.SourceKind" />
+                <input type="hidden" name="SourceId" value="@Model.SourceId" />
+                <input type="hidden" name="SourceText" value="@Model.SourceText" />
+                <input type="hidden" name="Limit" value="3" />
+                <input type="hidden" name="Label" value="Related context" />
+                <input type="hidden" name="ReturnUrl" value="@Model.ReturnUrl" />
+                <button type="submit" class="btn btn-sm btn-outline-primary">Link top 3 suggestions</button>
+            </form>
+            <div class="ticket-note-list">
+                @foreach (var item in Model.SuggestedItems)
+                {
+                    <article class="ticket-note">
+                        <div class="d-flex justify-content-between gap-3 align-items-start">
+                            <div>
+                                <div class="memory-meta">@item.KindLabel • @item.ScoreLabel</div>
+                                <a class="todo-title-link" href="@item.Url">@item.Title</a>
+                                @if (!string.IsNullOrWhiteSpace(item.MatchReason))
+                                {
+                                    <div class="text-secondary small">@item.MatchReason</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(item.Subtitle))
+                                {
+                                    <div class="text-secondary small">@item.Subtitle</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(item.Preview))
+                                {
+                                    <div class="text-secondary small mt-1">@item.Preview</div>
+                                }
+                            </div>
+                            <form asp-controller="Context" asp-action="AddLink" method="post">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="SourceKind" value="@Model.SourceKind" />
+                                <input type="hidden" name="SourceId" value="@Model.SourceId" />
+                                <input type="hidden" name="TargetKind" value="@item.Kind" />
+                                <input type="hidden" name="TargetId" value="@item.Id" />
+                                <input type="hidden" name="Label" value="Related context" />
+                                <input type="hidden" name="ReturnUrl" value="@Model.ReturnUrl" />
+                                <button type="submit" class="btn btn-sm btn-outline-primary">Link</button>
+                            </form>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </div>
+</div>

@@ -224,6 +224,20 @@ public sealed class MemoryLink
     public MemoryEntry? ToMemoryEntry { get; set; }
 }
 
+public sealed class ContextLinkEntry
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public ContextRecordKind SourceKind { get; set; }
+    public Guid SourceId { get; set; }
+    public ContextRecordKind TargetKind { get; set; }
+    public Guid TargetId { get; set; }
+
+    [MaxLength(120)]
+    public string Label { get; set; } = "Related";
+
+    public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
+}
+
 public enum MemoryKind
 {
     Decision = 1,
@@ -289,4 +303,14 @@ public enum TicketPriority
 
     [Display(Name = "Critical")]
     Critical = 4
+}
+
+public enum ContextRecordKind
+{
+    Memory = 1,
+    Todo = 2,
+    Ticket = 3,
+    CodeGraphProject = 4,
+    CodeGraphNode = 5,
+    CodeGraphFile = 6
 }
