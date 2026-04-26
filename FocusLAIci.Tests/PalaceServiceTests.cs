@@ -133,8 +133,8 @@ public sealed class PalaceServiceTests
         }, CancellationToken.None);
 
         var detail = await service.GetMemoryAsync(memoryId, CancellationToken.None);
-        var byTag = await service.SearchMemoriesAsync(null, null, null, null, "security", CancellationToken.None);
-        var byQuery = await service.SearchMemoriesAsync("rotate secrets", null, null, null, null, CancellationToken.None);
+        var byTag = await service.SearchMemoriesAsync(null, null, null, null, "security", null, CancellationToken.None);
+        var byQuery = await service.SearchMemoriesAsync("rotate secrets", null, null, null, null, null, CancellationToken.None);
 
         Assert.NotNull(detail);
         Assert.Equal("Grey Canary", detail!.Memory.WingName);
@@ -798,6 +798,113 @@ public sealed class PalaceServiceTests
         Assert.Equal("Diagnostics Wing", wingsSection.Items.Single().Title);
         Assert.True(contextSection.Count >= 1);
         Assert.DoesNotContain(diagnostics.DetectedGaps, gap => gap.Contains("No context question", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SearchMemoriesAsync_CanFilterByUpdatedSince()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        dbContext.Memories.AddRange(
+            new MemoryEntry
+            {
+                Title = "Older memory",
+                Summary = "Past work",
+                Content = "This should be filtered out.",
+                UpdatedUtc = DateTime.UtcNow.AddDays(-10),
+                Wing = new Wing
+                {
+                    Name = "Archive",
+                    Slug = "archive",
+                    Description = "Older memories."
+                }
+            },
+            new MemoryEntry
+            {
+                Title = "Recent memory",
+                Summary = "Fresh work",
+                Content = "This should remain visible.",
+                UpdatedUtc = DateTime.UtcNow.AddHours(-2),
+                Wing = new Wing
+                {
+                    Name = "Current",
+                    Slug = "current",
+                    Description = "Current memories."
+                }
+            });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new PalaceService(dbContext);
+        var results = await service.SearchMemoriesAsync(null, null, null, null, null, DateTime.UtcNow.AddDays(-1), CancellationToken.None);
+
+        var memory = Assert.Single(results);
+        Assert.Equal("Recent memory", memory.Title);
+    }
+
+    [Fact]
+    public async Task DashboardAndRecentChanges_SurfaceWarningsAndCrossSourceHistory()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        var now = DateTime.UtcNow;
+        var wing = new Wing
+        {
+            Name = "Inspect",
+            Slug = "inspect",
+            Description = "Inspection wing."
+        };
+
+        dbContext.Wings.Add(wing);
+        dbContext.Memories.Add(new MemoryEntry
+        {
+            Title = "Recent memory item",
+            Summary = "Fresh memory context.",
+            Content = "Stored recently for inspection.",
+            UpdatedUtc = now.AddMinutes(-20),
+            Wing = wing
+        });
+        dbContext.Todos.Add(new TodoEntry
+        {
+            Title = "Investigate missing pinned memory",
+            Details = "Open task without a pinned memory should surface a warning.",
+            Status = TodoStatus.InProgress,
+            UpdatedUtc = now.AddMinutes(-10)
+        });
+        dbContext.Tickets.Add(new TicketEntry
+        {
+            TicketNumber = "TKT-0100",
+            Title = "Inspect API history",
+            Description = "Verify the recent changes feed.",
+            Status = TicketStatus.InProgress,
+            Priority = TicketPriority.Medium,
+            Assignee = "Copilot",
+            UpdatedUtc = now.AddMinutes(-5)
+        });
+        dbContext.CodeGraphProjects.Add(new CodeGraphProject
+        {
+            Name = "Focus repo",
+            RootPath = @"C:\Copilot\Focus L-AIci",
+            Summary = "Project scan",
+            FileCount = 25,
+            SymbolCount = 100,
+            RelationshipCount = 120,
+            UpdatedUtc = now.AddMinutes(-15),
+            LastScannedUtc = now.AddMinutes(-3)
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new PalaceService(dbContext);
+        var dashboard = await service.GetDashboardAsync(CancellationToken.None);
+        var changes = await service.GetRecentChangesAsync(10, CancellationToken.None);
+
+        Assert.Contains(dashboard.MissingContextWarnings, warning => warning.Contains("No pinned memories", StringComparison.Ordinal));
+        Assert.Contains(changes, change => change.Kind == "Memory");
+        Assert.Contains(changes, change => change.Kind == "Todo");
+        Assert.Contains(changes, change => change.Kind == "Ticket");
+        Assert.Contains(changes, change => change.Kind == "Code graph");
+        Assert.Equal("Focus repo", changes.First().Title);
     }
 
     private sealed class TestHarness : IAsyncDisposable

@@ -173,6 +173,12 @@ body[data-theme="dark"] .theme-toggle-icon-moon {
   gap: 1.25rem;
 }
 
+.inspector-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+}
+
 .dashboard-main-grid {
   align-items: start;
   grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.9fr);
@@ -214,6 +220,11 @@ body[data-theme="dark"] .theme-toggle-icon-moon {
 .dashboard-panel-body > :last-child,
 .dashboard-mini-panel > :last-child {
   margin-bottom: 0;
+}
+
+.inspector-section-list {
+  display: grid;
+  gap: 1rem;
 }
 
 .dashboard-context-grid {
@@ -1487,6 +1498,7 @@ body[data-theme="dark"] .footer {
   .dashboard-knowledge-grid,
   .dashboard-support-grid,
   .dashboard-utility-grid,
+  .inspector-grid,
   .dashboard-context-grid {
     grid-template-columns: 1fr;
   }

@@ -1,0 +1,211 @@
+@inject SiteSettingsService SiteSettingsService
+@model InspectorViewModel
+@{
+    ViewData["Title"] = "Inspect";
+    var siteSettings = await SiteSettingsService.GetSettingsAsync();
+    var contextResultOptions = new[] { 3, 4, 5, 6, 8, 10 };
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Inspection workspace</p>
+        <h1>Inspect</h1>
+        <p class="page-copy">Check the active database, recent changes, dashboard truth, and missing-context warnings without relying only on visual page inspection.</p>
+    </div>
+</section>
+
+<div class="row g-4 mb-4">
+    <div class="col-xl-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Diagnostics query</h2>
+                    <span class="text-secondary small">Use the same task prompt you would use on the dashboard.</span>
+                </div>
+                <form method="get" class="row g-3">
+                    <div class="col-12">
+                        <label for="Question" class="form-label">What are you trying to do?</label>
+                        <input id="Question" name="Question" value="@Model.Diagnostics.ContextInput.Question" class="form-control" placeholder="e.g. inspect installer diagnostics, understand recent auth changes, find missing context for current work" />
+                    </div>
+                    <div class="col-md-4">
+                        <label for="ResultsPerSection" class="form-label">Items per source</label>
+                        <select id="ResultsPerSection" name="ResultsPerSection" class="form-select">
+                            @foreach (var option in contextResultOptions)
+                            {
+                                if (Model.Diagnostics.ContextInput.ResultsPerSection == option)
+                                {
+                                    <option value="@option" selected>@option per source</option>
+                                }
+                                else
+                                {
+                                    <option value="@option">@option per source</option>
+                                }
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <div class="form-check">
+                            <input type="hidden" name="IncludeCompletedWork" value="false" />
+                            @if (Model.Diagnostics.ContextInput.IncludeCompletedWork)
+                            {
+                                <input id="IncludeCompletedWork" name="IncludeCompletedWork" value="true" checked class="form-check-input" type="checkbox" />
+                            }
+                            else
+                            {
+                                <input id="IncludeCompletedWork" name="IncludeCompletedWork" value="true" class="form-check-input" type="checkbox" />
+                            }
+                            <label for="IncludeCompletedWork" class="form-check-label">Include completed todos and tickets</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <div class="form-check">
+                            <input type="hidden" name="ExpandHistory" value="false" />
+                            @if (Model.Diagnostics.ContextInput.ExpandHistory)
+                            {
+                                <input id="ExpandHistory" name="ExpandHistory" value="true" checked class="form-check-input" type="checkbox" />
+                            }
+                            else
+                            {
+                                <input id="ExpandHistory" name="ExpandHistory" value="true" class="form-check-input" type="checkbox" />
+                            }
+                            <label for="ExpandHistory" class="form-check-label">Include ticket notes, activity, and time logs</label>
+                        </div>
+                    </div>
+                    <div class="col-12 d-flex gap-2 flex-wrap">
+                        <button type="submit" class="btn btn-primary">Run inspection</button>
+                        <a class="btn btn-outline-secondary" asp-action="Inspect">Reset</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-4">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2 class="h5">Active database</h2>
+                    <span class="text-secondary small">Generated @SiteSettingsService.FormatUtc(Model.Diagnostics.GeneratedUtc, siteSettings)</span>
+                </div>
+                <ul class="api-list mb-0">
+                    <li><strong>Current:</strong> @Model.Diagnostics.DatabaseTarget.DatabasePath</li>
+                    <li><strong>Default:</strong> @Model.Diagnostics.DatabaseTarget.DefaultDatabasePath</li>
+                    <li><strong>Mode:</strong> @(Model.Diagnostics.DatabaseTarget.UsesDefaultDatabase ? "Default database" : "Custom override")</li>
+                </ul>
+            </div>
+        </div>
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2 class="h5">Inspector APIs</h2>
+                    <span class="text-secondary small">Structured sources for automation.</span>
+                </div>
+                <ul class="api-list mb-0">
+                    <li><code>@Model.DiagnosticsApiUrl</code></li>
+                    <li><code>@Model.RecentChangesApiUrl</code></li>
+                    <li><code>/api/todos</code></li>
+                    <li><code>/api/tickets</code></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (Model.Diagnostics.DetectedGaps.Count > 0)
+{
+    <div class="alert alert-warning border-0 shadow-sm mb-4">
+        <strong>What is missing right now:</strong>
+        <ul class="mb-0 mt-2">
+            @foreach (var gap in Model.Diagnostics.DetectedGaps)
+            {
+                <li>@gap</li>
+            }
+        </ul>
+    </div>
+}
+else
+{
+    <div class="alert alert-success border-0 shadow-sm mb-4">
+        <strong>No major dashboard context gaps were detected.</strong>
+    </div>
+}
+
+<section class="inspector-grid mb-4">
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+            <div class="section-heading">
+                <h2>Recent changes</h2>
+                <span class="text-secondary small">@Model.RecentChanges.Count latest updates across memories, todos, tickets, and code graph.</span>
+            </div>
+            @if (Model.RecentChanges.Count == 0)
+            {
+                <div class="empty-state compact-empty-state">
+                    <h3>No recent changes</h3>
+                    <p>Once work moves through Focus, the newest updates will appear here.</p>
+                </div>
+            }
+            else
+            {
+                <div class="dashboard-scroll-list dashboard-scroll-list-xl">
+                    @foreach (var change in Model.RecentChanges)
+                    {
+                        <div class="todo-preview-item">
+                            <div class="memory-meta">@change.Kind • @SiteSettingsService.FormatUtc(change.ChangedUtc, siteSettings)</div>
+                            <a class="todo-title-link" href="@change.Url">@change.Title</a>
+                            @if (!string.IsNullOrWhiteSpace(change.Detail))
+                            {
+                                <div class="text-secondary small dashboard-clamp-3">@change.Detail</div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+            <div class="section-heading">
+                <h2>Section truth</h2>
+                <span class="text-secondary small">@Model.Diagnostics.Sections.Count sections from the current dashboard snapshot.</span>
+            </div>
+            <div class="inspector-section-list">
+                @foreach (var diagnosticSection in Model.Diagnostics.Sections)
+                {
+                    <article class="card shadow-sm border-0 inner-card">
+                        <div class="card-body dashboard-mini-panel">
+                            <div class="section-heading">
+                                <h3 class="h6">@diagnosticSection.Title</h3>
+                                <span class="text-secondary small">@diagnosticSection.Count items</span>
+                            </div>
+                            @if (diagnosticSection.IsEmpty)
+                            {
+                                <div class="empty-state compact-empty-state">
+                                    <h3>No records</h3>
+                                    <p>This section is currently empty.</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="code-graph-side-list dashboard-scroll-list">
+                                    @foreach (var item in diagnosticSection.Items.Take(6))
+                                    {
+                                        <a class="code-graph-side-item" href="@item.Url">
+                                            <strong>@item.Title</strong>
+                                            @if (!string.IsNullOrWhiteSpace(item.Subtitle))
+                                            {
+                                                <span>@item.Subtitle</span>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(item.Detail))
+                                            {
+                                                <small>@item.Detail</small>
+                                            }
+                                        </a>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </article>
+                }
+            </div>
+        </div>
+    </div>
+</section>

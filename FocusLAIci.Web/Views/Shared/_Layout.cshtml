@@ -23,7 +23,8 @@
         var codeGraphActive = currentController == "CodeGraph" ? "active" : string.Empty;
         var todosActive = currentController == "Todos" ? "active" : string.Empty;
         var ticketsActive = currentController == "Tickets" ? "active" : string.Empty;
-        var settingsActive = currentController == "Admin" ? "active" : string.Empty;
+        var inspectActive = currentController == "Admin" && currentAction == "Inspect" ? "active" : string.Empty;
+        var settingsActive = currentController == "Admin" && currentAction == "Settings" ? "active" : string.Empty;
     }
     <header>
         <nav class="navbar navbar-expand-lg navbar-dark palace-nav shadow-sm mb-4">
@@ -52,6 +53,9 @@
                         </li>
                         <li class="nav-item">
                             <a class="nav-link @ticketsActive" asp-area="" asp-controller="Tickets" asp-action="Index">Tickets</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link @inspectActive" asp-area="" asp-controller="Admin" asp-action="Inspect">Inspect</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link @settingsActive" asp-area="" asp-controller="Admin" asp-action="Settings">Settings</a>

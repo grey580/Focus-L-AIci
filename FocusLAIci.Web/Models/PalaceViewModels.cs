@@ -14,6 +14,7 @@ public sealed class DashboardViewModel
     public IReadOnlyCollection<MemoryCardViewModel> RecentMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
     public IReadOnlyCollection<MemoryCardViewModel> PinnedMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
     public IReadOnlyCollection<TodoItemViewModel> CurrentTodos { get; init; } = Array.Empty<TodoItemViewModel>();
+    public IReadOnlyCollection<string> MissingContextWarnings { get; init; } = Array.Empty<string>();
     public IReadOnlyCollection<string> SearchExamples { get; init; } = Array.Empty<string>();
 }
 
@@ -26,6 +27,7 @@ public sealed class DashboardDiagnosticsViewModel
     public string ContextSummary { get; init; } = string.Empty;
     public int TopMatchCount { get; init; }
     public IReadOnlyCollection<string> DetectedGaps { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<RecentChangeItemViewModel> RecentChanges { get; init; } = Array.Empty<RecentChangeItemViewModel>();
     public IReadOnlyCollection<DashboardSectionSnapshotViewModel> Sections { get; init; } = Array.Empty<DashboardSectionSnapshotViewModel>();
 }
 
@@ -45,6 +47,23 @@ public sealed class DashboardDiagnosticRecordViewModel
     public string Subtitle { get; init; } = string.Empty;
     public string Detail { get; init; } = string.Empty;
     public string Url { get; init; } = string.Empty;
+}
+
+public sealed class InspectorViewModel
+{
+    public DashboardDiagnosticsViewModel Diagnostics { get; init; } = new();
+    public IReadOnlyCollection<RecentChangeItemViewModel> RecentChanges { get; init; } = Array.Empty<RecentChangeItemViewModel>();
+    public string DiagnosticsApiUrl { get; init; } = string.Empty;
+    public string RecentChangesApiUrl { get; init; } = string.Empty;
+}
+
+public sealed class RecentChangeItemViewModel
+{
+    public string Kind { get; init; } = string.Empty;
+    public string Title { get; init; } = string.Empty;
+    public string Detail { get; init; } = string.Empty;
+    public string Url { get; init; } = string.Empty;
+    public DateTime ChangedUtc { get; init; }
 }
 
 public sealed class DashboardActivityViewModel

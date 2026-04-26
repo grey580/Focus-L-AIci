@@ -27,18 +27,18 @@ public sealed class PalaceApiController : ControllerBase
     public async Task<ActionResult<DashboardDiagnosticsViewModel>> DashboardDiagnostics(
         string? question,
         bool includeCompletedWork,
-        bool expandHistory,
-        int? resultsPerSection,
-        CancellationToken cancellationToken)
+        bool expandHistory = true,
+        CancellationToken cancellationToken = default,
+        int? resultsPerSection = null)
     {
-        var contextInput = string.IsNullOrWhiteSpace(question) && !resultsPerSection.HasValue && !includeCompletedWork && !expandHistory
+        var contextInput = string.IsNullOrWhiteSpace(question) && !resultsPerSection.HasValue && !includeCompletedWork && expandHistory
             ? null
             : new ContextBriefInput
             {
                 Question = question?.Trim() ?? string.Empty,
                 IncludeCompletedWork = includeCompletedWork,
                 ExpandHistory = expandHistory,
-                ResultsPerSection = resultsPerSection.GetValueOrDefault(4)
+                ResultsPerSection = resultsPerSection.GetValueOrDefault(6)
             };
 
         var diagnostics = await _palaceService.GetDashboardDiagnosticsAsync(contextInput, cancellationToken);
@@ -51,8 +51,15 @@ public sealed class PalaceApiController : ControllerBase
             ContextSummary = diagnostics.ContextSummary,
             TopMatchCount = diagnostics.TopMatchCount,
             DetectedGaps = diagnostics.DetectedGaps,
+            RecentChanges = diagnostics.RecentChanges,
             Sections = diagnostics.Sections
         });
+    }
+
+    [HttpGet("recent-changes")]
+    public async Task<ActionResult<IReadOnlyCollection<RecentChangeItemViewModel>>> RecentChanges(int limit = 20, CancellationToken cancellationToken = default)
+    {
+        return Ok(await _palaceService.GetRecentChangesAsync(limit, cancellationToken));
     }
 
     [HttpGet("memories")]
@@ -62,9 +69,10 @@ public sealed class PalaceApiController : ControllerBase
         Guid? roomId,
         MemoryKind? kind,
         string? tag,
+        DateTime? updatedSince,
         CancellationToken cancellationToken)
     {
-        return Ok(await _palaceService.SearchMemoriesAsync(query, wingId, roomId, kind, tag, cancellationToken));
+        return Ok(await _palaceService.SearchMemoriesAsync(query, wingId, roomId, kind, tag, updatedSince, cancellationToken));
     }
 
     [HttpGet("memories/{id:guid}")]

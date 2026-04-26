@@ -117,6 +117,18 @@ public sealed class PalaceService
             RecentMemories = memories.Select(MapCard).ToArray(),
             PinnedMemories = memories.Where(x => x.IsPinned).Select(MapCard).ToArray(),
             CurrentTodos = currentTodos.Select(MapTodo).ToArray(),
+            MissingContextWarnings = BuildDashboardDetectedGaps(
+                new DashboardViewModel
+                {
+                    ContextInput = effectiveContextInput,
+                    ContextPack = contextPack,
+                    ActiveTickets = activeTickets.Select(MapDashboardTicketSummary).ToArray(),
+                    RecentActivity = recentActivity,
+                    Wings = wings,
+                    RecentMemories = memories.Select(MapCard).ToArray(),
+                    PinnedMemories = memories.Where(x => x.IsPinned).Select(MapCard).ToArray(),
+                    CurrentTodos = currentTodos.Select(MapTodo).ToArray()
+                }),
             SearchExamples =
             [
                 "installer reliability",
@@ -129,7 +141,7 @@ public sealed class PalaceService
     public async Task<DashboardDiagnosticsViewModel> GetDashboardDiagnosticsAsync(ContextBriefInput? contextInput, CancellationToken cancellationToken)
     {
         var dashboard = await GetDashboardAsync(contextInput, cancellationToken);
-        var gaps = BuildDashboardDetectedGaps(dashboard);
+        var recentChanges = await GetRecentChangesAsync(16, cancellationToken);
 
         return new DashboardDiagnosticsViewModel
         {
@@ -138,7 +150,8 @@ public sealed class PalaceService
             ContextInput = dashboard.ContextInput,
             ContextSummary = dashboard.ContextPack?.Summary ?? string.Empty,
             TopMatchCount = dashboard.ContextPack?.TopMatches.Count ?? 0,
-            DetectedGaps = gaps,
+            DetectedGaps = dashboard.MissingContextWarnings,
+            RecentChanges = recentChanges,
             Sections =
             [
                 new DashboardSectionSnapshotViewModel
@@ -247,6 +260,87 @@ public sealed class PalaceService
                     }).ToArray() ?? Array.Empty<DashboardDiagnosticRecordViewModel>()
                 }
             ]
+        };
+    }
+
+    public async Task<IReadOnlyCollection<RecentChangeItemViewModel>> GetRecentChangesAsync(int limit, CancellationToken cancellationToken)
+    {
+        var effectiveLimit = Math.Clamp(limit, 1, 50);
+        var memoryChanges = await _dbContext.Memories
+            .AsNoTracking()
+            .OrderByDescending(x => x.UpdatedUtc)
+            .Take(effectiveLimit)
+            .Select(x => new RecentChangeItemViewModel
+            {
+                Kind = "Memory",
+                Title = x.Title,
+                Detail = x.Summary,
+                Url = $"/Palace/Memory/{x.Id}",
+                ChangedUtc = x.UpdatedUtc
+            })
+            .ToListAsync(cancellationToken);
+
+        var todoChanges = await _dbContext.Todos
+            .AsNoTracking()
+            .OrderByDescending(x => x.UpdatedUtc)
+            .Take(effectiveLimit)
+            .Select(x => new RecentChangeItemViewModel
+            {
+                Kind = "Todo",
+                Title = x.Title,
+                Detail = x.Status == TodoStatus.Done ? "Completed work item" : $"Status: {MapDashboardTodoStatusLabel(x.Status)}",
+                Url = $"/Todos/Details/{x.Id}",
+                ChangedUtc = x.UpdatedUtc
+            })
+            .ToListAsync(cancellationToken);
+
+        var ticketChanges = await _dbContext.Tickets
+            .AsNoTracking()
+            .Where(x => x.ParentTicketId == null)
+            .OrderByDescending(x => x.UpdatedUtc)
+            .Take(effectiveLimit)
+            .Select(x => new RecentChangeItemViewModel
+            {
+                Kind = "Ticket",
+                Title = $"{x.TicketNumber} - {x.Title}",
+                Detail = x.Status == TicketStatus.Completed ? "Completed ticket" : $"Status: {MapTicketStatusLabel(x.Status)}",
+                Url = $"/Tickets/Details/{x.Id}",
+                ChangedUtc = x.UpdatedUtc
+            })
+            .ToListAsync(cancellationToken);
+
+        var codeGraphChanges = await _dbContext.CodeGraphProjects
+            .AsNoTracking()
+            .OrderByDescending(x => x.LastScannedUtc ?? x.UpdatedUtc)
+            .Take(effectiveLimit)
+            .Select(x => new RecentChangeItemViewModel
+            {
+                Kind = "Code graph",
+                Title = x.Name,
+                Detail = x.LastScannedUtc.HasValue
+                    ? $"Scanned {x.FileCount} files and {x.SymbolCount} symbols."
+                    : "Project created but not scanned yet.",
+                Url = $"/CodeGraph/Project/{x.Id}",
+                ChangedUtc = x.LastScannedUtc ?? x.UpdatedUtc
+            })
+            .ToListAsync(cancellationToken);
+
+        return memoryChanges
+            .Concat(todoChanges)
+            .Concat(ticketChanges)
+            .Concat(codeGraphChanges)
+            .OrderByDescending(x => x.ChangedUtc)
+            .Take(effectiveLimit)
+            .ToArray();
+    }
+
+    public async Task<InspectorViewModel> GetInspectorAsync(ContextBriefInput? contextInput, CancellationToken cancellationToken)
+    {
+        var diagnostics = await GetDashboardDiagnosticsAsync(contextInput, cancellationToken);
+        return new InspectorViewModel
+        {
+            Diagnostics = diagnostics,
+            RecentChanges = diagnostics.RecentChanges
         };
     }
 
@@ -811,9 +905,9 @@ public sealed class PalaceService
         };
     }
 
-    public async Task<IReadOnlyCollection<MemoryCardViewModel>> SearchMemoriesAsync(string? query, Guid? wingId, Guid? roomId, MemoryKind? kind, string? tag, CancellationToken cancellationToken)
+    public async Task<IReadOnlyCollection<MemoryCardViewModel>> SearchMemoriesAsync(string? query, Guid? wingId, Guid? roomId, MemoryKind? kind, string? tag, DateTime? updatedSince, CancellationToken cancellationToken)
     {
-        return await BuildMemoryQuery(query, wingId, roomId, kind, tag)
+        return await BuildMemoryQuery(query, wingId, roomId, kind, tag, updatedSince)
             .OrderByDescending(x => x.IsPinned)
             .ThenByDescending(x => x.UpdatedUtc)
             .Take(100)
@@ -835,7 +929,7 @@ public sealed class PalaceService
             .ToListAsync(cancellationToken);
     }
 
-    private IQueryable<MemoryEntry> BuildMemoryQuery(string? query = null, Guid? wingId = null, Guid? roomId = null, MemoryKind? kind = null, string? tag = null)
+    private IQueryable<MemoryEntry> BuildMemoryQuery(string? query = null, Guid? wingId = null, Guid? roomId = null, MemoryKind? kind = null, string? tag = null, DateTime? updatedSince = null)
     {
         var memories = _dbContext.Memories
             .AsNoTracking()
@@ -874,6 +968,11 @@ public sealed class PalaceService
         {
             var tagSlug = SlugUtility.CreateSlug(tag);
             memories = memories.Where(x => x.MemoryTags.Any(mt => mt.Tag!.Slug == tagSlug));
+        }
+
+        if (updatedSince.HasValue)
+        {
+            memories = memories.Where(x => x.UpdatedUtc >= updatedSince.Value);
         }
 
         return memories;

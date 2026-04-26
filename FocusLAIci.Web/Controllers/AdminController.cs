@@ -8,19 +8,67 @@ public sealed class AdminController : Controller
 {
     private readonly FocusDatabaseTargetService _databaseTargetService;
     private readonly SiteSettingsService _siteSettingsService;
+    private readonly PalaceService _palaceService;
 
     public AdminController(
         SiteSettingsService siteSettingsService,
-        FocusDatabaseTargetService databaseTargetService)
+        FocusDatabaseTargetService databaseTargetService,
+        PalaceService palaceService)
     {
         _siteSettingsService = siteSettingsService;
         _databaseTargetService = databaseTargetService;
+        _palaceService = palaceService;
     }
 
     [HttpGet]
     public async Task<IActionResult> Settings(CancellationToken cancellationToken)
     {
         return View(await _siteSettingsService.BuildAdminSettingsAsync(cancellationToken));
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Inspect([FromQuery] ContextBriefInput? input, CancellationToken cancellationToken)
+    {
+        var model = await _palaceService.GetInspectorAsync(
+            input is not null && string.IsNullOrWhiteSpace(input.Question) && !input.IncludeCompletedWork && input.ExpandHistory && input.ResultsPerSection == 6
+                ? null
+                : input,
+            cancellationToken);
+
+        var diagnosticsUrl = "/api/palace/dashboard-diagnostics";
+        var recentChangesUrl = "/api/palace/recent-changes";
+        var diagnosticsQuery = new List<string>();
+        if (!string.IsNullOrWhiteSpace(model.Diagnostics.ContextInput.Question))
+        {
+            var encodedQuestion = Uri.EscapeDataString(model.Diagnostics.ContextInput.Question);
+            diagnosticsQuery.Add($"question={encodedQuestion}");
+        }
+
+        diagnosticsQuery.Add($"includeCompletedWork={model.Diagnostics.ContextInput.IncludeCompletedWork.ToString().ToLowerInvariant()}");
+        diagnosticsQuery.Add($"expandHistory={model.Diagnostics.ContextInput.ExpandHistory.ToString().ToLowerInvariant()}");
+        diagnosticsQuery.Add($"resultsPerSection={model.Diagnostics.ContextInput.ResultsPerSection}");
+        diagnosticsUrl = $"{diagnosticsUrl}?{string.Join("&", diagnosticsQuery)}";
+
+        var diagnosticsWithTarget = new DashboardDiagnosticsViewModel
+        {
+            GeneratedUtc = model.Diagnostics.GeneratedUtc,
+            DatabaseTarget = _databaseTargetService.GetCurrentTarget(),
+            Stats = model.Diagnostics.Stats,
+            ContextInput = model.Diagnostics.ContextInput,
+            ContextSummary = model.Diagnostics.ContextSummary,
+            TopMatchCount = model.Diagnostics.TopMatchCount,
+            DetectedGaps = model.Diagnostics.DetectedGaps,
+            RecentChanges = model.Diagnostics.RecentChanges,
+            Sections = model.Diagnostics.Sections
+        };
+
+        return View(new InspectorViewModel
+        {
+            Diagnostics = diagnosticsWithTarget,
+            RecentChanges = model.RecentChanges,
+            DiagnosticsApiUrl = diagnosticsUrl,
+            RecentChangesApiUrl = recentChangesUrl
+        });
     }
 
     [HttpPost]

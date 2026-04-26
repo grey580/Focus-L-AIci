@@ -51,6 +51,27 @@
     </div>
 </section>
 
+@if (Model.MissingContextWarnings.Count > 0)
+{
+    <div class="alert alert-warning border-0 shadow-sm mb-4">
+        <div class="section-heading mb-2">
+            <strong>What is missing right now</strong>
+            <a asp-controller="Admin"
+               asp-action="Inspect"
+               asp-route-Question="@Model.ContextInput.Question"
+               asp-route-IncludeCompletedWork="@Model.ContextInput.IncludeCompletedWork"
+               asp-route-ExpandHistory="@Model.ContextInput.ExpandHistory"
+               asp-route-ResultsPerSection="@Model.ContextInput.ResultsPerSection">Open Inspect</a>
+        </div>
+        <ul class="mb-0">
+            @foreach (var warning in Model.MissingContextWarnings.Take(3))
+            {
+                <li>@warning</li>
+            }
+        </ul>
+    </div>
+}
+
 <section class="dashboard-main-grid mb-4">
     <div class="dashboard-primary-stack">
         <div class="card shadow-sm border-0 dashboard-panel">
@@ -485,6 +506,9 @@
                     <ul class="api-list">
                         <li><code>GET /api/palace/summary</code></li>
                         <li><code>GET /api/palace/dashboard-diagnostics</code></li>
+                        <li><code>GET /api/palace/recent-changes</code></li>
+                        <li><code>GET /api/todos</code></li>
+                        <li><code>GET /api/tickets</code></li>
                         <li><code>GET /api/palace/memories?query=installer</code></li>
                         <li><code>POST /api/context/brief</code></li>
                         <li><code>POST /api/palace/memories</code></li>
