@@ -177,6 +177,7 @@ public sealed class MemoryEntry
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid? WingId { get; set; }
     public Guid? RoomId { get; set; }
+    public Guid? SupersededByMemoryId { get; set; }
 
     [MaxLength(200)]
     public string Title { get; set; } = string.Empty;
@@ -193,14 +194,24 @@ public sealed class MemoryEntry
 
     public int Importance { get; set; } = 3;
     public bool IsPinned { get; set; }
+    public MemoryLifecycleState LifecycleState { get; set; } = MemoryLifecycleState.Active;
     public MemoryVerificationStatus VerificationStatus { get; set; } = MemoryVerificationStatus.Unverified;
     public DateTime? LastVerifiedUtc { get; set; }
     public DateTime? ReviewAfterUtc { get; set; }
+    
+    [MaxLength(260)]
+    public string LifecycleReason { get; set; } = string.Empty;
+    
+    public DateTime? LifecycleChangedUtc { get; set; }
+    public DateTime? ArchivedUtc { get; set; }
+    public DateTime? LastReferencedUtc { get; set; }
+    public int ReferenceCount { get; set; }
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
     public DateTime? OccurredUtc { get; set; }
     public Wing? Wing { get; set; }
     public Room? Room { get; set; }
+    public MemoryEntry? SupersededByMemory { get; set; }
     public ICollection<MemoryEntryTag> MemoryTags { get; set; } = new List<MemoryEntryTag>();
     public ICollection<MemoryLink> OutgoingLinks { get; set; } = new List<MemoryLink>();
     public ICollection<MemoryLink> IncomingLinks { get; set; } = new List<MemoryLink>();
@@ -283,6 +294,13 @@ public enum MemoryVerificationStatus
     Unverified = 1,
     Verified = 2,
     NeedsReview = 3
+}
+
+public enum MemoryLifecycleState
+{
+    Active = 1,
+    Archived = 2,
+    Superseded = 3
 }
 
 public enum TicketStatus

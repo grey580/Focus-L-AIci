@@ -133,9 +133,13 @@ public sealed class FocusMemoryContext : DbContext
         {
             entity.HasIndex(x => x.VerificationStatus);
             entity.HasIndex(x => x.ReviewAfterUtc);
+            entity.HasIndex(x => x.LifecycleState);
+            entity.HasIndex(x => x.SupersededByMemoryId);
+            entity.HasIndex(x => x.LastReferencedUtc);
             entity.Property(x => x.Title).HasMaxLength(200);
             entity.Property(x => x.Summary).HasMaxLength(500);
             entity.Property(x => x.SourceReference).HasMaxLength(260);
+            entity.Property(x => x.LifecycleReason).HasMaxLength(260);
             entity.HasOne(x => x.Wing)
                 .WithMany(x => x.Memories)
                 .HasForeignKey(x => x.WingId)
@@ -143,6 +147,10 @@ public sealed class FocusMemoryContext : DbContext
             entity.HasOne(x => x.Room)
                 .WithMany(x => x.Memories)
                 .HasForeignKey(x => x.RoomId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(x => x.SupersededByMemory)
+                .WithMany()
+                .HasForeignKey(x => x.SupersededByMemoryId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
 

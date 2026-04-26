@@ -191,6 +191,129 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task ArchiveMemoryAsync_RemovesMemoryFromDefaultRetrievalButKeepsDetailVisible()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var memoryId = await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Archive candidate",
+            Summary = "Should leave normal retrieval after archive.",
+            Content = "Archive this memory during governance cleanup.",
+            Kind = MemoryKind.Reference,
+            SourceKind = SourceKind.ManualNote,
+            Importance = 3,
+            IsPinned = true,
+            TagsText = "archive, governance"
+        }, CancellationToken.None);
+
+        await service.ArchiveMemoryAsync(memoryId, "No longer needed in active retrieval.", CancellationToken.None);
+
+        var search = await service.SearchMemoriesAsync("archive candidate", null, null, null, null, null, CancellationToken.None);
+        var workspace = await service.GetWorkspaceExportAsync(CancellationToken.None);
+        var detail = await service.GetMemoryAsync(memoryId, CancellationToken.None);
+
+        Assert.DoesNotContain(search, x => x.Id == memoryId);
+        Assert.DoesNotContain("Archive candidate", workspace.ExportText);
+        Assert.NotNull(detail);
+        Assert.Equal(MemoryLifecycleState.Archived, detail!.Memory.LifecycleState);
+        Assert.True(detail.Memory.IsRetired);
+        Assert.Equal("No longer needed in active retrieval.", detail.Memory.LifecycleReason);
+    }
+
+    [Fact]
+    public async Task SupersedeMemoryAsync_HidesOriginalAndLinksReplacement()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var originalId = await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Old install guidance",
+            Summary = "Outdated answer.",
+            Content = "Original guidance.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.ManualNote,
+            Importance = 4,
+            IsPinned = true,
+            TagsText = "install, old"
+        }, CancellationToken.None);
+
+        var replacementId = await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "New install guidance",
+            Summary = "Current answer.",
+            Content = "Replacement guidance.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.ManualNote,
+            Importance = 4,
+            IsPinned = true,
+            TagsText = "install, new"
+        }, CancellationToken.None);
+
+        await service.SupersedeMemoryAsync(originalId, replacementId, "Replacement memory is canonical.", CancellationToken.None);
+
+        var search = await service.SearchMemoriesAsync("guidance", null, null, null, null, null, CancellationToken.None);
+        var oldDetail = await service.GetMemoryAsync(originalId, CancellationToken.None);
+
+        Assert.DoesNotContain(search, x => x.Id == originalId);
+        Assert.Contains(search, x => x.Id == replacementId);
+        Assert.NotNull(oldDetail);
+        Assert.Equal(MemoryLifecycleState.Superseded, oldDetail!.Memory.LifecycleState);
+        Assert.Equal(replacementId, oldDetail.Memory.SupersededByMemoryId);
+        Assert.Equal("New install guidance", oldDetail.Memory.SupersededByTitle);
+    }
+
+    [Fact]
+    public async Task GetInspectorAsync_IncludesGovernanceQueueForRetiredAndAgingMemories()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var archivedId = await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Archived memory",
+            Summary = "Should appear in governance queue.",
+            Content = "Retired content.",
+            Kind = MemoryKind.Reference,
+            SourceKind = SourceKind.ManualNote,
+            Importance = 2,
+            TagsText = "archive"
+        }, CancellationToken.None);
+
+        var staleId = await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Aging memory",
+            Summary = "Still unverified.",
+            Content = "Needs triage.",
+            Kind = MemoryKind.Reference,
+            SourceKind = SourceKind.ManualNote,
+            Importance = 2,
+            TagsText = "aging"
+        }, CancellationToken.None);
+
+        await service.ArchiveMemoryAsync(archivedId, "Archived for test.", CancellationToken.None);
+
+        await using (var updateContext = harness.CreateDbContext())
+        {
+            var stale = await updateContext.Memories.FirstAsync(x => x.Id == staleId, CancellationToken.None);
+            stale.UpdatedUtc = DateTime.UtcNow.AddDays(-30);
+            await updateContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var inspector = await service.GetInspectorAsync(null, CancellationToken.None);
+
+        Assert.Contains(inspector.GovernanceQueue.Items, x => x.Id == archivedId);
+        Assert.Contains(inspector.GovernanceQueue.Items, x => x.Id == staleId);
+        Assert.True(inspector.GovernanceQueue.ArchivedCount >= 1);
+        Assert.True(inspector.GovernanceQueue.UnverifiedActiveCount >= 1);
+    }
+
+    [Fact]
     public async Task GetVisualizerAsync_GroupsMemoriesByWingRoomAndTag()
     {
         await using var harness = await TestHarness.CreateAsync();

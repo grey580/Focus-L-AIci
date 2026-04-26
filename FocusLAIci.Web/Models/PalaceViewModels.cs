@@ -68,6 +68,7 @@ public sealed class InspectorViewModel
     public string RecentChangesApiUrl { get; init; } = string.Empty;
     public string WorkspaceApiUrl { get; init; } = string.Empty;
     public WorkspaceExportViewModel WorkspaceExport { get; init; } = new();
+    public MemoryGovernanceQueueViewModel GovernanceQueue { get; init; } = new();
 }
 
 public sealed class RecentChangeItemViewModel
@@ -102,6 +103,34 @@ public sealed class TicketStatusUpdateInput
 {
     [Required]
     public TicketStatus Status { get; set; }
+}
+
+public sealed class MemoryBulkGovernanceInput
+{
+    public IReadOnlyCollection<Guid> MemoryIds { get; set; } = Array.Empty<Guid>();
+    public MemoryBulkGovernanceAction Action { get; set; }
+
+    [StringLength(260)]
+    public string Reason { get; set; } = string.Empty;
+}
+
+public sealed class MemorySupersedeInput
+{
+    [Required]
+    public Guid ReplacementMemoryId { get; set; }
+
+    [StringLength(260)]
+    public string Reason { get; set; } = string.Empty;
+}
+
+public sealed class MemoryGovernanceQueueViewModel
+{
+    public IReadOnlyCollection<MemoryCardViewModel> Items { get; init; } = Array.Empty<MemoryCardViewModel>();
+    public int ArchivedCount { get; init; }
+    public int SupersededCount { get; init; }
+    public int NeedsReviewCount { get; init; }
+    public int UnverifiedActiveCount { get; init; }
+    public MemoryBulkGovernanceInput BulkInput { get; init; } = new();
 }
 
 public sealed class DashboardActivityViewModel
@@ -510,6 +539,7 @@ public sealed class TagCloudItemViewModel
 public sealed class MemoryCardViewModel
 {
     public Guid Id { get; init; }
+    public Guid? SupersededByMemoryId { get; init; }
     public string Title { get; init; } = string.Empty;
     public string Summary { get; init; } = string.Empty;
     public string WingSlug { get; init; } = string.Empty;
@@ -519,11 +549,19 @@ public sealed class MemoryCardViewModel
     public SourceKind SourceKind { get; init; }
     public int Importance { get; init; }
     public bool IsPinned { get; init; }
+    public MemoryLifecycleState LifecycleState { get; init; }
+    public string LifecycleLabel { get; init; } = string.Empty;
+    public string LifecycleReason { get; init; } = string.Empty;
+    public string SupersededByTitle { get; init; } = string.Empty;
     public MemoryVerificationStatus VerificationStatus { get; init; }
     public string VerificationStatusLabel { get; init; } = string.Empty;
     public DateTime? LastVerifiedUtc { get; init; }
     public DateTime? ReviewAfterUtc { get; init; }
+    public DateTime? LastReferencedUtc { get; init; }
+    public DateTime? LifecycleChangedUtc { get; init; }
+    public int ReferenceCount { get; init; }
     public bool IsReviewDue { get; init; }
+    public bool IsRetired { get; init; }
     public string FreshnessLabel { get; init; } = string.Empty;
     public DateTime UpdatedUtc { get; init; }
     public IReadOnlyCollection<string> Tags { get; init; } = Array.Empty<string>();
@@ -536,6 +574,8 @@ public sealed class MemoryDetailViewModel
     public string SourceReference { get; init; } = string.Empty;
     public DateTime CreatedUtc { get; init; }
     public DateTime? OccurredUtc { get; init; }
+    public MemorySupersedeInput SupersedeInput { get; init; } = new();
+    public IReadOnlyCollection<SelectListItem> SupersedeTargetOptions { get; init; } = Array.Empty<SelectListItem>();
     public IReadOnlyCollection<MemoryRelationshipViewModel> OutgoingLinks { get; init; } = Array.Empty<MemoryRelationshipViewModel>();
     public IReadOnlyCollection<MemoryRelationshipViewModel> IncomingLinks { get; init; } = Array.Empty<MemoryRelationshipViewModel>();
     public ContextLinksPanelViewModel ContextLinks { get; init; } = new();
@@ -635,6 +675,14 @@ public sealed class MemoryEditorInput
 
     [Display(Name = "Tags")]
     public string TagsText { get; set; } = string.Empty;
+}
+
+public enum MemoryBulkGovernanceAction
+{
+    Verify = 1,
+    MarkNeedsReview = 2,
+    Archive = 3,
+    RestoreActive = 4
 }
 
 public sealed class WingEditorInput

@@ -139,4 +139,21 @@ public sealed class AdminController : Controller
             : $"Removed {removedCount} stray Concurrent Wing test entr{(removedCount == 1 ? "y" : "ies")}.";
         return RedirectToAction(nameof(Settings));
     }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> BulkMemoryGovernance(MemoryBulkGovernanceInput input, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _palaceService.BulkUpdateMemoryGovernanceAsync(input, cancellationToken);
+            TempData["SettingsMessage"] = "Memory governance updates applied.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            TempData["SettingsMessage"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Inspect));
+    }
 }

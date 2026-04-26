@@ -292,6 +292,13 @@ public static class MemorySeeder
         await EnsureColumnExistsAsync(dbContext, "Memories", "VerificationStatus", "INTEGER NOT NULL DEFAULT 1", cancellationToken);
         await EnsureColumnExistsAsync(dbContext, "Memories", "LastVerifiedUtc", "TEXT NULL", cancellationToken);
         await EnsureColumnExistsAsync(dbContext, "Memories", "ReviewAfterUtc", "TEXT NULL", cancellationToken);
+        await EnsureColumnExistsAsync(dbContext, "Memories", "LifecycleState", "INTEGER NOT NULL DEFAULT 1", cancellationToken);
+        await EnsureColumnExistsAsync(dbContext, "Memories", "SupersededByMemoryId", "TEXT NULL", cancellationToken);
+        await EnsureColumnExistsAsync(dbContext, "Memories", "LifecycleReason", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await EnsureColumnExistsAsync(dbContext, "Memories", "LifecycleChangedUtc", "TEXT NULL", cancellationToken);
+        await EnsureColumnExistsAsync(dbContext, "Memories", "ArchivedUtc", "TEXT NULL", cancellationToken);
+        await EnsureColumnExistsAsync(dbContext, "Memories", "LastReferencedUtc", "TEXT NULL", cancellationToken);
+        await EnsureColumnExistsAsync(dbContext, "Memories", "ReferenceCount", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
         await dbContext.Database.ExecuteSqlRawAsync(
             """
             CREATE INDEX IF NOT EXISTS IX_Memories_VerificationStatus
@@ -302,6 +309,24 @@ public static class MemorySeeder
             """
             CREATE INDEX IF NOT EXISTS IX_Memories_ReviewAfterUtc
             ON Memories(ReviewAfterUtc);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_Memories_LifecycleState
+            ON Memories(LifecycleState);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_Memories_SupersededByMemoryId
+            ON Memories(SupersededByMemoryId);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_Memories_LastReferencedUtc
+            ON Memories(LastReferencedUtc);
             """,
             cancellationToken);
     }

@@ -44,6 +44,7 @@ public sealed partial class ContextService
 
         var memories = await _dbContext.Memories
             .AsNoTracking()
+            .Where(x => x.LifecycleState == MemoryLifecycleState.Active)
             .Include(x => x.Wing)
             .Include(x => x.Room)
             .Include(x => x.MemoryTags)
@@ -368,6 +369,8 @@ public sealed partial class ContextService
         projectResults = ApplyLinkBoost(projectResults, linkedKeys);
         fileResults = ApplyLinkBoost(fileResults, linkedKeys);
         nodeResults = ApplyLinkBoost(nodeResults, linkedKeys);
+
+        await TouchMemoryReferencesAsync(memoryResults.Select(x => x.Id).ToArray(), cancellationToken);
 
         var topMatches = memoryResults
             .Concat(todoResults)
@@ -820,6 +823,28 @@ public sealed partial class ContextService
             .OrderByDescending(x => x.Score)
             .ThenBy(x => x.Title)
             .ToArray();
+    }
+
+    private async Task TouchMemoryReferencesAsync(IReadOnlyCollection<Guid> memoryIds, CancellationToken cancellationToken)
+    {
+        if (memoryIds.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        var ids = memoryIds.Distinct().ToArray();
+        var memories = await _dbContext.Memories
+            .Where(x => ids.Contains(x.Id))
+            .ToListAsync(cancellationToken);
+
+        foreach (var memory in memories)
+        {
+            memory.LastReferencedUtc = now;
+            memory.ReferenceCount += 1;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static ContextScoreOutcome ScoreFields(

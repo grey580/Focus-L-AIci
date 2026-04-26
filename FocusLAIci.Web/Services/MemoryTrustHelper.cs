@@ -17,6 +17,17 @@ internal static class MemoryTrustHelper
 {
     public const int DefaultReviewWindowDays = 90;
 
+    public static bool IsActive(MemoryEntry memory)
+        => memory.LifecycleState == MemoryLifecycleState.Active;
+
+    public static string GetLifecycleLabel(MemoryLifecycleState lifecycleState)
+        => lifecycleState switch
+        {
+            MemoryLifecycleState.Archived => "Archived",
+            MemoryLifecycleState.Superseded => "Superseded",
+            _ => "Active"
+        };
+
     public static MemoryTrustSnapshot Build(MemoryEntry memory, DateTime? utcNow = null)
         => Build(memory.VerificationStatus, memory.UpdatedUtc, memory.LastVerifiedUtc, memory.ReviewAfterUtc, utcNow);
 

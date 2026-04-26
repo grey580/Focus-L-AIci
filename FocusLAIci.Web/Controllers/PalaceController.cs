@@ -89,6 +89,51 @@ public sealed class PalaceController : Controller
         }
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ArchiveMemory(Guid id, string? reason, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _palaceService.ArchiveMemoryAsync(id, reason, cancellationToken);
+            return RedirectToAction(nameof(Memory), new { id });
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RestoreMemory(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _palaceService.MarkMemoryActiveAsync(id, cancellationToken);
+            return RedirectToAction(nameof(Memory), new { id });
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SupersedeMemory(Guid id, MemorySupersedeInput input, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _palaceService.SupersedeMemoryAsync(id, input.ReplacementMemoryId, input.Reason, cancellationToken);
+            return RedirectToAction(nameof(Memory), new { id });
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+    }
+
     [HttpGet]
     public async Task<IActionResult> NewMemory(Guid? wingId, CancellationToken cancellationToken)
     {

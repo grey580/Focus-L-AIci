@@ -58,6 +58,7 @@ public sealed class PalaceService
 
         var recentMemoryActivity = await _dbContext.Memories
             .AsNoTracking()
+            .Where(x => x.LifecycleState == MemoryLifecycleState.Active)
             .OrderByDescending(x => x.UpdatedUtc)
             .Take(4)
             .Select(x => new DashboardActivityViewModel
@@ -329,6 +330,7 @@ public sealed class PalaceService
         var effectiveLimit = Math.Clamp(limit, 1, 50);
         var memoryChanges = await _dbContext.Memories
             .AsNoTracking()
+            .Where(x => x.LifecycleState == MemoryLifecycleState.Active)
             .OrderByDescending(x => x.UpdatedUtc)
             .Take(effectiveLimit)
             .Select(x => new RecentChangeItemViewModel
@@ -401,7 +403,8 @@ public sealed class PalaceService
         return new InspectorViewModel
         {
             Diagnostics = diagnostics,
-            RecentChanges = diagnostics.RecentChanges
+            RecentChanges = diagnostics.RecentChanges,
+            GovernanceQueue = await BuildGovernanceQueueAsync(cancellationToken)
         };
     }
 
@@ -514,6 +517,7 @@ public sealed class PalaceService
 
         var memories = await _dbContext.Memories
             .AsNoTracking()
+            .Where(x => x.LifecycleState == MemoryLifecycleState.Active)
             .Include(x => x.MemoryTags)
                 .ThenInclude(x => x.Tag)
             .OrderByDescending(x => x.IsPinned)
@@ -632,6 +636,8 @@ public sealed class PalaceService
             .AsNoTracking()
             .Include(x => x.Rooms)
             .Include(x => x.Memories)
+                .ThenInclude(x => x.SupersededByMemory)
+            .Include(x => x.Memories)
                 .ThenInclude(x => x.MemoryTags)
                     .ThenInclude(x => x.Tag)
             .FirstOrDefaultAsync(x => x.Slug == slug, cancellationToken);
@@ -653,10 +659,11 @@ public sealed class PalaceService
                     Id = x.Id,
                     Name = x.Name,
                     Description = x.Description,
-                    MemoryCount = wing.Memories.Count(m => m.RoomId == x.Id)
+                    MemoryCount = wing.Memories.Count(m => m.RoomId == x.Id && m.LifecycleState == MemoryLifecycleState.Active)
                 })
                 .ToArray(),
             Memories = wing.Memories
+                .Where(MemoryTrustHelper.IsActive)
                 .OrderByDescending(x => x.IsPinned)
                 .ThenByDescending(x => x.UpdatedUtc)
                 .Select(MapCard)
@@ -666,10 +673,13 @@ public sealed class PalaceService
 
     public async Task<MemoryDetailViewModel?> GetMemoryAsync(Guid id, CancellationToken cancellationToken)
     {
+        await TouchMemoryReferencesAsync([id], cancellationToken);
+
         var query = _dbContext.Memories
             .AsNoTracking()
             .Include(x => x.Wing)
             .Include(x => x.Room)
+            .Include(x => x.SupersededByMemory)
             .Include(x => x.MemoryTags)
                 .ThenInclude(x => x.Tag)
             .Include(x => x.OutgoingLinks)
@@ -691,6 +701,7 @@ public sealed class PalaceService
             SourceReference = memory.SourceReference,
             CreatedUtc = memory.CreatedUtc,
             OccurredUtc = memory.OccurredUtc,
+            SupersedeTargetOptions = await BuildSupersedeTargetOptionsAsync(memory.Id, memory.WingId, cancellationToken),
             OutgoingLinks = memory.OutgoingLinks
                 .OrderBy(x => x.Label)
                 .Select(x => new MemoryRelationshipViewModel
@@ -891,6 +902,111 @@ public sealed class PalaceService
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task MarkMemoryActiveAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var memory = await _dbContext.Memories.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            ?? throw new InvalidOperationException("Memory entry not found.");
+
+        var now = DateTime.UtcNow;
+        memory.LifecycleState = MemoryLifecycleState.Active;
+        memory.SupersededByMemoryId = null;
+        memory.LifecycleReason = string.Empty;
+        memory.LifecycleChangedUtc = now;
+        memory.ArchivedUtc = null;
+        memory.UpdatedUtc = now;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ArchiveMemoryAsync(Guid id, string? reason, CancellationToken cancellationToken)
+    {
+        var memory = await _dbContext.Memories.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            ?? throw new InvalidOperationException("Memory entry not found.");
+
+        var now = DateTime.UtcNow;
+        memory.LifecycleState = MemoryLifecycleState.Archived;
+        memory.SupersededByMemoryId = null;
+        memory.LifecycleReason = (reason ?? string.Empty).Trim();
+        memory.LifecycleChangedUtc = now;
+        memory.ArchivedUtc = now;
+        memory.IsPinned = false;
+        memory.UpdatedUtc = now;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SupersedeMemoryAsync(Guid id, Guid replacementMemoryId, string? reason, CancellationToken cancellationToken)
+    {
+        if (id == replacementMemoryId)
+        {
+            throw new InvalidOperationException("A memory cannot supersede itself.");
+        }
+
+        var memory = await _dbContext.Memories.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            ?? throw new InvalidOperationException("Memory entry not found.");
+        var replacement = await _dbContext.Memories.FirstOrDefaultAsync(x => x.Id == replacementMemoryId, cancellationToken)
+            ?? throw new InvalidOperationException("Replacement memory not found.");
+
+        if (replacement.LifecycleState != MemoryLifecycleState.Active)
+        {
+            throw new InvalidOperationException("Replacement memory must be active.");
+        }
+
+        var cursor = replacement;
+        for (var depth = 0; depth < 50 && cursor.SupersededByMemoryId.HasValue; depth++)
+        {
+            if (cursor.SupersededByMemoryId.Value == id)
+            {
+                throw new InvalidOperationException("Supersession cycles are not allowed.");
+            }
+
+            var next = await _dbContext.Memories.FirstOrDefaultAsync(x => x.Id == cursor.SupersededByMemoryId.Value, cancellationToken);
+            if (next is null)
+            {
+                break;
+            }
+
+            cursor = next;
+        }
+
+        var now = DateTime.UtcNow;
+        memory.LifecycleState = MemoryLifecycleState.Superseded;
+        memory.SupersededByMemoryId = replacementMemoryId;
+        memory.LifecycleReason = (reason ?? string.Empty).Trim();
+        memory.LifecycleChangedUtc = now;
+        memory.ArchivedUtc = null;
+        memory.IsPinned = false;
+        memory.UpdatedUtc = now;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task BulkUpdateMemoryGovernanceAsync(MemoryBulkGovernanceInput input, CancellationToken cancellationToken)
+    {
+        var memoryIds = input.MemoryIds
+            .Where(x => x != Guid.Empty)
+            .Distinct()
+            .ToArray();
+
+        foreach (var memoryId in memoryIds)
+        {
+            switch (input.Action)
+            {
+                case MemoryBulkGovernanceAction.Verify:
+                    await MarkMemoryVerifiedAsync(memoryId, cancellationToken);
+                    break;
+                case MemoryBulkGovernanceAction.MarkNeedsReview:
+                    await MarkMemoryNeedsReviewAsync(memoryId, cancellationToken);
+                    break;
+                case MemoryBulkGovernanceAction.Archive:
+                    await ArchiveMemoryAsync(memoryId, input.Reason, cancellationToken);
+                    break;
+                case MemoryBulkGovernanceAction.RestoreActive:
+                    await MarkMemoryActiveAsync(memoryId, cancellationToken);
+                    break;
+                default:
+                    throw new InvalidOperationException("Unsupported memory governance action.");
+            }
+        }
+    }
+
     public async Task<Guid> CreateWingAsync(WingEditorInput input, CancellationToken cancellationToken)
     {
         var trimmedName = input.Name.Trim();
@@ -1029,15 +1145,21 @@ public sealed class PalaceService
         return memories.Select(MapCard).ToArray();
     }
 
-    private IQueryable<MemoryEntry> BuildMemoryQuery(string? query = null, Guid? wingId = null, Guid? roomId = null, MemoryKind? kind = null, string? tag = null, DateTime? updatedSince = null)
+    private IQueryable<MemoryEntry> BuildMemoryQuery(string? query = null, Guid? wingId = null, Guid? roomId = null, MemoryKind? kind = null, string? tag = null, DateTime? updatedSince = null, bool includeRetired = false)
     {
         var memories = _dbContext.Memories
             .AsNoTracking()
+            .Include(x => x.SupersededByMemory)
             .Include(x => x.Wing)
             .Include(x => x.Room)
             .Include(x => x.MemoryTags)
                 .ThenInclude(x => x.Tag)
             .AsQueryable();
+
+        if (!includeRetired)
+        {
+            memories = memories.Where(x => x.LifecycleState == MemoryLifecycleState.Active);
+        }
 
         if (wingId.HasValue)
         {
@@ -1101,8 +1223,8 @@ public sealed class PalaceService
         {
             WingCount = await _dbContext.Wings.CountAsync(cancellationToken),
             RoomCount = await _dbContext.Rooms.CountAsync(cancellationToken),
-            MemoryCount = await _dbContext.Memories.CountAsync(cancellationToken),
-            PinnedCount = await _dbContext.Memories.CountAsync(x => x.IsPinned, cancellationToken),
+            MemoryCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Active, cancellationToken),
+            PinnedCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Active && x.IsPinned, cancellationToken),
             TagCount = await _dbContext.Tags.CountAsync(cancellationToken),
             OpenTodoCount = await _dbContext.Todos.CountAsync(x => x.Status != TodoStatus.Done, cancellationToken),
             CompletedTodoCount = await _dbContext.Todos.CountAsync(x => x.Status == TodoStatus.Done, cancellationToken),
@@ -1153,10 +1275,73 @@ public sealed class PalaceService
                 Slug = x.Slug,
                 Description = x.Description,
                 RoomCount = x.Rooms.Count,
-                MemoryCount = x.Memories.Count,
-                LatestActivityUtc = x.Memories.OrderByDescending(m => m.UpdatedUtc).Select(m => m.UpdatedUtc).FirstOrDefault()
+                MemoryCount = x.Memories.Count(m => m.LifecycleState == MemoryLifecycleState.Active),
+                LatestActivityUtc = x.Memories.Where(m => m.LifecycleState == MemoryLifecycleState.Active).OrderByDescending(m => m.UpdatedUtc).Select(m => m.UpdatedUtc).FirstOrDefault()
             })
             .ToListAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<SelectListItem>> BuildSupersedeTargetOptionsAsync(Guid memoryId, Guid? wingId, CancellationToken cancellationToken)
+    {
+        return await BuildMemoryQuery(wingId: wingId)
+            .Where(x => x.Id != memoryId)
+            .OrderByDescending(x => x.IsPinned)
+            .ThenByDescending(x => x.UpdatedUtc)
+            .Take(40)
+            .Select(x => new SelectListItem(x.Title, x.Id.ToString()))
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<MemoryGovernanceQueueViewModel> BuildGovernanceQueueAsync(CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        var items = await BuildMemoryQuery(includeRetired: true)
+            .Where(x =>
+                x.LifecycleState != MemoryLifecycleState.Active ||
+                x.VerificationStatus == MemoryVerificationStatus.NeedsReview ||
+                (x.VerificationStatus == MemoryVerificationStatus.Unverified && x.UpdatedUtc <= now.AddDays(-14)))
+            .OrderByDescending(x => x.IsPinned)
+            .ThenBy(x => x.LifecycleState == MemoryLifecycleState.Active ? 0 : 1)
+            .ThenBy(x => x.LastReferencedUtc ?? DateTime.MinValue)
+            .ThenBy(x => x.UpdatedUtc)
+            .Take(60)
+            .ToListAsync(cancellationToken);
+
+        return new MemoryGovernanceQueueViewModel
+        {
+            Items = items.Select(MapCard).ToArray(),
+            ArchivedCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Archived, cancellationToken),
+            SupersededCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Superseded, cancellationToken),
+            NeedsReviewCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Active && x.VerificationStatus == MemoryVerificationStatus.NeedsReview, cancellationToken),
+            UnverifiedActiveCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Active && x.VerificationStatus == MemoryVerificationStatus.Unverified, cancellationToken)
+        };
+    }
+
+    private async Task TouchMemoryReferencesAsync(IReadOnlyCollection<Guid> memoryIds, CancellationToken cancellationToken)
+    {
+        if (memoryIds.Count == 0)
+        {
+            return;
+        }
+
+        var ids = memoryIds.Distinct().ToArray();
+        var memories = await _dbContext.Memories
+            .Where(x => ids.Contains(x.Id))
+            .ToListAsync(cancellationToken);
+
+        if (memories.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var memory in memories)
+        {
+            memory.LastReferencedUtc = now;
+            memory.ReferenceCount += 1;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static TodoItemViewModel MapTodo(TodoEntry todo)
@@ -1567,6 +1752,7 @@ public sealed class PalaceService
         return new MemoryCardViewModel
         {
             Id = memory.Id,
+            SupersededByMemoryId = memory.SupersededByMemoryId,
             Title = memory.Title,
             Summary = memory.Summary,
             WingSlug = memory.Wing?.Slug ?? string.Empty,
@@ -1576,11 +1762,19 @@ public sealed class PalaceService
             SourceKind = memory.SourceKind,
             Importance = memory.Importance,
             IsPinned = memory.IsPinned,
+            LifecycleState = memory.LifecycleState,
+            LifecycleLabel = MemoryTrustHelper.GetLifecycleLabel(memory.LifecycleState),
+            LifecycleReason = memory.LifecycleReason,
+            SupersededByTitle = memory.SupersededByMemory?.Title ?? string.Empty,
             VerificationStatus = memory.VerificationStatus,
             VerificationStatusLabel = trust.VerificationStatusLabel,
             LastVerifiedUtc = memory.LastVerifiedUtc,
             ReviewAfterUtc = memory.ReviewAfterUtc,
+            LastReferencedUtc = memory.LastReferencedUtc,
+            LifecycleChangedUtc = memory.LifecycleChangedUtc,
+            ReferenceCount = memory.ReferenceCount,
             IsReviewDue = trust.IsReviewDue,
+            IsRetired = memory.LifecycleState != MemoryLifecycleState.Active,
             FreshnessLabel = trust.FreshnessLabel,
             UpdatedUtc = memory.UpdatedUtc,
             Tags = memory.MemoryTags.OrderBy(x => x.Tag!.Name).Select(x => x.Tag!.Name).ToArray()

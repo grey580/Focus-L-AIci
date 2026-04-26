@@ -33,10 +33,48 @@
             @Html.AntiForgeryToken()
             <button type="submit" class="btn btn-outline-warning">Mark Needs Review</button>
         </form>
+        @if (Model.Memory.LifecycleState == MemoryLifecycleState.Active)
+        {
+            <form method="post" asp-action="ArchiveMemory" asp-route-id="@Model.Memory.Id" class="d-inline">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-outline-secondary">Archive</button>
+            </form>
+        }
+        else if (Model.Memory.LifecycleState == MemoryLifecycleState.Archived)
+        {
+            <form method="post" asp-action="RestoreMemory" asp-route-id="@Model.Memory.Id" class="d-inline">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-outline-primary">Restore Active</button>
+            </form>
+        }
     </div>
 </section>
 
-@if (Model.Memory.IsReviewDue)
+@if (Model.Memory.LifecycleState == MemoryLifecycleState.Superseded)
+{
+    <div class="alert alert-secondary border-0 shadow-sm mb-4">
+        <strong>This memory has been superseded.</strong>
+        @if (!string.IsNullOrWhiteSpace(Model.Memory.SupersededByTitle) && Model.Memory.SupersededByMemoryId.HasValue)
+        {
+            <span> Use <a asp-action="Memory" asp-route-id="@Model.Memory.SupersededByMemoryId.Value">@Model.Memory.SupersededByTitle</a> as the active replacement.</span>
+        }
+        @if (!string.IsNullOrWhiteSpace(Model.Memory.LifecycleReason))
+        {
+            <span> Reason: @Model.Memory.LifecycleReason</span>
+        }
+    </div>
+}
+else if (Model.Memory.LifecycleState == MemoryLifecycleState.Archived)
+{
+    <div class="alert alert-secondary border-0 shadow-sm mb-4">
+        <strong>This memory is archived.</strong>
+        @if (!string.IsNullOrWhiteSpace(Model.Memory.LifecycleReason))
+        {
+            <span> Reason: @Model.Memory.LifecycleReason</span>
+        }
+    </div>
+}
+else if (Model.Memory.IsReviewDue)
 {
     <div class="alert alert-warning border-0 shadow-sm mb-4">
         <strong>This memory needs review.</strong>
@@ -78,14 +116,28 @@ else if (Model.Memory.VerificationStatus == MemoryVerificationStatus.Verified &&
                     <dd>@Model.Memory.SourceKind</dd>
                     <dt>Importance</dt>
                     <dd>@Model.Memory.Importance / 5</dd>
+                    <dt>Lifecycle</dt>
+                    <dd>@Model.Memory.LifecycleLabel</dd>
                     <dt>Trust</dt>
                     <dd>@Model.Memory.FreshnessLabel</dd>
                     <dt>Pinned</dt>
                     <dd>@(Model.Memory.IsPinned ? "Yes" : "No")</dd>
+                    <dt>References</dt>
+                    <dd>@Model.Memory.ReferenceCount</dd>
                     <dt>Created</dt>
                     <dd>@SiteSettingsService.FormatUtc(Model.CreatedUtc, siteSettings)</dd>
                     <dt>Updated</dt>
                     <dd>@SiteSettingsService.FormatUtc(Model.Memory.UpdatedUtc, siteSettings)</dd>
+                    @if (Model.Memory.LastReferencedUtc.HasValue)
+                    {
+                        <dt>Last referenced</dt>
+                        <dd>@SiteSettingsService.FormatUtc(Model.Memory.LastReferencedUtc.Value, siteSettings)</dd>
+                    }
+                    @if (Model.Memory.LifecycleChangedUtc.HasValue)
+                    {
+                        <dt>Lifecycle changed</dt>
+                        <dd>@SiteSettingsService.FormatUtc(Model.Memory.LifecycleChangedUtc.Value, siteSettings)</dd>
+                    }
                     @if (Model.Memory.LastVerifiedUtc.HasValue)
                     {
                         <dt>Last verified</dt>
@@ -106,6 +158,11 @@ else if (Model.Memory.VerificationStatus == MemoryVerificationStatus.Verified &&
                         <dt>Reference</dt>
                         <dd class="text-break">@Model.SourceReference</dd>
                     }
+                    @if (!string.IsNullOrWhiteSpace(Model.Memory.LifecycleReason))
+                    {
+                        <dt>Lifecycle reason</dt>
+                        <dd class="text-break">@Model.Memory.LifecycleReason</dd>
+                    }
                 </dl>
                 <div class="tag-row">
                     @foreach (var tag in Model.Memory.Tags)
@@ -115,6 +172,35 @@ else if (Model.Memory.VerificationStatus == MemoryVerificationStatus.Verified &&
                 </div>
             </div>
         </div>
+
+        @if (Model.Memory.LifecycleState == MemoryLifecycleState.Active && Model.SupersedeTargetOptions.Count > 0)
+        {
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-body">
+                    <h2 class="h5">Supersede this memory</h2>
+                    <p class="text-secondary small">Use this when another active memory has become the better canonical answer.</p>
+                    <form method="post" asp-action="SupersedeMemory" asp-route-id="@Model.Memory.Id" class="row g-3">
+                        @Html.AntiForgeryToken()
+                        <div class="col-12">
+                            <label for="ReplacementMemoryId" class="form-label">Replacement memory</label>
+                            <select id="ReplacementMemoryId" name="ReplacementMemoryId" class="form-select">
+                                @foreach (var option in Model.SupersedeTargetOptions)
+                                {
+                                    <option value="@option.Value">@option.Text</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label for="Reason" class="form-label">Reason</label>
+                            <input id="Reason" name="Reason" class="form-control" placeholder="Optional note about why this memory was replaced" />
+                        </div>
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-outline-secondary">Supersede memory</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        }
 
         <div class="card shadow-sm border-0 mb-4">
             <div class="card-body">

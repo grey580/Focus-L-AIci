@@ -126,6 +126,69 @@
     </div>
 </div>
 
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <div class="section-heading">
+            <h2>Memory governance queue</h2>
+            <span class="text-secondary small">@Model.GovernanceQueue.Items.Count items • @Model.GovernanceQueue.NeedsReviewCount needs review • @Model.GovernanceQueue.UnverifiedActiveCount active unverified • @Model.GovernanceQueue.ArchivedCount archived • @Model.GovernanceQueue.SupersededCount superseded</span>
+        </div>
+        <p class="text-secondary small">Use this queue to verify durable memories, archive low-signal artifacts, and restore items that should be active again.</p>
+        @if (Model.GovernanceQueue.Items.Count == 0)
+        {
+            <div class="alert alert-success border-0 shadow-sm mb-0">
+                <strong>No governance backlog is currently surfaced.</strong>
+            </div>
+        }
+        else
+        {
+            <form method="post" asp-action="BulkMemoryGovernance">
+                @Html.AntiForgeryToken()
+                <div class="row g-3 align-items-end mb-3">
+                    <div class="col-md-4">
+                        <label for="bulk-governance-action" class="form-label">Bulk action</label>
+                        <select id="bulk-governance-action" name="Action" class="form-select">
+                            <option value="Verify">Mark verified</option>
+                            <option value="MarkNeedsReview">Mark needs review</option>
+                            <option value="Archive">Archive</option>
+                            <option value="RestoreActive">Restore active</option>
+                        </select>
+                    </div>
+                    <div class="col-md-5">
+                        <label for="bulk-governance-reason" class="form-label">Reason</label>
+                        <input id="bulk-governance-reason" name="Reason" class="form-control" placeholder="Optional governance note" />
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-outline-primary w-100">Apply to selected</button>
+                    </div>
+                </div>
+                <div class="dashboard-scroll-list dashboard-scroll-list-xl">
+                    @foreach (var item in Model.GovernanceQueue.Items)
+                    {
+                        <label class="todo-preview-item d-block">
+                            <div class="d-flex justify-content-between gap-3 align-items-start">
+                                <div class="d-flex gap-2 align-items-start flex-grow-1">
+                                    <input class="form-check-input mt-1" type="checkbox" name="MemoryIds" value="@item.Id" />
+                                    <div>
+                                        <div class="memory-meta">@item.LifecycleLabel • @item.FreshnessLabel • @item.ReferenceCount refs</div>
+                                        <a class="todo-title-link" href="/Palace/Memory/@item.Id">@item.Title</a>
+                                        <div class="text-secondary small">@item.WingName / @item.RoomName</div>
+                                        <div class="text-secondary small dashboard-clamp-2">@item.Summary</div>
+                                        @if (!string.IsNullOrWhiteSpace(item.LifecycleReason))
+                                        {
+                                            <div class="text-secondary small">Reason: @item.LifecycleReason</div>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="text-secondary small text-nowrap">@SiteSettingsService.FormatUtc(item.UpdatedUtc, siteSettings)</div>
+                            </div>
+                        </label>
+                    }
+                </div>
+            </form>
+        }
+    </div>
+</div>
+
 @if (Model.Diagnostics.DetectedGaps.Count > 0)
 {
     <div class="alert alert-warning border-0 shadow-sm mb-4">

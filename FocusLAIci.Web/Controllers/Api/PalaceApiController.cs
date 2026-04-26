@@ -154,6 +154,58 @@ public sealed class PalaceApiController : ControllerBase
         }
     }
 
+    [HttpPost("memories/{id:guid}/archive")]
+    public async Task<ActionResult<object>> ArchiveMemory(Guid id, [FromBody] MemoryBulkGovernanceInput input, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _palaceService.ArchiveMemoryAsync(id, input.Reason, cancellationToken);
+            return Ok(new { id, lifecycleState = nameof(MemoryLifecycleState.Archived) });
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+    }
+
+    [HttpPost("memories/{id:guid}/restore")]
+    public async Task<ActionResult<object>> RestoreMemory(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _palaceService.MarkMemoryActiveAsync(id, cancellationToken);
+            return Ok(new { id, lifecycleState = nameof(MemoryLifecycleState.Active) });
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+    }
+
+    [HttpPost("memories/{id:guid}/supersede")]
+    public async Task<ActionResult<object>> SupersedeMemory(Guid id, [FromBody] MemorySupersedeInput input, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _palaceService.SupersedeMemoryAsync(id, input.ReplacementMemoryId, input.Reason, cancellationToken);
+            return Ok(new { id, lifecycleState = nameof(MemoryLifecycleState.Superseded), replacementMemoryId = input.ReplacementMemoryId });
+        }
+        catch (InvalidOperationException exception)
+        {
+            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                [nameof(MemorySupersedeInput.ReplacementMemoryId)] = [exception.Message]
+            }));
+        }
+    }
+
+    [HttpPost("memories/bulk-governance")]
+    public async Task<ActionResult<object>> BulkGovernance([FromBody] MemoryBulkGovernanceInput input, CancellationToken cancellationToken)
+    {
+        await _palaceService.BulkUpdateMemoryGovernanceAsync(input, cancellationToken);
+        return Ok(new { count = input.MemoryIds.Count, action = input.Action.ToString() });
+    }
+
     [HttpPut("memories/{id:guid}")]
     public async Task<ActionResult<object>> UpdateMemory(Guid id, [FromBody] MemoryEditorInput input, CancellationToken cancellationToken)
     {

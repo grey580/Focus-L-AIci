@@ -98,12 +98,14 @@ The **Inspect** page is now the fastest way to answer:
 - Is the dashboard missing context?
 - What changed recently across memories, todos, tickets, and code graph?
 - What is the current workspace snapshot I should give to an AI model?
+- Which memories should be verified, reviewed, archived, or restored next?
 
 Recommended pattern:
 
 1. Open Inspect before assuming the homepage tells the whole story.
 2. Use the workspace export block when you need to brief a fresh AI session quickly.
-3. Use the diagnostics URLs on that page when you want application-layer truth without opening SQLite.
+3. Use the governance queue there for bulk triage when memory hygiene is drifting.
+4. Use the diagnostics URLs on that page when you want application-layer truth without opening SQLite.
 
 ### Use memory trust state to fight context rot
 
@@ -119,6 +121,23 @@ Recommended pattern:
 2. If you materially edit an existing memory, expect it to move to **Needs review**.
 3. Re-verify durable memories after checking them against the current repo, app state, or production evidence.
 4. Pay attention to freshness warnings in context results and on the memory detail page before reusing old guidance.
+
+### Use lifecycle state to retire memories without deleting them
+
+Trust answers **"how believable is this memory right now?"** Lifecycle answers **"should this memory participate in normal retrieval?"**
+
+Each memory now also has a separate lifecycle state:
+
+- **Active** for memories that should appear in normal search, dashboard, workspace, and context retrieval
+- **Archived** for historical or low-value memories you want to keep without surfacing by default
+- **Superseded** for memories replaced by a newer canonical memory
+
+Recommended pattern:
+
+1. Archive memories that are no longer useful in daily retrieval but still worth preserving.
+2. Supersede a memory when a newer memory replaces it; use the replacement link instead of editing the old one into ambiguity.
+3. Restore archived or superseded memories only when they should rejoin active retrieval.
+4. Assume normal retrieval is **active-only**; if something disappeared, check the memory detail page or Inspect governance queue before concluding it was deleted.
 
 ### Use Code Graph before raw code search
 

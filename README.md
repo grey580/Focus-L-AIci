@@ -61,6 +61,7 @@ This makes the system much better than a basic note app for operational work, be
 - persistent theme preference with a navbar light/dark mode toggle
 - pinned memories for high-value knowledge
 - explicit memory trust state with verification, review timing, freshness warnings, and decay-aware retrieval
+- separate memory lifecycle governance with `Active`, `Archived`, and `Superseded` states
 - tag-based discovery
 - full-text style search flows across stored knowledge
 - linked-memory relationships for context tracing
@@ -160,18 +161,22 @@ It also now exposes:
 - `GET /api/palace/workspace` for a prompt-ready export of pinned memories, active work, code-graph projects, and recent changes
 - `GET /api/palace/recent-changes` for a cross-source recent-change feed across memories, todos, tickets, and code graph projects
 - `POST /api/palace/memories/{id}/verify` and `POST /api/palace/memories/{id}/mark-review` for the memory trust lifecycle
+- `POST /api/palace/memories/{id}/archive`, `POST /api/palace/memories/{id}/restore`, `POST /api/palace/memories/{id}/supersede`, and `POST /api/palace/memories/bulk-governance` for lifecycle governance and triage
 - `GET/POST/PUT /api/todos` plus `PUT /api/todos/{id}/status` for direct application-layer todo inspection and updates
 - `GET/POST/PUT /api/tickets`, `PUT /api/tickets/{id}/status`, `POST /api/tickets/{id}/notes`, and `POST /api/tickets/{id}/time-logs` for closing the ticket write-back loop without opening SQLite manually
 - string-enum JSON payloads for the mutation APIs, so callers can send values like `"InProgress"` and `"Medium"` instead of remembering numeric enum IDs
 
 That makes it much easier to tell whether a problem is in the **database**, the **application layer**, or just the **page layout/rendering**.
 
-There is also now a first-class **Inspect** page in the app navigation that brings those diagnostics together into one operator-facing screen: active database target, missing-context warnings, recent changes, section-by-section dashboard truth, and a copyable workspace export block for fast AI/session handoff.
+There is also now a first-class **Inspect** page in the app navigation that brings those diagnostics together into one operator-facing screen: active database target, missing-context warnings, recent changes, section-by-section dashboard truth, a copyable workspace export block for fast AI/session handoff, and a memory governance queue for bulk verification, review, archive, and restore work.
 
-Memory detail, search, dashboard, and workspace surfaces now also expose the anti-context-rot trust signals directly:
+Memory detail, search, dashboard, workspace, and Inspect now expose the anti-context-rot and lifecycle-governance signals directly:
 
 - `Verified`, `Unverified`, and `Needs review` memory states
+- `Active`, `Archived`, and `Superseded` lifecycle states kept separate from trust
 - `Last verified` plus `Review after` timestamps on memory detail pages
+- archive / restore / supersede actions on memory detail pages plus bulk triage on Inspect
+- active-only default retrieval so archived and superseded memories stay historical without polluting normal search, dashboard, workspace, or context flows
 - freshness chips and warnings in dashboard/context results so stale items do not silently outrank fresher ones
 - pinned-memory export annotations like `[Verified]` in the workspace snapshot
 

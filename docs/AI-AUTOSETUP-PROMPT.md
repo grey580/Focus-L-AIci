@@ -78,10 +78,11 @@ The right workflow is:
 
 The highest-signal retrieval surfaces are now:
 
-- **Inspect** for active database truth, dashboard diagnostics, recent changes, and the workspace export block
+- **Inspect** for active database truth, dashboard diagnostics, recent changes, the workspace export block, and the memory governance queue
 - `GET /api/palace/workspace` for a prompt-ready snapshot of pinned memories, active work, code graph projects, and recent changes
 - `POST /api/context/brief` when you want the app to assemble a context pack instead of searching manually
 - memory trust signals (`Verified`, `Unverified`, `Needs review`) on memory cards, detail pages, and context results so stale knowledge is easier to spot
+- memory lifecycle signals (`Active`, `Archived`, `Superseded`) so retired knowledge stays historical without polluting default retrieval
 - `GET/POST/PUT /api/todos` and `GET/POST/PUT /api/tickets` when the workflow needs durable write-back without touching SQLite directly
 
 An AI model should treat Focus as:
@@ -116,11 +117,13 @@ Operating rules:
 
 - Search Focus before making assumptions.
 - Use Inspect and the workspace export first when you need fast orientation.
+- Use the Inspect governance queue when memory cleanup or trust triage is needed.
 - Use Code Graph before broad raw code searching when repository structure matters.
 - Store durable outcomes, decisions, incidents, and reusable patterns back into Focus.
 - Use Todos for prompt-sized execution work.
 - Use Tickets for larger tracked work with notes, subtasks, and completion history.
 - Use memory verification when a durable memory has been checked against current source truth; expect material edits to move it back to `Needs review`.
+- Treat lifecycle separately from trust: active memories participate in normal retrieval, while archived and superseded memories stay directly accessible but out of default search, context, and workspace flows.
 - Prefer the JSON APIs for automation; mutation endpoints accept string enum payloads like `Pending`, `InProgress`, `Medium`, and `Completed`.
 - Do not create throwaway memories for trivial chatter.
 - Preserve existing data and avoid resetting or replacing the active database unless explicitly instructed.
@@ -155,11 +158,13 @@ During implementation:
 - rely on retrieved Focus context instead of guessing
 - add or update todos and tickets when the work needs durable tracking
 - pay attention to memory freshness chips and warnings before trusting older context
+- remember that archived and superseded memories are intentionally excluded from default retrieval
 - prefer the todo and ticket APIs for automation-friendly write-back
 
 After implementation:
 - write back durable findings, decisions, fixes, or reusable patterns into Focus
 - mark a memory verified when you have checked it against current source truth, and mark it for review again after meaningful edits
+- archive or supersede memories instead of deleting useful history when the canonical answer changes
 - prefer concise, high-signal memory entries that remain useful without the original chat
 
 Use Focus as a working system of memory, not as a dump of raw conversation.
