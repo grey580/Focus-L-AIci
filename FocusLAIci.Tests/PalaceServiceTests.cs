@@ -178,6 +178,69 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task GetWingAsync_SelectingRoomFiltersMemoriesAndReturnsRoomPanel()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Local System",
+            Description = "Machine-specific knowledge."
+        }, CancellationToken.None);
+
+        var focusRoomId = await service.CreateRoomAsync(new RoomEditorInput
+        {
+            WingId = wingId,
+            Name = "Focus L-AIci",
+            Description = "Local Focus runbooks."
+        }, CancellationToken.None);
+
+        var greyCanaryRoomId = await service.CreateRoomAsync(new RoomEditorInput
+        {
+            WingId = wingId,
+            Name = "Grey Canary",
+            Description = "Local Grey Canary runbooks."
+        }, CancellationToken.None);
+
+        await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Focus startup",
+            Summary = "How to start Focus locally.",
+            Content = "Run the built DLL and bind localhost:5191.",
+            Kind = MemoryKind.Reference,
+            SourceKind = SourceKind.DebugSession,
+            Importance = 5,
+            WingId = wingId,
+            RoomId = focusRoomId
+        }, CancellationToken.None);
+
+        await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Grey Canary validation",
+            Summary = "How to validate Grey Canary locally.",
+            Content = "Run platform and domain tests.",
+            Kind = MemoryKind.Reference,
+            SourceKind = SourceKind.DebugSession,
+            Importance = 4,
+            WingId = wingId,
+            RoomId = greyCanaryRoomId
+        }, CancellationToken.None);
+
+        var wing = await service.GetWingAsync("local-system", focusRoomId, CancellationToken.None);
+
+        Assert.NotNull(wing);
+        Assert.Equal("local-system", wing!.Slug);
+        Assert.Equal(focusRoomId, wing.SelectedRoomId);
+        Assert.NotNull(wing.SelectedRoom);
+        Assert.Equal("Focus L-AIci", wing.SelectedRoom!.Name);
+        Assert.Single(wing.Memories);
+        Assert.Equal("Focus startup", wing.Memories.Single().Title);
+        Assert.Equal(2, wing.Rooms.Count);
+    }
+
+    [Fact]
     public async Task MemoryTrustLifecycle_VerifyAndEditDriveTrustState()
     {
         await using var harness = await TestHarness.CreateAsync();

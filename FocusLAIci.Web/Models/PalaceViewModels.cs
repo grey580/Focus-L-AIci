@@ -652,13 +652,24 @@ public sealed class ExploreViewModel
 public sealed class WingDetailViewModel
 {
     public Guid Id { get; init; }
+    public string Slug { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
+    public Guid? SelectedRoomId { get; init; }
+    public RoomDetailPanelViewModel? SelectedRoom { get; init; }
     public IReadOnlyCollection<RoomSummaryViewModel> Rooms { get; init; } = Array.Empty<RoomSummaryViewModel>();
     public IReadOnlyCollection<MemoryCardViewModel> Memories { get; init; } = Array.Empty<MemoryCardViewModel>();
 }
 
 public sealed class RoomSummaryViewModel
+{
+    public Guid Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public int MemoryCount { get; init; }
+}
+
+public sealed class RoomDetailPanelViewModel
 {
     public Guid Id { get; init; }
     public string Name { get; init; } = string.Empty;

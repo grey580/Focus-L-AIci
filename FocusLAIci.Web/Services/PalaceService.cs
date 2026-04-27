@@ -648,7 +648,7 @@ public sealed class PalaceService
         };
     }
 
-    public async Task<WingDetailViewModel?> GetWingAsync(string slug, CancellationToken cancellationToken)
+    public async Task<WingDetailViewModel?> GetWingAsync(string slug, Guid? selectedRoomId, CancellationToken cancellationToken)
     {
         var wing = await _dbContext.Wings
             .AsNoTracking()
@@ -665,11 +665,34 @@ public sealed class PalaceService
             return null;
         }
 
+        var selectedRoom = selectedRoomId.HasValue
+            ? wing.Rooms.FirstOrDefault(room => room.Id == selectedRoomId.Value)
+            : null;
+
+        var activeMemories = wing.Memories
+            .Where(MemoryTrustHelper.IsActive)
+            .Where(memory => selectedRoom is null || memory.RoomId == selectedRoom.Id)
+            .OrderByDescending(x => x.IsPinned)
+            .ThenByDescending(x => x.UpdatedUtc)
+            .Select(MapCard)
+            .ToArray();
+
         return new WingDetailViewModel
         {
             Id = wing.Id,
+            Slug = wing.Slug,
             Name = wing.Name,
             Description = wing.Description,
+            SelectedRoomId = selectedRoom?.Id,
+            SelectedRoom = selectedRoom is null
+                ? null
+                : new RoomDetailPanelViewModel
+                {
+                    Id = selectedRoom.Id,
+                    Name = selectedRoom.Name,
+                    Description = selectedRoom.Description,
+                    MemoryCount = wing.Memories.Count(m => m.RoomId == selectedRoom.Id && m.LifecycleState == MemoryLifecycleState.Active)
+                },
             Rooms = wing.Rooms
                 .OrderBy(x => x.Name)
                 .Select(x => new RoomSummaryViewModel
@@ -680,12 +703,7 @@ public sealed class PalaceService
                     MemoryCount = wing.Memories.Count(m => m.RoomId == x.Id && m.LifecycleState == MemoryLifecycleState.Active)
                 })
                 .ToArray(),
-            Memories = wing.Memories
-                .Where(MemoryTrustHelper.IsActive)
-                .OrderByDescending(x => x.IsPinned)
-                .ThenByDescending(x => x.UpdatedUtc)
-                .Select(MapCard)
-                .ToArray()
+            Memories = activeMemories
         };
     }
 

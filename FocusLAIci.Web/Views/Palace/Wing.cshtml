@@ -37,29 +37,49 @@
                     <ul class="list-unstyled mb-0">
                         @foreach (var room in Model.Rooms)
                         {
-                            <li class="room-card mb-3">
-                                <strong>@room.Name</strong><br />
+                            <li class="room-card mb-3 @(Model.SelectedRoomId == room.Id ? "is-selected" : string.Empty)">
+                                <a class="room-card-link" asp-action="Wing" asp-route-slug="@Model.Slug" asp-route-roomId="@room.Id">@room.Name</a><br />
                                 <span class="text-secondary">@room.Description</span><br />
                                 <span class="memory-meta">@room.MemoryCount memories</span>
                             </li>
                         }
                     </ul>
+
+                    @if (Model.SelectedRoom is not null)
+                    {
+                        <a class="btn btn-sm btn-outline-secondary mt-2" asp-action="Wing" asp-route-slug="@Model.Slug">Show all wing memories</a>
+                    }
                 }
             </div>
         </div>
     </div>
     <div class="col-lg-8">
         <div class="section-heading">
-            <h2>Memories in this wing</h2>
+            <h2>@(Model.SelectedRoom?.Name ?? "Memories in this wing")</h2>
             <span>@Model.Memories.Count entries</span>
         </div>
+
+        @if (Model.SelectedRoom is not null)
+        {
+            <div class="card shadow-sm border-0 mb-3">
+                <div class="card-body">
+                    <div class="memory-meta">Room entry</div>
+                    <h3 class="memory-title mb-2">@Model.SelectedRoom.Name</h3>
+                    <p class="memory-summary mb-2">@Model.SelectedRoom.Description</p>
+                    <div class="text-secondary small">@Model.SelectedRoom.MemoryCount memories in this room</div>
+                </div>
+            </div>
+        }
+
         @if (Model.Memories.Count == 0)
         {
             <div class="card shadow-sm border-0">
                 <div class="card-body">
                     <div class="empty-state">
-                        <h3>No memories in this wing yet</h3>
-                        <p>Capture the key decisions, incidents, and reusable patterns tied to this wing.</p>
+                        <h3>@(Model.SelectedRoom is null ? "No memories in this wing yet" : "No memories in this room yet")</h3>
+                        <p>@(Model.SelectedRoom is null
+                            ? "Capture the key decisions, incidents, and reusable patterns tied to this wing."
+                            : "Capture the local knowledge that belongs in this room to make future work easier.")</p>
                         <a class="btn btn-primary" asp-action="NewMemory">Add Memory</a>
                     </div>
                 </div>

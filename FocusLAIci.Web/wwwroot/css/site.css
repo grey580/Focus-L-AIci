@@ -790,6 +790,25 @@ body[data-theme="dark"] .theme-toggle-icon-moon {
   padding: 0.85rem 1rem;
 }
 
+.room-card.is-selected {
+  border-color: #9fc0ef;
+  box-shadow: 0 0 0 1px rgba(40, 76, 132, 0.08);
+}
+
+.room-card-link {
+  color: inherit;
+  display: inline-block;
+  font-weight: 700;
+  margin-bottom: 0.1rem;
+  text-decoration: none;
+}
+
+.room-card-link:hover,
+.room-card-link:focus {
+  color: #1f3d69;
+  text-decoration: underline;
+}
+
 .memory-content {
   background: #0f172a;
   border-radius: 1rem;
