@@ -2,6 +2,12 @@ namespace FocusLAIci.Web.Models;
 
 public static class SlugUtility
 {
+    public static bool IsNormalizedSlug(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value)
+            && string.Equals(CreateSlug(value), value, StringComparison.Ordinal);
+    }
+
     public static string CreateSlug(string value)
     {
         if (string.IsNullOrWhiteSpace(value))

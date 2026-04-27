@@ -20,6 +20,18 @@ public sealed class PalaceServiceTests
         Assert.Equal("focus-l-aici-installer-ui", slug);
     }
 
+    [Theory]
+    [InlineData("engineering-operations", true)]
+    [InlineData("grey-canary", true)]
+    [InlineData("Engineering-Operations", false)]
+    [InlineData("../grey-canary", false)]
+    [InlineData("grey_canary", false)]
+    [InlineData("", false)]
+    public void IsNormalizedSlug_RecognizesExpectedSlugShapes(string value, bool expected)
+    {
+        Assert.Equal(expected, SlugUtility.IsNormalizedSlug(value));
+    }
+
     [Fact]
     public async Task MemorySeeder_SeedsStarterPalace()
     {

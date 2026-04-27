@@ -48,6 +48,12 @@ public sealed class PalaceController : Controller
     [HttpGet]
     public async Task<IActionResult> Wing(string slug, string? room, CancellationToken cancellationToken)
     {
+        if (!SlugUtility.IsNormalizedSlug(slug)
+            || (!string.IsNullOrWhiteSpace(room) && !SlugUtility.IsNormalizedSlug(room)))
+        {
+            return NotFound();
+        }
+
         var model = await _palaceService.GetWingAsync(slug, room, cancellationToken);
         return model is null ? NotFound() : View(model);
     }
