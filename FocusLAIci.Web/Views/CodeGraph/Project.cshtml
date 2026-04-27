@@ -3,6 +3,9 @@
 @{
     ViewData["Title"] = Model.Project.Name;
     var svgNodeLookup = Model.Graph.Nodes.ToDictionary(x => x.Id);
+    var defaultSceneNode = Model.Scene.Nodes.FirstOrDefault(node => node.IsEmphasized) ?? Model.Scene.Nodes.FirstOrDefault();
+    var defaultSceneTitle = defaultSceneNode?.Label ?? Model.Project.Name;
+    var defaultSceneCopy = "The graph auto-rotates slowly on its own. Drag to spin it manually, use zoom to inspect clusters, and click a node to focus its neighborhood.";
     var sceneJson = JsonSerializer.Serialize(new
     {
         nodes = Model.Scene.Nodes.Select(node => new
@@ -80,14 +83,14 @@
                 <input id="codeGraph3dZoom" type="range" min="70" max="170" value="100" step="5" aria-label="Zoom code graph" />
                 <strong id="codeGraph3dZoomValue">100%</strong>
             </label>
-            <span class="code-graph-3d-toolbar-copy">Smaller nodes and wider spacing reduce overlap. Move the slider to zoom the scene.</span>
+            <span class="code-graph-3d-toolbar-copy">The scene auto-rotates slowly. Drag anywhere on the graph to spin it yourself, then hover nodes to reveal focused symbols across the project.</span>
         </div>
 
         <div class="code-graph-3d-shell">
-            <canvas id="codeGraph3dCanvas" class="code-graph-3d-canvas" aria-label="Three-dimensional code graph for @Model.Project.Name"></canvas>
+            <canvas id="codeGraph3dCanvas" class="code-graph-3d-canvas palace-3d-canvas" aria-label="Three-dimensional code graph for @Model.Project.Name"></canvas>
             <div id="codeGraph3dOverlay" class="code-graph-3d-overlay">
-                <strong>@(Model.Scene.Nodes.FirstOrDefault(node => node.IsEmphasized)?.Label ?? Model.Project.Name)</strong>
-                <span>Rotate the graph by moving your pointer, use zoom to inspect clusters, and click a node to focus its neighborhood.</span>
+                <strong>@defaultSceneTitle</strong>
+                <span>@defaultSceneCopy</span>
             </div>
             <div class="code-graph-3d-legend">
                 @foreach (var item in Model.Scene.Legend)
@@ -333,16 +336,32 @@
             }
 
             const context = canvas.getContext('2d');
-            const shell = canvas.parentElement;
             const nodeById = new Map(data.nodes.map(node => [node.id, node]));
             let hoveredNode = null;
             let projectedNodes = [];
-            let targetRotationX = -0.22;
-            let targetRotationY = 0.52;
+            let targetRotationX = -0.24;
+            let targetRotationY = 0.48;
             let rotationX = targetRotationX;
             let rotationY = targetRotationY;
             let zoomLevel = Number(zoomInput?.value || 100) / 100;
             let animationFrameId = 0;
+            let inertiaX = 0;
+            let inertiaY = 0.0000018;
+            let isDragging = false;
+            let dragMoved = false;
+            let pointerId = null;
+            let lastPointerX = 0;
+            let lastPointerY = 0;
+            const defaultTitle = @Html.Raw(JsonSerializer.Serialize(defaultSceneTitle));
+            const defaultCopy = @Html.Raw(JsonSerializer.Serialize(defaultSceneCopy));
+
+            function setOverlay(title, copy) {
+                if (!overlay) {
+                    return;
+                }
+
+                overlay.innerHTML = `<strong>${title}</strong><span>${copy}</span>`;
+            }
 
             function resizeCanvas() {
                 const bounds = canvas.getBoundingClientRect();
@@ -369,15 +388,76 @@
                     ...node,
                     screenX: (canvas.clientWidth / 2) + (xzX * scale),
                     screenY: (canvas.clientHeight / 2) + (yzY * scale),
-                    screenRadius: Math.max(2.4, node.radius * scale * 0.78),
+                    screenRadius: Math.max(2.6, node.radius * scale * (node.isEmphasized ? 0.9 : 0.8)),
                     depth,
                     scale
                 };
             }
 
+            function stringSeed(value) {
+                let hash = 0;
+                for (let index = 0; index < value.length; index += 1) {
+                    hash = ((hash * 31) + value.charCodeAt(index)) >>> 0;
+                }
+
+                return hash;
+            }
+
+            function drawNodeClouds(nodes, animationTick) {
+                nodes.forEach(node => {
+                    const seed = stringSeed(node.id);
+                    const phaseOffset = (seed % 360) * (Math.PI / 180);
+                    const cloudColor = node.colorHex;
+                    const layerCount = node.isEmphasized ? 3 : 2;
+                    for (let layerIndex = 0; layerIndex < layerCount; layerIndex += 1) {
+                        const radius = (node.isEmphasized ? 20 : 14) + (layerIndex * 8);
+                        const count = (node.isEmphasized ? 6 : 4) + layerIndex;
+                        const speed = (0.18 + (layerIndex * 0.05)) * (layerIndex % 2 === 0 ? 1 : -1);
+                        for (let index = 0; index < count; index += 1) {
+                            const orbit = animationTick * speed + phaseOffset + ((index / count) * Math.PI * 2);
+                            const x = node.x + (Math.cos(orbit) * radius);
+                            const y = node.y + (Math.sin(orbit * 1.08) * radius * 0.65);
+                            const z = node.z + (Math.cos((orbit * 1.28) + phaseOffset) * radius * 0.75);
+                            const projected = rotateNode({ ...node, x, y, z, radius: node.radius * 0.3 });
+                            const blobRadius = Math.max(1.8, projected.scale * (node.isEmphasized ? 7.2 : 4.8));
+                            const gradient = context.createRadialGradient(
+                                projected.screenX,
+                                projected.screenY,
+                                blobRadius * 0.08,
+                                projected.screenX,
+                                projected.screenY,
+                                blobRadius);
+
+                            gradient.addColorStop(0, `${cloudColor}${node.isEmphasized ? 'A8' : '74'}`);
+                            gradient.addColorStop(0.5, `${cloudColor}${node.isEmphasized ? '3A' : '24'}`);
+                            gradient.addColorStop(1, `${cloudColor}00`);
+
+                            context.beginPath();
+                            context.fillStyle = gradient;
+                            context.arc(projected.screenX, projected.screenY, blobRadius, 0, Math.PI * 2);
+                            context.fill();
+                        }
+                    }
+                });
+            }
+
             function drawScene() {
-                rotationX += (targetRotationX - rotationX) * 0.06;
-                rotationY += ((targetRotationY + 0.0025) - rotationY) * 0.06;
+                const animationTick = performance.now() / 1000;
+                const statefulYawDrift = Math.sin(animationTick * 0.11) * 0.0000004;
+                const statefulPitchDrift = Math.cos(animationTick * 0.08) * 0.0000003;
+
+                if (!isDragging) {
+                    targetRotationX = Math.max(-1.05, Math.min(1.05, targetRotationX + inertiaX + statefulPitchDrift));
+                    targetRotationY += inertiaY + statefulYawDrift;
+                    inertiaX *= 0.9;
+                    inertiaY *= 0.978;
+                    if (Math.abs(inertiaY) < 0.0000018) {
+                        inertiaY = inertiaY < 0 ? -0.0000018 : 0.0000018;
+                    }
+                }
+
+                rotationX += (targetRotationX - rotationX) * 0.08;
+                rotationY += (targetRotationY - rotationY) * 0.08;
 
                 context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
                 projectedNodes = data.nodes.map(rotateNode).sort((left, right) => left.depth - right.depth);
@@ -400,16 +480,46 @@
                     context.stroke();
                 });
 
+                drawNodeClouds(projectedNodes.filter(node => node.scale >= 0.32 || node.isEmphasized), animationTick);
+
                 projectedNodes.forEach(node => {
+                    if (node.isEmphasized) {
+                        context.beginPath();
+                        context.lineWidth = Math.max(1.35, node.screenRadius * 0.16);
+                        context.strokeStyle = `${node.colorHex}96`;
+                        context.arc(node.screenX, node.screenY, node.screenRadius * 1.52, 0, Math.PI * 2);
+                        context.stroke();
+                    } else if (node.scale >= 0.38) {
+                        context.beginPath();
+                        context.fillStyle = `${node.colorHex}18`;
+                        context.arc(node.screenX, node.screenY, node.screenRadius * 1.65, 0, Math.PI * 2);
+                        context.fill();
+                    }
+
                     context.beginPath();
-                    context.fillStyle = node.colorHex;
-                    context.shadowBlur = node.id === hoveredNode?.id ? 14 : 8;
+                    if (node.isEmphasized) {
+                        const coreGradient = context.createRadialGradient(
+                            node.screenX,
+                            node.screenY,
+                            node.screenRadius * 0.2,
+                            node.screenX,
+                            node.screenY,
+                            node.screenRadius);
+                        coreGradient.addColorStop(0.0, '#FFFFFF');
+                        coreGradient.addColorStop(0.3, node.colorHex);
+                        coreGradient.addColorStop(1.0, '#16345f');
+                        context.fillStyle = coreGradient;
+                    } else {
+                        context.fillStyle = node.colorHex;
+                    }
+
+                    context.shadowBlur = node.id === hoveredNode?.id ? 18 : node.isEmphasized ? 14 : 8;
                     context.shadowColor = node.colorHex;
                     context.arc(node.screenX, node.screenY, node.screenRadius, 0, Math.PI * 2);
                     context.fill();
                     context.shadowBlur = 0;
 
-                    if ((node.isEmphasized && node.scale >= 0.5) || node.id === hoveredNode?.id) {
+                    if ((node.isEmphasized && node.scale >= 0.42) || node.id === hoveredNode?.id) {
                         context.fillStyle = '#E5EEF9';
                         context.font = `600 ${Math.max(11, 10 + (node.scale * 4))}px Segoe UI`;
                         context.textAlign = 'center';
@@ -431,15 +541,16 @@
                     || null;
 
                 if (hoveredNode) {
-                    overlay.innerHTML = `<strong>${hoveredNode.label}</strong><span>${hoveredNode.nodeTypeLabel} • ${hoveredNode.secondaryLabel || 'Focused graph node'}</span>`;
-                    canvas.style.cursor = 'pointer';
+                    setOverlay(hoveredNode.label, `${hoveredNode.nodeTypeLabel} • ${hoveredNode.secondaryLabel || 'Focused graph node'}`);
+                    canvas.style.cursor = hoveredNode.url ? 'pointer' : 'default';
                 } else {
-                    overlay.innerHTML = `<strong>@(Model.Scene.Nodes.FirstOrDefault(node => node.IsEmphasized)?.Label ?? Model.Project.Name)</strong><span>Rotate the graph by moving your pointer, use zoom to inspect clusters, and click a node to focus its neighborhood.</span>`;
+                    setOverlay(defaultTitle, defaultCopy);
                     canvas.style.cursor = 'default';
                 }
             }
 
             resizeCanvas();
+            canvas.style.touchAction = 'none';
             animationFrameId = window.requestAnimationFrame(drawScene);
 
             window.addEventListener('resize', resizeCanvas);
@@ -451,25 +562,63 @@
                 }
             });
 
-            shell?.addEventListener('mousemove', event => {
-                const bounds = canvas.getBoundingClientRect();
-                const relativeX = (event.clientX - bounds.left) / Math.max(1, bounds.width);
-                const relativeY = (event.clientY - bounds.top) / Math.max(1, bounds.height);
-                targetRotationY = ((relativeX - 0.5) * 1.55) + 0.4;
-                targetRotationX = ((relativeY - 0.5) * 0.9) - 0.18;
+            canvas.addEventListener('pointerdown', event => {
+                isDragging = true;
+                dragMoved = false;
+                pointerId = event.pointerId;
+                lastPointerX = event.clientX;
+                lastPointerY = event.clientY;
+                inertiaX = 0;
+                canvas.setPointerCapture(event.pointerId);
+                canvas.style.cursor = 'grabbing';
+            });
+
+            canvas.addEventListener('pointermove', event => {
+                if (isDragging && pointerId === event.pointerId) {
+                    const deltaX = event.clientX - lastPointerX;
+                    const deltaY = event.clientY - lastPointerY;
+                    dragMoved = dragMoved || Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2;
+                    targetRotationY += deltaX * 0.0085;
+                    targetRotationX = Math.max(-1.05, Math.min(1.05, targetRotationX + (deltaY * 0.0055)));
+                    inertiaY = deltaX * 0.0000012;
+                    inertiaX = deltaY * 0.0000006;
+                    lastPointerX = event.clientX;
+                    lastPointerY = event.clientY;
+                    hoveredNode = null;
+                    setOverlay(defaultTitle, "Dragging the code graph. Release to let it keep spinning.");
+                    return;
+                }
+
                 setHoveredNode(event.clientX, event.clientY);
             });
 
-            shell?.addEventListener('mouseleave', () => {
+            function endDrag(event) {
+                if (!isDragging || pointerId !== event.pointerId) {
+                    return;
+                }
+
+                isDragging = false;
+                pointerId = null;
+                canvas.releasePointerCapture(event.pointerId);
+                canvas.style.cursor = hoveredNode?.url ? 'pointer' : 'default';
+                setHoveredNode(event.clientX, event.clientY);
+            }
+
+            canvas.addEventListener('pointerup', endDrag);
+            canvas.addEventListener('pointercancel', endDrag);
+
+            canvas.addEventListener('pointerleave', () => {
+                if (isDragging) {
+                    return;
+                }
+
                 hoveredNode = null;
-                targetRotationX = -0.22;
-                targetRotationY = 0.52;
-                overlay.innerHTML = `<strong>@(Model.Scene.Nodes.FirstOrDefault(node => node.IsEmphasized)?.Label ?? Model.Project.Name)</strong><span>Rotate the graph by moving your pointer, use zoom to inspect clusters, and click a node to focus its neighborhood.</span>`;
+                setOverlay(defaultTitle, defaultCopy);
                 canvas.style.cursor = 'default';
             });
 
             canvas.addEventListener('click', () => {
-                if (hoveredNode?.url) {
+                if (!dragMoved && hoveredNode?.url) {
                     window.location.href = hoveredNode.url;
                 }
             });
