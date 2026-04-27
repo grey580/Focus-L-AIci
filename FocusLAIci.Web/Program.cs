@@ -55,6 +55,11 @@ app.UseAuthorization();
 app.UseStaticFiles();
 
 app.MapControllerRoute(
+    name: "palace-wing",
+    pattern: "Palace/Wing/{slug}",
+    defaults: new { controller = "Palace", action = "Wing" });
+
+app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
 

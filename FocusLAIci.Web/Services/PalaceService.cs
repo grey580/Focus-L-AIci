@@ -2142,7 +2142,7 @@ public sealed class PalaceService
                 NodeTypeLabel = "Wing",
                 SecondaryLabel = $"{wingRoomCount} rooms • {wingMemoryCount} memories",
                 ColorHex = wingColor,
-                UrlPath = $"/Palace/Wing?slug={Uri.EscapeDataString(wing.Slug)}",
+                UrlPath = $"/Palace/Wing/{Uri.EscapeDataString(wing.Slug)}",
                 X = anchor.X,
                 Y = anchor.Y,
                 Z = anchor.Z,
