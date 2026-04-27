@@ -46,9 +46,9 @@ public sealed class PalaceController : Controller
     }
 
     [HttpGet]
-    public async Task<IActionResult> Wing(string slug, Guid? roomId, CancellationToken cancellationToken)
+    public async Task<IActionResult> Wing(string slug, string? room, CancellationToken cancellationToken)
     {
-        var model = await _palaceService.GetWingAsync(slug, roomId, cancellationToken);
+        var model = await _palaceService.GetWingAsync(slug, room, cancellationToken);
         return model is null ? NotFound() : View(model);
     }
 

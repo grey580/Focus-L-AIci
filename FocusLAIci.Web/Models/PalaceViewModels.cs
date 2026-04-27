@@ -655,7 +655,7 @@ public sealed class WingDetailViewModel
     public string Slug { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
-    public Guid? SelectedRoomId { get; init; }
+    public string SelectedRoomSlug { get; init; } = string.Empty;
     public RoomDetailPanelViewModel? SelectedRoom { get; init; }
     public IReadOnlyCollection<RoomSummaryViewModel> Rooms { get; init; } = Array.Empty<RoomSummaryViewModel>();
     public IReadOnlyCollection<MemoryCardViewModel> Memories { get; init; } = Array.Empty<MemoryCardViewModel>();
@@ -664,6 +664,7 @@ public sealed class WingDetailViewModel
 public sealed class RoomSummaryViewModel
 {
     public Guid Id { get; init; }
+    public string Slug { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
     public int MemoryCount { get; init; }
@@ -672,6 +673,7 @@ public sealed class RoomSummaryViewModel
 public sealed class RoomDetailPanelViewModel
 {
     public Guid Id { get; init; }
+    public string Slug { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
     public int MemoryCount { get; init; }

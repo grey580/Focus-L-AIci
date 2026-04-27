@@ -37,8 +37,8 @@
                     <ul class="list-unstyled mb-0">
                         @foreach (var room in Model.Rooms)
                         {
-                            <li class="room-card mb-3 @(Model.SelectedRoomId == room.Id ? "is-selected" : string.Empty)">
-                                <a class="room-card-link" asp-action="Wing" asp-route-slug="@Model.Slug" asp-route-roomId="@room.Id">@room.Name</a><br />
+                            <li class="room-card mb-3 @(Model.SelectedRoomSlug == room.Slug ? "is-selected" : string.Empty)">
+                                <a class="room-card-link" asp-action="Wing" asp-route-slug="@Model.Slug" asp-route-room="@room.Slug">@room.Name</a><br />
                                 <span class="text-secondary">@room.Description</span><br />
                                 <span class="memory-meta">@room.MemoryCount memories</span>
                             </li>

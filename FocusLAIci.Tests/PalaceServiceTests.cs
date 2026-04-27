@@ -178,7 +178,7 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
-    public async Task GetWingAsync_SelectingRoomFiltersMemoriesAndReturnsRoomPanel()
+    public async Task GetWingAsync_SelectingRoomSlugFiltersMemoriesAndReturnsRoomPanel()
     {
         await using var harness = await TestHarness.CreateAsync();
         await using var serviceContext = harness.CreateDbContext();
@@ -228,12 +228,13 @@ public sealed class PalaceServiceTests
             RoomId = greyCanaryRoomId
         }, CancellationToken.None);
 
-        var wing = await service.GetWingAsync("local-system", focusRoomId, CancellationToken.None);
+        var wing = await service.GetWingAsync("local-system", "focus-l-aici", CancellationToken.None);
 
         Assert.NotNull(wing);
         Assert.Equal("local-system", wing!.Slug);
-        Assert.Equal(focusRoomId, wing.SelectedRoomId);
+        Assert.Equal("focus-l-aici", wing.SelectedRoomSlug);
         Assert.NotNull(wing.SelectedRoom);
+        Assert.Equal("focus-l-aici", wing.SelectedRoom!.Slug);
         Assert.Equal("Focus L-AIci", wing.SelectedRoom!.Name);
         Assert.Single(wing.Memories);
         Assert.Equal("Focus startup", wing.Memories.Single().Title);

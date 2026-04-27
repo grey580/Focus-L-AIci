@@ -648,7 +648,7 @@ public sealed class PalaceService
         };
     }
 
-    public async Task<WingDetailViewModel?> GetWingAsync(string slug, Guid? selectedRoomId, CancellationToken cancellationToken)
+    public async Task<WingDetailViewModel?> GetWingAsync(string slug, string? selectedRoomSlug, CancellationToken cancellationToken)
     {
         var wing = await _dbContext.Wings
             .AsNoTracking()
@@ -665,8 +665,8 @@ public sealed class PalaceService
             return null;
         }
 
-        var selectedRoom = selectedRoomId.HasValue
-            ? wing.Rooms.FirstOrDefault(room => room.Id == selectedRoomId.Value)
+        var selectedRoom = !string.IsNullOrWhiteSpace(selectedRoomSlug)
+            ? wing.Rooms.FirstOrDefault(room => string.Equals(room.Slug, selectedRoomSlug, StringComparison.OrdinalIgnoreCase))
             : null;
 
         var activeMemories = wing.Memories
@@ -683,12 +683,13 @@ public sealed class PalaceService
             Slug = wing.Slug,
             Name = wing.Name,
             Description = wing.Description,
-            SelectedRoomId = selectedRoom?.Id,
+            SelectedRoomSlug = selectedRoom?.Slug ?? string.Empty,
             SelectedRoom = selectedRoom is null
                 ? null
                 : new RoomDetailPanelViewModel
                 {
                     Id = selectedRoom.Id,
+                    Slug = selectedRoom.Slug,
                     Name = selectedRoom.Name,
                     Description = selectedRoom.Description,
                     MemoryCount = wing.Memories.Count(m => m.RoomId == selectedRoom.Id && m.LifecycleState == MemoryLifecycleState.Active)
@@ -698,6 +699,7 @@ public sealed class PalaceService
                 .Select(x => new RoomSummaryViewModel
                 {
                     Id = x.Id,
+                    Slug = x.Slug,
                     Name = x.Name,
                     Description = x.Description,
                     MemoryCount = wing.Memories.Count(m => m.RoomId == x.Id && m.LifecycleState == MemoryLifecycleState.Active)
