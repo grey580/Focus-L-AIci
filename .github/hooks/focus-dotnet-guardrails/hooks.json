@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionEnd": [
+      {
+        "type": "command",
+        "bash": ".github/hooks/focus-dotnet-guardrails/validate-dotnet.sh",
+        "cwd": ".",
+        "env": {
+          "VALIDATION_MODE": "warn"
+        },
+        "timeoutSec": 300
+      }
+    ]
+  }
+}

@@ -463,7 +463,9 @@ public static class MemorySeeder
                 Label = "validates"
             });
 
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     private static MemoryEntry CreateMemory(
