@@ -5,6 +5,7 @@
     var defaultSceneNode = Model.Scene.Nodes.FirstOrDefault(node => node.IsEmphasized) ?? Model.Scene.Nodes.FirstOrDefault();
     var defaultSceneTitle = defaultSceneNode?.Label ?? "Focus Palace";
     var defaultSceneCopy = "The palace rotates slowly on its own. Drag to spin it manually, use zoom to inspect depth, and click a node to open the wing, room search, memory, or todo.";
+    var cspNonce = Context.Items[SecurityHeadersPolicy.CspNonceItemKey] as string ?? string.Empty;
     var sceneJson = JsonSerializer.Serialize(new
     {
         nodes = Model.Scene.Nodes.Select(node => new
@@ -57,11 +58,20 @@
             </div>
 
             <div class="code-graph-3d-toolbar">
-                <label class="code-graph-3d-zoom-control" for="palace3dZoom">
-                    <span>Zoom</span>
-                    <input id="palace3dZoom" type="range" min="70" max="170" value="100" step="5" aria-label="Zoom palace visualizer" />
-                    <strong id="palace3dZoomValue">100%</strong>
-                </label>
+                <div class="code-graph-3d-toolbar-controls">
+                    <label class="code-graph-3d-zoom-control" for="palace3dZoom">
+                        <span>Zoom</span>
+                        <input id="palace3dZoom" type="range" min="70" max="170" value="100" step="5" aria-label="Zoom palace visualizer" />
+                        <strong id="palace3dZoomValue">100%</strong>
+                    </label>
+                    <button type="button"
+                            id="palace3dSettingsToggle"
+                            class="btn btn-sm btn-outline-primary palace-3d-settings-toggle"
+                            aria-controls="palace3dSettingsPanel"
+                            aria-expanded="false">
+                        3D settings
+                    </button>
+                </div>
                 <span class="code-graph-3d-toolbar-copy">The scene auto-rotates slowly. Drag anywhere on the graph to spin it yourself, then hover nodes to reveal labels across wings, rooms, memories, and todos.</span>
             </div>
 
@@ -71,6 +81,30 @@
                     <strong>@defaultSceneTitle</strong>
                     <span>@defaultSceneCopy</span>
                 </div>
+                <aside id="palace3dSettingsPanel" class="palace-3d-settings-panel" hidden>
+                    <div class="palace-3d-settings-header">
+                        <div>
+                            <strong>Rotation settings</strong>
+                            <span>Tune how quickly each palace layer moves.</span>
+                        </div>
+                        <button type="button" id="palace3dSettingsClose" class="palace-3d-settings-close" aria-label="Close 3D settings">×</button>
+                    </div>
+                    <label class="palace-3d-settings-control" for="palace3dWingRotation">
+                        <span>Wing rotation</span>
+                        <input id="palace3dWingRotation" type="range" min="0" max="200" value="5" step="5" aria-label="Adjust wing rotation speed" />
+                        <strong id="palace3dWingRotationValue">5%</strong>
+                    </label>
+                    <label class="palace-3d-settings-control" for="palace3dRoomRotation">
+                        <span>Room rotation</span>
+                        <input id="palace3dRoomRotation" type="range" min="0" max="200" value="25" step="5" aria-label="Adjust room rotation speed" />
+                        <strong id="palace3dRoomRotationValue">25%</strong>
+                    </label>
+                    <label class="palace-3d-settings-control" for="palace3dMemoryRotation">
+                        <span>Memory rotation</span>
+                        <input id="palace3dMemoryRotation" type="range" min="0" max="400" value="50" step="5" aria-label="Adjust memory rotation speed" />
+                        <strong id="palace3dMemoryRotationValue">50%</strong>
+                    </label>
+                </aside>
                 <div class="code-graph-3d-legend">
                     @foreach (var item in Model.Scene.Legend)
                     {
@@ -241,18 +275,41 @@
 </div>
 
 @section Scripts {
-    <script>
+    <script nonce="@cspNonce">
         (() => {
             const scene = @Html.Raw(sceneJson);
             const canvas = document.getElementById('palace3dCanvas');
             const overlay = document.getElementById('palace3dOverlay');
             const zoomInput = document.getElementById('palace3dZoom');
             const zoomValue = document.getElementById('palace3dZoomValue');
+            const settingsToggle = document.getElementById('palace3dSettingsToggle');
+            const settingsPanel = document.getElementById('palace3dSettingsPanel');
+            const settingsClose = document.getElementById('palace3dSettingsClose');
+            const wingRotationInput = document.getElementById('palace3dWingRotation');
+            const wingRotationValue = document.getElementById('palace3dWingRotationValue');
+            const roomRotationInput = document.getElementById('palace3dRoomRotation');
+            const roomRotationValue = document.getElementById('palace3dRoomRotationValue');
+            const memoryRotationInput = document.getElementById('palace3dMemoryRotation');
+            const memoryRotationValue = document.getElementById('palace3dMemoryRotationValue');
 
             if (canvas && scene?.nodes?.length) {
                 const context = canvas.getContext('2d');
                 const shell = canvas.parentElement;
                 const sceneNodeById = new Map(scene.nodes.map(node => [node.id, node]));
+                const orbitSpeedMultipliers = {
+                    Wing: 1,
+                    Room: 1,
+                    Memory: 1,
+                    Todo: 1
+                };
+                const rotationSettingsStorageKey = 'focus-palace-3d-rotation-settings';
+                const animationClocks = {
+                    Palace: 0,
+                    Wing: 0,
+                    Room: 0,
+                    Memory: 0,
+                    Todo: 0
+                };
                 let hoveredNode = null;
                 let projectedNodes = [];
                 let targetRotationX = -0.24;
@@ -268,15 +325,67 @@
                 let pointerId = null;
                 let lastPointerX = 0;
                 let lastPointerY = 0;
+                let lastFrameTime = 0;
                 const defaultTitle = @Html.Raw(JsonSerializer.Serialize(defaultSceneTitle));
                 const defaultCopy = @Html.Raw(JsonSerializer.Serialize(defaultSceneCopy));
+
+                function readStoredRotationSettings() {
+                    try {
+                        const raw = window.localStorage.getItem(rotationSettingsStorageKey);
+                        if (!raw) {
+                            return null;
+                        }
+
+                        const parsed = JSON.parse(raw);
+                        return typeof parsed === 'object' && parsed !== null ? parsed : null;
+                    } catch {
+                        return null;
+                    }
+                }
+
+                function writeStoredRotationSettings(settings) {
+                    try {
+                        window.localStorage.setItem(rotationSettingsStorageKey, JSON.stringify(settings));
+                    } catch {
+                    }
+                }
+
+                function getStoredRotationValue(settings, key, fallback, input) {
+                    const candidate = Number(settings?.[key]);
+                    if (!Number.isFinite(candidate) || !input) {
+                        return fallback;
+                    }
+
+                    const minimum = Number(input.min || 0);
+                    const maximum = Number(input.max || fallback);
+                    return Math.max(minimum, Math.min(maximum, candidate));
+                }
+
+                const storedRotationSettings = readStoredRotationSettings();
+                if (storedRotationSettings) {
+                    if (wingRotationInput) {
+                        wingRotationInput.value = `${getStoredRotationValue(storedRotationSettings, 'wing', 5, wingRotationInput)}`;
+                    }
+
+                    if (roomRotationInput) {
+                        roomRotationInput.value = `${getStoredRotationValue(storedRotationSettings, 'room', 25, roomRotationInput)}`;
+                    }
+
+                    if (memoryRotationInput) {
+                        memoryRotationInput.value = `${getStoredRotationValue(storedRotationSettings, 'memory', 50, memoryRotationInput)}`;
+                    }
+                }
 
                 function setOverlay(title, copy) {
                     if (!overlay) {
                         return;
                     }
 
-                    overlay.innerHTML = `<strong>${title}</strong><span>${copy}</span>`;
+                    const titleElement = document.createElement('strong');
+                    titleElement.textContent = title;
+                    const copyElement = document.createElement('span');
+                    copyElement.textContent = copy;
+                    overlay.replaceChildren(titleElement, copyElement);
                 }
 
                 function resizeCanvas() {
@@ -308,13 +417,72 @@
                     };
                 }
 
-                function resolveNodePosition(node, animationTick, cache) {
+                function setSettingsOpen(isOpen) {
+                    if (!settingsPanel || !settingsToggle) {
+                        return;
+                    }
+
+                    settingsPanel.hidden = !isOpen;
+                    settingsPanel.classList.toggle('is-open', isOpen);
+                    shell?.classList.toggle('palace-3d-settings-open', isOpen);
+                    settingsToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                }
+
+                function getAnimationClock(nodeTypeLabel) {
+                    return animationClocks[nodeTypeLabel] ?? animationClocks.Memory;
+                }
+
+                function rotateAroundYAxis(position, angle) {
+                    const cosine = Math.cos(angle);
+                    const sine = Math.sin(angle);
+                    return {
+                        x: (position.x * cosine) - (position.z * sine),
+                        y: position.y,
+                        z: (position.x * sine) + (position.z * cosine)
+                    };
+                }
+
+                function applyWingLayerMotion(node, position) {
+                    if (node.nodeTypeLabel !== 'Wing' || node.orbitCenterNodeId) {
+                        return position;
+                    }
+
+                    const orbitAngle = animationClocks.Wing * 0.18;
+                    return rotateAroundYAxis(position, orbitAngle);
+                }
+
+                function bindRotationControl(input, output, storageKey, applyValue) {
+                    if (!input) {
+                        return;
+                    }
+
+                    const sync = () => {
+                        const speedPercent = Number(input.value || 0);
+                        if (output) {
+                            output.textContent = `${speedPercent}%`;
+                        }
+
+                        applyValue(speedPercent / 100);
+                        const nextSettings = {
+                            wing: Number(wingRotationInput?.value || 5),
+                            room: Number(roomRotationInput?.value || 25),
+                            memory: Number(memoryRotationInput?.value || 50)
+                        };
+                        nextSettings[storageKey] = speedPercent;
+                        writeStoredRotationSettings(nextSettings);
+                    };
+
+                    input.addEventListener('input', sync);
+                    sync();
+                }
+
+                function resolveNodePosition(node, cache) {
                     if (cache.has(node.id)) {
                         return cache.get(node.id);
                     }
 
                     if (!node.orbitCenterNodeId) {
-                        const position = { x: node.x, y: node.y, z: node.z };
+                        const position = applyWingLayerMotion(node, { x: node.x, y: node.y, z: node.z });
                         cache.set(node.id, position);
                         return position;
                     }
@@ -326,8 +494,13 @@
                         return position;
                     }
 
-                    const center = resolveNodePosition(centerNode, animationTick, cache);
-                    const orbit = node.orbitPhase + (animationTick * node.orbitSpeed);
+                    const center = resolveNodePosition(centerNode, cache);
+                    const orbitVelocityMultiplier = node.nodeTypeLabel === 'Memory'
+                        ? 3.4
+                        : node.nodeTypeLabel === 'Todo'
+                            ? 1.8
+                            : 1;
+                    const orbit = node.orbitPhase + (getAnimationClock(node.nodeTypeLabel) * node.orbitSpeed * orbitVelocityMultiplier);
                     const position = {
                         x: center.x + (Math.cos(orbit) * node.orbitRadius),
                         y: center.y + (Math.sin(orbit) * node.orbitVerticalRadius),
@@ -337,8 +510,8 @@
                     return position;
                 }
 
-                function rotateNode(node, animationTick, cache) {
-                    const resolved = resolveNodePosition(node, animationTick, cache);
+                function rotateNode(node, cache) {
+                    const resolved = resolveNodePosition(node, cache);
                     const projection = projectPoint(resolved.x, resolved.y, resolved.z);
                     return {
                         ...node,
@@ -350,7 +523,7 @@
                     };
                 }
 
-                function drawPalaceClouds(palaceNode, animationTick) {
+                function drawPalaceClouds(palaceNode) {
                     if (!palaceNode) {
                         return;
                     }
@@ -365,7 +538,7 @@
 
                     cloudLayers.forEach(layer => {
                         for (let index = 0; index < layer.count; index += 1) {
-                            const orbit = animationTick * layer.speed + layer.phase + (index / layer.count) * Math.PI * 2;
+                            const orbit = (animationClocks.Palace * layer.speed) + layer.phase + (index / layer.count) * Math.PI * 2;
                             const x = palaceNode.x + Math.cos(orbit) * layer.radius;
                             const y = palaceNode.y + Math.sin(orbit * 1.12) * layer.radius * 0.72;
                             const z = palaceNode.z + Math.cos(orbit * 1.46 + layer.phase) * layer.radius * 0.92;
@@ -400,7 +573,7 @@
                     return hash;
                 }
 
-                function drawWingClouds(wingNodes, animationTick) {
+                function drawWingClouds(wingNodes) {
                     wingNodes.forEach(wingNode => {
                         const seed = stringSeed(wingNode.id);
                         const phaseOffset = (seed % 360) * (Math.PI / 180);
@@ -412,7 +585,7 @@
 
                         cloudLayers.forEach(layer => {
                             for (let index = 0; index < layer.count; index += 1) {
-                                const orbit = animationTick * layer.speed + layer.phase + (index / layer.count) * Math.PI * 2;
+                                const orbit = (animationClocks.Wing * layer.speed) + layer.phase + (index / layer.count) * Math.PI * 2;
                                 const x = wingNode.x + Math.cos(orbit) * layer.radius;
                                 const y = wingNode.y + Math.sin(orbit * layer.skew) * layer.radius * 0.74;
                                 const z = wingNode.z + Math.cos((orbit * 1.32) + layer.phase) * layer.radius * 0.86;
@@ -439,7 +612,7 @@
                     });
                 }
 
-                function drawRoomClouds(roomNodes, animationTick) {
+                function drawRoomClouds(roomNodes) {
                     roomNodes.forEach(roomNode => {
                         const seed = stringSeed(roomNode.id);
                         const phaseOffset = (seed % 360) * (Math.PI / 180);
@@ -450,7 +623,7 @@
 
                         cloudLayers.forEach(layer => {
                             for (let index = 0; index < layer.count; index += 1) {
-                                const orbit = animationTick * layer.speed + layer.phase + (index / layer.count) * Math.PI * 2;
+                                const orbit = (animationClocks.Room * layer.speed) + layer.phase + (index / layer.count) * Math.PI * 2;
                                 const x = roomNode.x + Math.cos(orbit) * layer.radius;
                                 const y = roomNode.y + Math.sin(orbit * layer.skew) * layer.radius * 0.68;
                                 const z = roomNode.z + Math.cos((orbit * 1.24) + layer.phase) * layer.radius * 0.56;
@@ -477,7 +650,7 @@
                     });
                 }
 
-                function drawRoomOrbitTrails(roomNodes, animationTick, positionCache) {
+                function drawRoomOrbitTrails(roomNodes, positionCache) {
                     roomNodes.forEach(roomNode => {
                         if (!roomNode.orbitCenterNodeId) {
                             return;
@@ -488,11 +661,11 @@
                             return;
                         }
 
-                        const center = resolveNodePosition(centerNode, animationTick, positionCache);
+                        const center = resolveNodePosition(centerNode, positionCache);
                         const samples = 36;
                         context.beginPath();
                         for (let index = 0; index <= samples; index += 1) {
-                            const orbit = roomNode.orbitPhase + (animationTick * roomNode.orbitSpeed) + ((index / samples) * Math.PI * 2);
+                            const orbit = roomNode.orbitPhase + (animationClocks.Room * roomNode.orbitSpeed) + ((index / samples) * Math.PI * 2);
                             const projected = projectPoint(
                                 center.x + (Math.cos(orbit) * roomNode.orbitRadius),
                                 center.y + (Math.sin(orbit) * roomNode.orbitVerticalRadius),
@@ -510,10 +683,84 @@
                     });
                 }
 
+                function getRingAnimationState(node, ringIndex, speedBase) {
+                    const seed = stringSeed(`${node.id}:${ringIndex}:ring`);
+                    const clock = node.nodeTypeLabel === 'Palace'
+                        ? animationClocks.Palace
+                        : getAnimationClock(node.nodeTypeLabel);
+
+                    return {
+                        offset: ((((seed >> 5) % 360) * Math.PI) / 180) + (clock * (speedBase + ((((seed >> 11) % 100) / 100) * speedBase * 0.9)) * (seed % 2 === 0 ? 1 : -1)),
+                        ellipseBias: 0.5 + ((((seed >> 17) % 100) / 100) * 0.22),
+                        widthBias: 0.9 + ((((seed >> 23) % 100) / 100) * 0.35)
+                    };
+                }
+
+                function parseHexColor(hexColor) {
+                    const normalized = `${hexColor || ''}`.trim();
+                    const hex = normalized.startsWith('#') ? normalized.slice(1) : normalized;
+                    const expanded = hex.length === 3
+                        ? hex.split('').map(value => `${value}${value}`).join('')
+                        : hex;
+
+                    if (!/^[0-9a-fA-F]{6}$/.test(expanded)) {
+                        return { red: 255, green: 255, blue: 255 };
+                    }
+
+                    return {
+                        red: Number.parseInt(expanded.slice(0, 2), 16),
+                        green: Number.parseInt(expanded.slice(2, 4), 16),
+                        blue: Number.parseInt(expanded.slice(4, 6), 16)
+                    };
+                }
+
+                function mixColor(hexColor, targetHexColor, amount) {
+                    const source = parseHexColor(hexColor);
+                    const target = parseHexColor(targetHexColor);
+                    const blend = Math.max(0, Math.min(1, amount));
+                    const red = Math.round(source.red + ((target.red - source.red) * blend));
+                    const green = Math.round(source.green + ((target.green - source.green) * blend));
+                    const blue = Math.round(source.blue + ((target.blue - source.blue) * blend));
+                    return `rgb(${red}, ${green}, ${blue})`;
+                }
+
+                function drawSaturnRing(node, ringIndex, radiusXMultiplier, radiusYMultiplier, widthFactor, opacity, speedBase, startAngle, endAngle) {
+                    const ringState = getRingAnimationState(node, ringIndex, speedBase);
+                    const radiusX = node.screenRadius * radiusXMultiplier;
+                    const radiusY = Math.max(2.4, node.screenRadius * radiusYMultiplier * ringState.ellipseBias);
+                    const gradient = context.createConicGradient(ringState.offset, node.screenX, node.screenY);
+                    gradient.addColorStop(0.0, mixColor(node.colorHex, '#FFFFFF', 0.38));
+                    gradient.addColorStop(0.22, mixColor(node.colorHex, '#FFFFFF', 0.12));
+                    gradient.addColorStop(0.48, mixColor(node.colorHex, '#08111F', 0.18));
+                    gradient.addColorStop(0.74, mixColor(node.colorHex, '#FFFFFF', 0.18));
+                    gradient.addColorStop(1.0, mixColor(node.colorHex, '#FFFFFF', 0.38));
+
+                    context.save();
+                    context.beginPath();
+                    context.lineWidth = Math.max(0.9, node.screenRadius * widthFactor * ringState.widthBias);
+                    context.strokeStyle = gradient;
+                    context.globalAlpha = opacity;
+                    context.ellipse(node.screenX, node.screenY, radiusX, radiusY, ringState.offset, startAngle, endAngle);
+                    context.stroke();
+                    context.restore();
+                }
+
                 function drawScene() {
-                    const animationTick = performance.now() / 1000;
-                    const statefulYawDrift = Math.sin(animationTick * 0.11) * 0.0000004;
-                    const statefulPitchDrift = Math.cos(animationTick * 0.08) * 0.0000003;
+                    const frameTime = performance.now();
+                    if (!lastFrameTime) {
+                        lastFrameTime = frameTime;
+                    }
+
+                    const deltaSeconds = Math.min((frameTime - lastFrameTime) / 1000, 0.05);
+                    lastFrameTime = frameTime;
+                    animationClocks.Palace += deltaSeconds;
+                    animationClocks.Wing += deltaSeconds * orbitSpeedMultipliers.Wing;
+                    animationClocks.Room += deltaSeconds * orbitSpeedMultipliers.Room;
+                    animationClocks.Memory += deltaSeconds * orbitSpeedMultipliers.Memory;
+                    animationClocks.Todo += deltaSeconds * orbitSpeedMultipliers.Todo;
+
+                    const statefulYawDrift = Math.sin(animationClocks.Palace * 0.11) * 0.0000004;
+                    const statefulPitchDrift = Math.cos(animationClocks.Palace * 0.08) * 0.0000003;
 
                     if (!isDragging) {
                         targetRotationX = Math.max(-1.05, Math.min(1.05, targetRotationX + inertiaX + statefulPitchDrift));
@@ -530,13 +777,13 @@
 
                     context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
                     const positionCache = new Map();
-                    projectedNodes = scene.nodes.map(node => rotateNode(node, animationTick, positionCache)).sort((left, right) => left.depth - right.depth);
+                    projectedNodes = scene.nodes.map(node => rotateNode(node, positionCache)).sort((left, right) => left.depth - right.depth);
                     const projectedById = new Map(projectedNodes.map(node => [node.id, node]));
                     const palaceNode = projectedNodes.find(node => node.nodeTypeLabel === 'Palace');
                     const wingNodes = projectedNodes.filter(node => node.nodeTypeLabel === 'Wing');
                     const roomNodes = projectedNodes.filter(node => node.nodeTypeLabel === 'Room');
 
-                    drawRoomOrbitTrails(roomNodes, animationTick, positionCache);
+                    drawRoomOrbitTrails(roomNodes, positionCache);
                     context.lineWidth = 0.95;
                     scene.edges.forEach(edge => {
                         const from = projectedById.get(edge.fromNodeId);
@@ -553,33 +800,30 @@
                         context.stroke();
                     });
 
-                    drawPalaceClouds(palaceNode, animationTick);
-                    drawWingClouds(wingNodes, animationTick);
-                    drawRoomClouds(roomNodes, animationTick);
+                    drawPalaceClouds(palaceNode);
+                    drawWingClouds(wingNodes);
+                    drawRoomClouds(roomNodes);
 
                     projectedNodes.forEach(node => {
                         const isPalace = node.nodeTypeLabel === 'Palace';
                         const isWing = node.nodeTypeLabel === 'Wing';
+                        const isRoom = node.nodeTypeLabel === 'Room';
 
                         if (isPalace) {
-                            context.beginPath();
-                            context.lineWidth = Math.max(1.5, node.screenRadius * 0.18);
-                            context.strokeStyle = 'rgba(255, 255, 255, 0.38)';
-                            context.arc(node.screenX, node.screenY, node.screenRadius * 1.42, 0, Math.PI * 2);
-                            context.stroke();
+                            drawSaturnRing(node, 0, 1.82, 0.64, 0.16, 0.24, 0.22, Math.PI, Math.PI * 2);
                         }
 
                         if (isWing) {
+                            drawSaturnRing(node, 0, 1.72, 0.6, 0.14, 0.25, 0.18, Math.PI, Math.PI * 2);
                             context.beginPath();
                             context.fillStyle = `${node.colorHex}20`;
                             context.arc(node.screenX, node.screenY, node.screenRadius * 1.85, 0, Math.PI * 2);
                             context.fill();
+                        }
 
-                            context.beginPath();
-                            context.lineWidth = Math.max(1.2, node.screenRadius * 0.16);
-                            context.strokeStyle = `${node.colorHex}9C`;
-                            context.arc(node.screenX, node.screenY, node.screenRadius * 1.45, 0, Math.PI * 2);
-                            context.stroke();
+                        if (isRoom) {
+                            drawSaturnRing(node, 0, 1.56, 0.56, 0.11, 0.28, 0.26, Math.PI, Math.PI * 2);
+                            drawSaturnRing(node, 1, 1.96, 0.46, 0.085, 0.18, 0.18, Math.PI, Math.PI * 2);
                         }
 
                         context.beginPath();
@@ -600,11 +844,24 @@
                             context.fillStyle = node.colorHex;
                         }
 
-                        context.shadowBlur = node.id === hoveredNode?.id ? 18 : isPalace ? 16 : isWing ? 12 : 8;
+                        context.shadowBlur = node.id === hoveredNode?.id ? 18 : isPalace ? 16 : isWing ? 12 : isRoom ? 10 : 8;
                         context.shadowColor = isPalace ? '#FFFFFF' : node.colorHex;
                         context.arc(node.screenX, node.screenY, node.screenRadius, 0, Math.PI * 2);
                         context.fill();
                         context.shadowBlur = 0;
+
+                        if (isPalace) {
+                            drawSaturnRing(node, 0, 1.82, 0.64, 0.18, 0.62, 0.22, 0, Math.PI);
+                        }
+
+                        if (isWing) {
+                            drawSaturnRing(node, 0, 1.72, 0.6, 0.16, 0.68, 0.18, 0, Math.PI);
+                        }
+
+                        if (isRoom) {
+                            drawSaturnRing(node, 0, 1.56, 0.56, 0.12, 0.72, 0.26, 0, Math.PI);
+                            drawSaturnRing(node, 1, 1.96, 0.46, 0.09, 0.52, 0.18, 0, Math.PI);
+                        }
 
                         if (node.id === hoveredNode?.id) {
                             context.fillStyle = '#E5EEF9';
@@ -647,6 +904,34 @@
                     if (zoomValue) {
                         zoomValue.textContent = `${Math.round(zoomLevel * 100)}%`;
                     }
+                });
+
+                settingsToggle?.addEventListener('click', () => {
+                    const isOpen = settingsToggle.getAttribute('aria-expanded') === 'true';
+                    setSettingsOpen(!isOpen);
+                });
+
+                settingsClose?.addEventListener('click', () => {
+                    setSettingsOpen(false);
+                });
+
+                document.addEventListener('keydown', event => {
+                    if (event.key === 'Escape') {
+                        setSettingsOpen(false);
+                    }
+                });
+
+                bindRotationControl(wingRotationInput, wingRotationValue, 'wing', value => {
+                    orbitSpeedMultipliers.Wing = value;
+                });
+
+                bindRotationControl(roomRotationInput, roomRotationValue, 'room', value => {
+                    orbitSpeedMultipliers.Room = value;
+                });
+
+                bindRotationControl(memoryRotationInput, memoryRotationValue, 'memory', value => {
+                    orbitSpeedMultipliers.Memory = value;
+                    orbitSpeedMultipliers.Todo = value;
                 });
 
                 canvas.addEventListener('pointerdown', event => {
