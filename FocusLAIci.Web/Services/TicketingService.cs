@@ -12,16 +12,23 @@ public sealed class TicketingService
     private static readonly Regex BulletPattern = new(@"^(?:[-*•]|\d+[.)])\s+", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private readonly FocusMemoryContext _dbContext;
     private readonly ContextService _contextService;
+    private readonly IFocusEventPublisher _eventPublisher;
 
     public TicketingService(FocusMemoryContext dbContext)
-        : this(dbContext, new ContextService(dbContext))
+        : this(dbContext, new ContextService(dbContext), NullFocusEventPublisher.Instance)
     {
     }
 
     public TicketingService(FocusMemoryContext dbContext, ContextService contextService)
+        : this(dbContext, contextService, NullFocusEventPublisher.Instance)
+    {
+    }
+
+    public TicketingService(FocusMemoryContext dbContext, ContextService contextService, IFocusEventPublisher eventPublisher)
     {
         _dbContext = dbContext;
         _contextService = contextService;
+        _eventPublisher = eventPublisher;
     }
 
     public async Task<TicketBoardViewModel> GetBoardAsync(string? completedSearch, int completedPage, CancellationToken cancellationToken)
@@ -230,6 +237,8 @@ public sealed class TicketingService
             await EnsureTicketSummaryMemoryAsync(ticket.Id, cancellationToken);
         }
 
+        await PublishTicketEventAsync("ticket.created", ticket.Id, ticket.Title, ticket.Description, cancellationToken);
+
         return ticket.Id;
     }
 
@@ -267,6 +276,8 @@ public sealed class TicketingService
         {
             await EnsureTicketSummaryMemoryAsync(ticket.Id, cancellationToken);
         }
+
+        await PublishTicketEventAsync("ticket.subticket-created", ticket.Id, ticket.Title, ticket.Description, cancellationToken);
 
         return ticket.Id;
     }
@@ -317,6 +328,8 @@ public sealed class TicketingService
         {
             await AddActivityAsync(ticket.Id, "reopened", $"{ticket.TicketNumber} moved out of completed.", MapStatusLabel(ticket.Status), cancellationToken);
         }
+
+        await PublishTicketEventAsync("ticket.updated", ticket.Id, ticket.Title, ticket.Description, cancellationToken);
     }
 
     public async Task UpdateTicketStatusAsync(Guid id, TicketStatus status, CancellationToken cancellationToken)
@@ -342,6 +355,8 @@ public sealed class TicketingService
         {
             await EnsureTicketSummaryMemoryAsync(ticket.Id, cancellationToken);
         }
+
+        await PublishTicketEventAsync("ticket.status-updated", ticket.Id, ticket.Title, MapStatusLabel(status), cancellationToken);
     }
 
     public async Task<Guid> AddNoteAsync(Guid ticketId, TicketNoteInput input, CancellationToken cancellationToken)
@@ -360,6 +375,7 @@ public sealed class TicketingService
         _dbContext.TicketNotes.Add(note);
         await _dbContext.SaveChangesAsync(cancellationToken);
         await AddActivityAsync(ticketId, "note-added", $"Added note by {note.Author}.", note.Content, cancellationToken);
+        await PublishTicketEventAsync("ticket.note-added", ticketId, note.Author, note.Content, cancellationToken);
         return note.Id;
     }
 
@@ -373,6 +389,7 @@ public sealed class TicketingService
         note.UpdatedUtc = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
         await AddActivityAsync(ticketId, "note-updated", $"Updated note by {note.Author}.", note.Content, cancellationToken);
+        await PublishTicketEventAsync("ticket.note-updated", ticketId, note.Author, note.Content, cancellationToken);
     }
 
     public async Task DeleteNoteAsync(Guid ticketId, Guid noteId, CancellationToken cancellationToken)
@@ -383,6 +400,7 @@ public sealed class TicketingService
         _dbContext.TicketNotes.Remove(note);
         await _dbContext.SaveChangesAsync(cancellationToken);
         await AddActivityAsync(ticketId, "note-removed", $"Removed note by {note.Author}.", string.Empty, cancellationToken);
+        await PublishTicketEventAsync("ticket.note-removed", ticketId, note.Author, string.Empty, cancellationToken);
     }
 
     public async Task<Guid> LogTimeAsync(Guid ticketId, TicketTimeLogInput input, CancellationToken cancellationToken)
@@ -411,6 +429,8 @@ public sealed class TicketingService
         {
             await EnsureTicketSummaryMemoryAsync(ticket.Id, cancellationToken);
         }
+
+        await PublishTicketEventAsync("ticket.time-logged", ticketId, timeLog.ModelName, timeLog.Summary, cancellationToken);
 
         return timeLog.Id;
     }
@@ -468,6 +488,7 @@ public sealed class TicketingService
         ticket.UpdatedUtc = now;
         await _dbContext.SaveChangesAsync(cancellationToken);
         await AddActivityAsync(ticket.Id, "subtickets-generated", $"Generated {createdCount} subtickets.", string.Join(Environment.NewLine, candidateTitles), cancellationToken);
+        await PublishTicketEventAsync("ticket.subtickets-generated", ticket.Id, ticket.Title, $"Generated {createdCount} subtickets.", cancellationToken);
         return createdCount;
     }
 
@@ -683,6 +704,17 @@ public sealed class TicketingService
             Label = label
         });
         await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private Task PublishTicketEventAsync(string eventType, Guid ticketId, string title, string description, CancellationToken cancellationToken)
+    {
+        return _eventPublisher.PublishAsync(new FocusMcpPublishedEvent
+        {
+            EventType = eventType,
+            Title = title,
+            Description = description,
+            ResourceUris = ["focus://tickets/board", "focus://workspace", "focus://recent-changes", $"focus://tickets/{ticketId}"]
+        }, cancellationToken);
     }
 
     private async Task SyncMemoryTagsAsync(Guid memoryId, IReadOnlyCollection<string> tagNames, CancellationToken cancellationToken)

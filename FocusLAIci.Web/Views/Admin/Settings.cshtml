@@ -88,6 +88,7 @@
                         <label asp-for="DatabaseInput.DatabasePath" class="form-label"></label>
                         <input asp-for="DatabaseInput.DatabasePath" class="form-control" />
                         <div class="form-text">Current database: @Model.DatabaseTarget.DatabasePath</div>
+                        <div class="form-text">Approved roots: @string.Join(" | ", Model.ApprovedDatabaseRootPaths)</div>
                         <span asp-validation-for="DatabaseInput.DatabasePath" class="text-danger"></span>
                     </div>
                     <div class="form-check mb-3">

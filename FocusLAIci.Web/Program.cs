@@ -1,6 +1,7 @@
 ﻿using System.Text.Json.Serialization;
 using FocusLAIci.Web.Data;
 using FocusLAIci.Web.Services;
+using FocusLAIci.Web.Security;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,15 @@ builder.Services
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "RequestVerificationToken";
+    options.Cookie.Name = "focus-antiforgery";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+});
+builder.Services.AddSingleton(serviceProvider => new LocalPathPolicy(serviceProvider.GetRequiredService<IHostEnvironment>()));
 builder.Services.AddSingleton<FocusDatabaseTargetService>();
 builder.Services.AddDbContext<FocusMemoryContext>((serviceProvider, options) =>
     options.UseSqlite(serviceProvider.GetRequiredService<FocusDatabaseTargetService>().GetCurrentTarget().ConnectionString));
@@ -28,6 +38,12 @@ builder.Services.AddScoped<TicketingService>();
 builder.Services.AddScoped<SiteSettingsService>();
 builder.Services.AddScoped<CodeGraphService>();
 builder.Services.AddScoped<ContextService>();
+builder.Services.AddSingleton<FocusMcpSessionService>();
+builder.Services.AddSingleton<FocusMcpEventBus>();
+builder.Services.AddSingleton<IFocusEventPublisher>(serviceProvider => serviceProvider.GetRequiredService<FocusMcpEventBus>());
+builder.Services.AddSingleton<FocusMcpAuthService>();
+builder.Services.AddSingleton<FocusMcpToolRegistry>();
+builder.Services.AddSingleton<FocusMcpResourceRegistry>();
 
 var app = builder.Build();
 
@@ -48,6 +64,8 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+app.UseMiddleware<ApiWriteOriginGuardMiddleware>();
 app.UseRouting();
 
 app.UseAuthorization();

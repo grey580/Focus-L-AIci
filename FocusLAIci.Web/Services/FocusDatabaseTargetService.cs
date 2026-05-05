@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FocusLAIci.Web.Data;
 using FocusLAIci.Web.Models;
+using FocusLAIci.Web.Security;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,14 +11,23 @@ public sealed class FocusDatabaseTargetService
 {
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;
+    private readonly LocalPathPolicy _pathPolicy;
     private readonly string _overrideFilePath;
 
     public FocusDatabaseTargetService(IConfiguration configuration, IHostEnvironment environment)
+        : this(configuration, environment, new LocalPathPolicy(environment))
+    {
+    }
+
+    public FocusDatabaseTargetService(IConfiguration configuration, IHostEnvironment environment, LocalPathPolicy pathPolicy)
     {
         _configuration = configuration;
         _environment = environment;
+        _pathPolicy = pathPolicy;
         _overrideFilePath = Path.Combine(_environment.ContentRootPath, "focus-palace.database-target.json");
     }
+
+    public IReadOnlyCollection<string> ApprovedDatabaseRoots => _pathPolicy.ApprovedDatabaseRoots;
 
     public FocusDatabaseTargetSnapshot GetCurrentTarget()
     {
@@ -74,7 +84,7 @@ public sealed class FocusDatabaseTargetService
             throw new InvalidOperationException("Provide a database file path or choose the default database target.");
         }
 
-        var absolutePath = Path.GetFullPath(input.DatabasePath.Trim());
+        var absolutePath = _pathPolicy.EnsureApprovedDatabasePath(input.DatabasePath);
         var directory = Path.GetDirectoryName(absolutePath);
         if (string.IsNullOrWhiteSpace(directory))
         {

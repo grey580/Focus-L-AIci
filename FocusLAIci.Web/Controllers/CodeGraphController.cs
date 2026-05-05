@@ -29,7 +29,8 @@ public sealed class CodeGraphController : Controller
             return View(new CodeGraphBoardViewModel
             {
                 Input = input,
-                Projects = board.Projects
+                Projects = board.Projects,
+                ApprovedRootPaths = board.ApprovedRootPaths
             });
         }
 
@@ -46,7 +47,8 @@ public sealed class CodeGraphController : Controller
             return View(new CodeGraphBoardViewModel
             {
                 Input = input,
-                Projects = board.Projects
+                Projects = board.Projects,
+                ApprovedRootPaths = board.ApprovedRootPaths
             });
         }
     }

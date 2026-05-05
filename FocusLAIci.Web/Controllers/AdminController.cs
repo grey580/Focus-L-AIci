@@ -1,4 +1,5 @@
 using FocusLAIci.Web.Models;
+using FocusLAIci.Web.Security;
 using FocusLAIci.Web.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,15 +10,30 @@ public sealed class AdminController : Controller
     private readonly FocusDatabaseTargetService _databaseTargetService;
     private readonly SiteSettingsService _siteSettingsService;
     private readonly PalaceService _palaceService;
+    private readonly FocusMcpSessionService _mcpSessionService;
+    private readonly FocusMcpToolRegistry _mcpToolRegistry;
+    private readonly FocusMcpResourceRegistry _mcpResourceRegistry;
+    private readonly FocusMcpEventBus _mcpEventBus;
+    private readonly FocusMcpAuthService _mcpAuthService;
 
     public AdminController(
         SiteSettingsService siteSettingsService,
         FocusDatabaseTargetService databaseTargetService,
-        PalaceService palaceService)
+        PalaceService palaceService,
+        FocusMcpSessionService mcpSessionService,
+        FocusMcpToolRegistry mcpToolRegistry,
+        FocusMcpResourceRegistry mcpResourceRegistry,
+        FocusMcpEventBus mcpEventBus,
+        FocusMcpAuthService mcpAuthService)
     {
         _siteSettingsService = siteSettingsService;
         _databaseTargetService = databaseTargetService;
         _palaceService = palaceService;
+        _mcpSessionService = mcpSessionService;
+        _mcpToolRegistry = mcpToolRegistry;
+        _mcpResourceRegistry = mcpResourceRegistry;
+        _mcpEventBus = mcpEventBus;
+        _mcpAuthService = mcpAuthService;
     }
 
     [HttpGet]
@@ -27,8 +43,24 @@ public sealed class AdminController : Controller
     }
 
     [HttpGet]
-    public async Task<IActionResult> Inspect([FromQuery] ContextBriefInput? input, CancellationToken cancellationToken)
+    public async Task<IActionResult> Inspect(
+        string? question,
+        bool includeCompletedWork,
+        bool expandHistory = true,
+        int? resultsPerSection = null,
+        CancellationToken cancellationToken = default)
     {
+        if (!RequestInputPolicy.TryCreateOptionalContextBriefInput(
+                question,
+                includeCompletedWork,
+                expandHistory,
+                resultsPerSection,
+                out var input,
+                out var validationError))
+        {
+            return BadRequest(validationError);
+        }
+
         var model = await _palaceService.GetInspectorAsync(
             input is not null && string.IsNullOrWhiteSpace(input.Question) && !input.IncludeCompletedWork && input.ExpandHistory && input.ResultsPerSection == 6
                 ? null
@@ -87,6 +119,32 @@ public sealed class AdminController : Controller
         });
     }
 
+    [HttpGet]
+    public IActionResult McpConsole()
+    {
+        return View(new FocusMcpConsoleViewModel
+        {
+            AuthMode = _mcpAuthService.DescribeMode(),
+            MessageEndpointUrl = Url.Content("~/api/mcp/message"),
+            ManifestEndpointUrl = Url.Content("~/api/mcp/manifest"),
+            StreamEndpointTemplate = Url.Content("~/api/mcp/events/{sessionId}"),
+            SampleRequestJson =
+                """
+                {
+                  "type": "initialize",
+                  "payload": {
+                    "clientName": "Focus admin console",
+                    "clientVersion": "1.0"
+                  }
+                }
+                """,
+            Tools = _mcpToolRegistry.GetTools(),
+            Resources = _mcpResourceRegistry.GetResources(),
+            Sessions = _mcpSessionService.GetSessions(),
+            RecentEvents = _mcpEventBus.GetRecentEvents(25)
+        });
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Settings(AdminSettingsInput input, CancellationToken cancellationToken)
@@ -122,6 +180,7 @@ public sealed class AdminController : Controller
                 Input = model.Input,
                 DatabaseInput = input,
                 TimeZoneOptions = model.TimeZoneOptions,
+                ApprovedDatabaseRootPaths = model.ApprovedDatabaseRootPaths,
                 ActiveTimeZoneLabel = model.ActiveTimeZoneLabel,
                 DatabaseTarget = model.DatabaseTarget
             };

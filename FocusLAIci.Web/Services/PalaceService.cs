@@ -10,16 +10,23 @@ public sealed class PalaceService
 {
     private readonly FocusMemoryContext _dbContext;
     private readonly ContextService _contextService;
+    private readonly IFocusEventPublisher _eventPublisher;
 
     public PalaceService(FocusMemoryContext dbContext)
-        : this(dbContext, new ContextService(dbContext))
+        : this(dbContext, new ContextService(dbContext), NullFocusEventPublisher.Instance)
     {
     }
 
     public PalaceService(FocusMemoryContext dbContext, ContextService contextService)
+        : this(dbContext, contextService, NullFocusEventPublisher.Instance)
+    {
+    }
+
+    public PalaceService(FocusMemoryContext dbContext, ContextService contextService, IFocusEventPublisher eventPublisher)
     {
         _dbContext = dbContext;
         _contextService = contextService;
+        _eventPublisher = eventPublisher;
     }
 
     public Task<DashboardViewModel> GetDashboardAsync(CancellationToken cancellationToken)
@@ -997,6 +1004,12 @@ public sealed class PalaceService
         await SyncTagsAsync(memory.Id, tagNames, cancellationToken);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await PublishMemoryEventAsync(
+            isExistingMemory ? "memory.updated" : "memory.created",
+            memory.Id,
+            memory.Title,
+            memory.Summary,
+            cancellationToken);
         return memory.Id;
     }
 
@@ -1011,6 +1024,7 @@ public sealed class PalaceService
         memory.ReviewAfterUtc = now.AddDays(MemoryTrustHelper.DefaultReviewWindowDays);
         memory.UpdatedUtc = now;
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await PublishMemoryEventAsync("memory.verified", memory.Id, memory.Title, "Memory marked verified.", cancellationToken);
     }
 
     public async Task MarkMemoryNeedsReviewAsync(Guid id, CancellationToken cancellationToken)
@@ -1023,6 +1037,7 @@ public sealed class PalaceService
         memory.ReviewAfterUtc = now;
         memory.UpdatedUtc = now;
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await PublishMemoryEventAsync("memory.needs-review", memory.Id, memory.Title, "Memory marked for review.", cancellationToken);
     }
 
     public async Task MarkMemoryActiveAsync(Guid id, CancellationToken cancellationToken)
@@ -1038,6 +1053,7 @@ public sealed class PalaceService
         memory.ArchivedUtc = null;
         memory.UpdatedUtc = now;
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await PublishMemoryEventAsync("memory.restored", memory.Id, memory.Title, "Memory restored to active state.", cancellationToken);
     }
 
     public async Task ArchiveMemoryAsync(Guid id, string? reason, CancellationToken cancellationToken)
@@ -1054,6 +1070,7 @@ public sealed class PalaceService
         memory.IsPinned = false;
         memory.UpdatedUtc = now;
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await PublishMemoryEventAsync("memory.archived", memory.Id, memory.Title, memory.LifecycleReason, cancellationToken);
     }
 
     public async Task SupersedeMemoryAsync(Guid id, Guid replacementMemoryId, string? reason, CancellationToken cancellationToken)
@@ -1099,6 +1116,7 @@ public sealed class PalaceService
         memory.IsPinned = false;
         memory.UpdatedUtc = now;
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await PublishMemoryEventAsync("memory.superseded", memory.Id, memory.Title, memory.LifecycleReason, cancellationToken);
     }
 
     public async Task BulkUpdateMemoryGovernanceAsync(MemoryBulkGovernanceInput input, CancellationToken cancellationToken)
@@ -1176,6 +1194,13 @@ public sealed class PalaceService
 
         _dbContext.Rooms.Add(room);
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await _eventPublisher.PublishAsync(new FocusMcpPublishedEvent
+        {
+            EventType = "room.created",
+            Title = room.Name,
+            Description = room.Description,
+            ResourceUris = ["focus://system/metrics", "focus://workspace", "focus://recent-changes"]
+        }, cancellationToken);
         return room.Id;
     }
 
@@ -1193,6 +1218,7 @@ public sealed class PalaceService
 
         _dbContext.Todos.Add(todo);
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await PublishTodoEventAsync("todo.created", todo.Id, todo.Title, todo.Details, cancellationToken);
         return todo.Id;
     }
 
@@ -1208,6 +1234,7 @@ public sealed class PalaceService
         todo.UpdatedUtc = DateTime.UtcNow;
         todo.CompletedUtc = status == TodoStatus.Done ? DateTime.UtcNow : null;
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await PublishTodoEventAsync("todo.status-updated", todo.Id, todo.Title, status.ToString(), cancellationToken);
     }
 
     public async Task UpdateTodoAsync(Guid id, TodoEditorInput input, CancellationToken cancellationToken)
@@ -1224,6 +1251,7 @@ public sealed class PalaceService
         todo.UpdatedUtc = DateTime.UtcNow;
         todo.CompletedUtc = input.Status == TodoStatus.Done ? todo.CompletedUtc ?? todo.UpdatedUtc : null;
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await PublishTodoEventAsync("todo.updated", todo.Id, todo.Title, todo.Details, cancellationToken);
     }
 
     public async Task DeleteTodoAsync(Guid id, CancellationToken cancellationToken)
@@ -1236,6 +1264,13 @@ public sealed class PalaceService
 
         _dbContext.Todos.Remove(todo);
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await _eventPublisher.PublishAsync(new FocusMcpPublishedEvent
+        {
+            EventType = "todo.deleted",
+            Title = todo.Title,
+            Description = "Todo deleted.",
+            ResourceUris = ["focus://todos/board", "focus://workspace", "focus://recent-changes"]
+        }, cancellationToken);
     }
 
     public async Task<string?> GetWingSlugAsync(Guid wingId, CancellationToken cancellationToken)
@@ -1321,6 +1356,28 @@ public sealed class PalaceService
         }
 
         return memories;
+    }
+
+    private Task PublishMemoryEventAsync(string eventType, Guid memoryId, string title, string description, CancellationToken cancellationToken)
+    {
+        return _eventPublisher.PublishAsync(new FocusMcpPublishedEvent
+        {
+            EventType = eventType,
+            Title = title,
+            Description = description,
+            ResourceUris = ["focus://recent-changes", "focus://workspace", "focus://system/metrics", $"focus://memories/{memoryId}"]
+        }, cancellationToken);
+    }
+
+    private Task PublishTodoEventAsync(string eventType, Guid todoId, string title, string description, CancellationToken cancellationToken)
+    {
+        return _eventPublisher.PublishAsync(new FocusMcpPublishedEvent
+        {
+            EventType = eventType,
+            Title = title,
+            Description = description,
+            ResourceUris = ["focus://todos/board", "focus://workspace", "focus://recent-changes", $"focus://todos/{todoId}"]
+        }, cancellationToken);
     }
 
     private IQueryable<TodoEntry> BuildTodoQuery(bool includeDone)

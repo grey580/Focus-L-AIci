@@ -22,6 +22,7 @@
 - read/write APIs for todos and tickets
 - workspace export API and Inspect-page export panel for cold-start AI sessions
 - recent-changes feed plus structured context provenance for inspectable retrieval reasoning
+- local-first MCP server endpoints with Focus-native tools, resources, sessions, and SSE event streaming
 - sample data seeding for quick onboarding
 
 ## Memory model
@@ -93,6 +94,13 @@ The intended workflow is to use Code Graph first for orientation and narrowing, 
 
 Focus L-AIci's homepage includes a richer **context workspace** that can pull from memories, todos, tickets, ticket history, and code graph data to build a task-specific pack before you start working.
 
+The intended operator flow is:
+
+1. state the task on the dashboard
+2. build a context pack before coding
+3. inspect the top matches and per-source sections
+4. save or export the pack when it should travel into a new AI/session handoff
+
 It also exposes:
 
 - `POST /api/context/brief` for structured context-pack retrieval
@@ -116,3 +124,28 @@ Memory detail, search, dashboard, workspace, and Inspect expose the anti-context
 - active-only default retrieval so archived and superseded memories stay historical without polluting normal search, dashboard, workspace, or context flows
 - freshness chips and warnings in dashboard/context results so stale items do not silently outrank fresher ones
 - pinned-memory export annotations like `[Verified]` in the workspace snapshot
+
+### MCP server and admin console
+
+Focus L-AIci now exposes a local-first **MCP server** around its existing application services rather than requiring direct SQLite access.
+
+The MCP layer includes:
+
+- `GET /api/mcp/manifest` for tool/resource discovery
+- `POST /api/mcp/message` for session initialization, tool invocation, resource reads, and resource subscription updates
+- `GET /api/mcp/events/{sessionId}` for server-sent event delivery of Focus changes
+- Focus-native tools for memories, todos, tickets, workspace, recent changes, and code graph retrieval
+- Focus-native resources such as `focus://workspace`, `focus://recent-changes`, `focus://tickets/board`, `focus://todos/board`, `focus://memories/{id}`, `focus://todos/{id}`, and `focus://tickets/{id}`
+- an in-app **MCP Console** under the Admin area for testing raw envelopes and observing live event flow
+
+The event pipeline publishes updates when memories, todos, tickets, notes, and time logs change so subscribed clients can stay synchronized with the live Focus state.
+
+The practical MCP workflow is:
+
+1. call `initialize`
+2. inspect the manifest or use `complete` to discover tools/resources
+3. read `focus://recent-changes`, `focus://workspace`, or task-specific resources first
+4. subscribe only to the resources the task actually needs
+5. invoke mutating tools when Focus should become the system of record for the result
+
+For brand-new projects, Focus becomes more valuable as soon as a small set of foundation memories exists: repo path, startup command, database location, architecture notes, and major decisions.

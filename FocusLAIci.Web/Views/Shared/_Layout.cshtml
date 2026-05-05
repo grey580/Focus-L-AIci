@@ -1,6 +1,7 @@
-﻿@inject SiteSettingsService SiteSettingsService
+@inject SiteSettingsService SiteSettingsService
 @{
     var siteSettings = await SiteSettingsService.GetSettingsAsync();
+    var cspNonce = Context.Items[SecurityHeadersPolicy.CspNonceItemKey] as string ?? string.Empty;
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -8,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] - @siteSettings.DisplayName</title>
-    <script type="importmap"></script>
+    <script type="importmap" nonce="@cspNonce"></script>
     <link rel="icon" type="image/svg+xml" href="~/branding/favicon.svg" />
     <link rel="alternate icon" href="~/favicon.ico" />
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
@@ -26,6 +27,7 @@
         var todosActive = currentController == "Todos" ? "active" : string.Empty;
         var ticketsActive = currentController == "Tickets" ? "active" : string.Empty;
         var inspectActive = currentController == "Admin" && currentAction == "Inspect" ? "active" : string.Empty;
+        var mcpActive = currentController == "Admin" && currentAction == "McpConsole" ? "active" : string.Empty;
         var settingsActive = currentController == "Admin" && currentAction == "Settings" ? "active" : string.Empty;
     }
     <header>
@@ -61,6 +63,9 @@
                         </li>
                         <li class="nav-item">
                             <a class="nav-link @inspectActive" asp-area="" asp-controller="Admin" asp-action="Inspect">Inspect</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link @mcpActive" asp-area="" asp-controller="Admin" asp-action="McpConsole">MCP</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link @settingsActive" asp-area="" asp-controller="Admin" asp-action="Settings">Settings</a>

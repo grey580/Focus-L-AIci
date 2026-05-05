@@ -1,4 +1,5 @@
 using FocusLAIci.Web.Models;
+using FocusLAIci.Web.Security;
 using FocusLAIci.Web.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,6 +20,12 @@ public sealed class ContextController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AddLink(ContextLinkCreateInput input, CancellationToken cancellationToken)
     {
+        if (!ModelState.IsValid)
+        {
+            TempData["ErrorMessage"] = GetFirstModelError() ?? "Fix the invalid context link input and try again.";
+            return ReturnToLocalOrHome(input.ReturnUrl);
+        }
+
         try
         {
             await _contextService.AddLinkAsync(input, cancellationToken);
@@ -29,12 +36,7 @@ public sealed class ContextController : Controller
             TempData["ErrorMessage"] = exception.Message;
         }
 
-        if (!string.IsNullOrWhiteSpace(input.ReturnUrl) && Url.IsLocalUrl(input.ReturnUrl))
-        {
-            return Redirect(input.ReturnUrl);
-        }
-
-        return RedirectToAction("Index", "Home");
+        return ReturnToLocalOrHome(input.ReturnUrl);
     }
 
     [HttpPost]
@@ -63,6 +65,12 @@ public sealed class ContextController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AddSuggestedLinks(ContextSuggestedLinksInput input, CancellationToken cancellationToken)
     {
+        if (!ModelState.IsValid)
+        {
+            TempData["ErrorMessage"] = GetFirstModelError() ?? "Fix the invalid suggested-link input and try again.";
+            return ReturnToLocalOrHome(input.ReturnUrl);
+        }
+
         try
         {
             var linkedCount = await _contextService.AddSuggestedLinksAsync(input, cancellationToken);
@@ -75,18 +83,20 @@ public sealed class ContextController : Controller
             TempData["ErrorMessage"] = exception.Message;
         }
 
-        if (!string.IsNullOrWhiteSpace(input.ReturnUrl) && Url.IsLocalUrl(input.ReturnUrl))
-        {
-            return Redirect(input.ReturnUrl);
-        }
-
-        return RedirectToAction("Index", "Home");
+        return ReturnToLocalOrHome(input.ReturnUrl);
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SavePack(ContextBriefInput input, CancellationToken cancellationToken)
     {
+        if (!ModelState.IsValid)
+        {
+            TempData["ErrorMessage"] = GetFirstModelError() ?? "Provide a valid context question before saving a context pack.";
+            return RedirectToAction("Index", "Home");
+        }
+
+        input = RequestInputPolicy.NormalizeBoundContextBriefInput(input);
         var pack = await _contextService.BuildContextPackAsync(input, cancellationToken);
         if (pack is null)
         {
@@ -114,6 +124,13 @@ public sealed class ContextController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ExportPack(ContextBriefInput input, CancellationToken cancellationToken)
     {
+        if (!ModelState.IsValid)
+        {
+            TempData["ErrorMessage"] = GetFirstModelError() ?? "Provide a valid context question before exporting a context pack.";
+            return RedirectToAction("Index", "Home");
+        }
+
+        input = RequestInputPolicy.NormalizeBoundContextBriefInput(input);
         var pack = await _contextService.BuildContextPackAsync(input, cancellationToken);
         if (pack is null)
         {
@@ -129,5 +146,23 @@ public sealed class ContextController : Controller
     {
         var trimmed = value.Trim();
         return trimmed.Length <= maxLength ? trimmed : trimmed[..(maxLength - 3)].TrimEnd() + "...";
+    }
+
+    private IActionResult ReturnToLocalOrHome(string? returnUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl))
+        {
+            return Redirect(returnUrl);
+        }
+
+        return RedirectToAction("Index", "Home");
+    }
+
+    private string? GetFirstModelError()
+    {
+        return ModelState.Values
+            .SelectMany(x => x.Errors)
+            .Select(x => x.ErrorMessage)
+            .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
     }
 }

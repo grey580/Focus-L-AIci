@@ -81,6 +81,7 @@ The highest-signal retrieval surfaces are now:
 - **Inspect** for active database truth, dashboard diagnostics, recent changes, the workspace export block, and the memory governance queue
 - `GET /api/palace/workspace` for a prompt-ready snapshot of pinned memories, active work, code graph projects, and recent changes
 - `POST /api/context/brief` when you want the app to assemble a context pack instead of searching manually
+- the MCP surface (`GET /api/mcp/manifest`, `POST /api/mcp/message`, `GET /api/mcp/events/{sessionId}`) when the client can keep a session open and wants Focus-native tools/resources instead of ad hoc endpoint calls
 - memory trust signals (`Verified`, `Unverified`, `Needs review`) on memory cards, detail pages, and context results so stale knowledge is easier to spot
 - memory lifecycle signals (`Active`, `Archived`, `Superseded`) so retired knowledge stays historical without polluting default retrieval
 - `GET/POST/PUT /api/todos` and `GET/POST/PUT /api/tickets` when the workflow needs durable write-back without touching SQLite directly
@@ -117,6 +118,7 @@ Operating rules:
 
 - Search Focus before making assumptions.
 - Use Inspect and the workspace export first when you need fast orientation.
+- If MCP is available, initialize a session and read Focus-native resources/tools before falling back to lower-level endpoint calls.
 - Use the Inspect governance queue when memory cleanup or trust triage is needed.
 - Use Code Graph before broad raw code searching when repository structure matters.
 - Store durable outcomes, decisions, incidents, and reusable patterns back into Focus.
@@ -150,6 +152,7 @@ Use Focus L-AIci as the durable memory layer for this task.
 Before implementation:
 - search for relevant memories
 - check Inspect and copy the workspace export when fast cold-start context is useful
+- initialize MCP and read Focus-native resources first when the client can keep a session open
 - inspect related todos and tickets
 - check code graph context if repository orientation matters
 

@@ -1,0 +1,255 @@
+@model FocusMcpConsoleViewModel
+@{
+    ViewData["Title"] = "MCP Console";
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Developer tools</p>
+        <h1>MCP Console</h1>
+        <p class="page-copy">Inspect the Focus MCP manifest, initialize a local session, test tool/resource calls, and watch live resource updates.</p>
+    </div>
+</section>
+
+<div class="alert alert-info border-0 shadow-sm mb-4">
+    <strong>Recommended MCP flow:</strong> initialize first, read the manifest or use completion, fetch task context from memories/recent changes/workspace, then subscribe only to the resources you need. Use mutating tools when Focus should record the outcome.
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2 class="h5">Server shape</h2>
+                    <span class="text-secondary small">Local-first MCP surface</span>
+                </div>
+                <ul class="api-list mb-0">
+                    <li><strong>Auth:</strong> @Model.AuthMode</li>
+                    <li><strong>Message endpoint:</strong> <code>@Model.MessageEndpointUrl</code></li>
+                    <li><strong>Manifest:</strong> <code>@Model.ManifestEndpointUrl</code></li>
+                    <li><strong>Stream:</strong> <code>@Model.StreamEndpointTemplate</code></li>
+                    <li><strong>Tools:</strong> @Model.Tools.Count</li>
+                    <li><strong>Resources:</strong> @Model.Resources.Count</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2 class="h5">Active sessions</h2>
+                    <span class="text-secondary small">@Model.Sessions.Count connected MCP sessions</span>
+                </div>
+                @if (Model.Sessions.Count == 0)
+                {
+                    <div class="text-secondary small">No active MCP sessions yet.</div>
+                }
+                else
+                {
+                    <div class="dashboard-scroll-list">
+                        @foreach (var session in Model.Sessions)
+                        {
+                            <div class="todo-preview-item">
+                                <div class="memory-meta">@session.ClientName • @session.ClientVersion</div>
+                                <div class="fw-semibold">@session.SessionId</div>
+                                <div class="text-secondary small">@session.RemoteAddress • @session.AuthMode</div>
+                                <div class="text-secondary small">Subscriptions: @(session.ResourceSubscriptions.Count == 0 ? "none" : string.Join(", ", session.ResourceSubscriptions))</div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2 class="h5">Live event feed</h2>
+                    <span class="text-secondary small">@Model.RecentEvents.Count most recent MCP events</span>
+                </div>
+                <div id="mcp-live-events" class="dashboard-scroll-list">
+                    @foreach (var eventItem in Model.RecentEvents)
+                    {
+                        <div class="todo-preview-item">
+                            <div class="memory-meta">@eventItem.EventType • @eventItem.OccurredUtc.ToString("u")</div>
+                            <div class="fw-semibold">@eventItem.Title</div>
+                            <div class="text-secondary small">@eventItem.Description</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-xl-7">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Developer console</h2>
+                    <span class="text-secondary small">Initialize a session, then send raw MCP messages.</span>
+                </div>
+                <div class="d-flex gap-2 flex-wrap mb-3">
+                    <button type="button" id="mcp-init-button" class="btn btn-primary">Initialize session</button>
+                    <button type="button" id="mcp-subscribe-button" class="btn btn-outline-primary" disabled>Subscribe to system events</button>
+                    <span id="mcp-session-label" class="text-secondary small align-self-center">Session not initialized</span>
+                </div>
+                <label for="mcp-request-editor" class="form-label">Request JSON</label>
+                <textarea id="mcp-request-editor" class="form-control" rows="14">@Model.SampleRequestJson</textarea>
+                <div class="d-flex gap-2 flex-wrap mt-3">
+                    <button type="button" id="mcp-send-button" class="btn btn-outline-primary">Send message</button>
+                    <button type="button" id="mcp-manifest-button" class="btn btn-outline-secondary">Load manifest</button>
+                </div>
+                <label for="mcp-response-viewer" class="form-label mt-4">Response</label>
+                <pre id="mcp-response-viewer" class="form-control bg-dark text-light p-3" style="min-height: 280px; white-space: pre-wrap;"></pre>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-5">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Tools</h2>
+                    <span class="text-secondary small">@Model.Tools.Count registered Focus tools</span>
+                </div>
+                <div class="dashboard-scroll-list dashboard-scroll-list-xl">
+                    @foreach (var tool in Model.Tools)
+                    {
+                        <div class="todo-preview-item">
+                            <div class="memory-meta">@tool.Category • @(tool.Mutating ? "mutating" : "read-only")</div>
+                            <div class="fw-semibold">@tool.Name</div>
+                            <div class="text-secondary small">@tool.Description</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Resources</h2>
+                    <span class="text-secondary small">@Model.Resources.Count resource documents</span>
+                </div>
+                <div class="dashboard-scroll-list dashboard-scroll-list-xl">
+                    @foreach (var resource in Model.Resources)
+                    {
+                        <div class="todo-preview-item">
+                            <div class="memory-meta">@resource.MimeType • @(resource.SupportsSubscription ? "subscribable" : "read-only")</div>
+                            <div class="fw-semibold">@resource.Uri</div>
+                            <div class="text-secondary small">@resource.Description</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const messageEndpoint = "@Model.MessageEndpointUrl";
+            const manifestEndpoint = "@Model.ManifestEndpointUrl";
+            const streamTemplate = "@Model.StreamEndpointTemplate";
+            const requestEditor = document.getElementById("mcp-request-editor");
+            const responseViewer = document.getElementById("mcp-response-viewer");
+            const sessionLabel = document.getElementById("mcp-session-label");
+            const initButton = document.getElementById("mcp-init-button");
+            const sendButton = document.getElementById("mcp-send-button");
+            const manifestButton = document.getElementById("mcp-manifest-button");
+            const subscribeButton = document.getElementById("mcp-subscribe-button");
+            const liveEvents = document.getElementById("mcp-live-events");
+            let currentSessionId = "";
+            let currentSource = null;
+
+            const pretty = (value) => JSON.stringify(value, null, 2);
+            const writeResponse = (value) => {
+                responseViewer.textContent = typeof value === "string" ? value : pretty(value);
+            };
+
+            const sendEnvelope = async (envelope) => {
+                const response = await fetch(messageEndpoint, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(envelope)
+                });
+
+                const payload = await response.json();
+                writeResponse(payload);
+                return payload;
+            };
+
+            initButton.addEventListener("click", async function () {
+                const payload = await sendEnvelope({
+                    type: "initialize",
+                    payload: {
+                        clientName: "Focus admin console",
+                        clientVersion: "1.0"
+                    }
+                });
+
+                currentSessionId = payload.sessionId || payload.result?.session?.sessionId || "";
+                sessionLabel.textContent = currentSessionId ? `Session: ${currentSessionId}` : "Session not initialized";
+                subscribeButton.disabled = !currentSessionId;
+            });
+
+            manifestButton.addEventListener("click", async function () {
+                const response = await fetch(manifestEndpoint);
+                writeResponse(await response.json());
+            });
+
+            subscribeButton.addEventListener("click", async function () {
+                if (!currentSessionId) {
+                    return;
+                }
+
+                await sendEnvelope({
+                    sessionId: currentSessionId,
+                    type: "resource_subscribe",
+                    payload: {
+                        resourceUris: ["focus://system/events", "focus://recent-changes", "focus://tickets/board", "focus://todos/board"]
+                    }
+                });
+
+                if (currentSource) {
+                    currentSource.close();
+                }
+
+                currentSource = new EventSource(streamTemplate.replace("{sessionId}", currentSessionId));
+                currentSource.addEventListener("resource_updated", function (event) {
+                    const payload = JSON.parse(event.data);
+                    const result = payload.result;
+                    const item = document.createElement("div");
+                    item.className = "todo-preview-item";
+                    item.innerHTML = `
+                        <div class="memory-meta">${result.eventType} • ${result.occurredUtc}</div>
+                        <div class="fw-semibold">${result.title}</div>
+                        <div class="text-secondary small">${result.description}</div>
+                    `;
+                    liveEvents.prepend(item);
+                });
+            });
+
+            sendButton.addEventListener("click", async function () {
+                try {
+                    const parsed = JSON.parse(requestEditor.value);
+                    if (currentSessionId && !parsed.sessionId && parsed.type !== "initialize") {
+                        parsed.sessionId = currentSessionId;
+                    }
+
+                    const payload = await sendEnvelope(parsed);
+                    if (!currentSessionId && payload.result?.session?.sessionId) {
+                        currentSessionId = payload.result.session.sessionId;
+                        sessionLabel.textContent = `Session: ${currentSessionId}`;
+                        subscribeButton.disabled = false;
+                    }
+                } catch (error) {
+                    writeResponse(error.message || String(error));
+                }
+            });
+        });
+    </script>
+}

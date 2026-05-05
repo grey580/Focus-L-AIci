@@ -158,6 +158,7 @@ public sealed class AdminSettingsViewModel
     public AdminSettingsInput Input { get; init; } = new();
     public DatabaseTargetInput DatabaseInput { get; init; } = new();
     public IReadOnlyCollection<SelectListItem> TimeZoneOptions { get; init; } = Array.Empty<SelectListItem>();
+    public IReadOnlyCollection<string> ApprovedDatabaseRootPaths { get; init; } = Array.Empty<string>();
     public string ActiveTimeZoneLabel { get; init; } = "UTC";
     public FocusDatabaseTargetSnapshot DatabaseTarget { get; init; } = new();
 }

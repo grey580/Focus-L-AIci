@@ -38,6 +38,7 @@
                 <div class="col-md-8">
                     <label asp-for="Input.RootPath" class="form-label"></label>
                     <input asp-for="Input.RootPath" class="form-control" placeholder="C:\Copilot\Grey Canary" />
+                    <div class="form-text">Approved roots: @string.Join(" | ", Model.ApprovedRootPaths)</div>
                     <span asp-validation-for="Input.RootPath" class="text-danger small"></span>
                 </div>
                 <div class="col-12">

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using FocusLAIci.Web.Data;
 using FocusLAIci.Web.Models;
+using FocusLAIci.Web.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace FocusLAIci.Web.Services;
@@ -61,16 +62,23 @@ public sealed partial class CodeGraphService
 
     private readonly FocusMemoryContext _dbContext;
     private readonly ContextService _contextService;
+    private readonly LocalPathPolicy _pathPolicy;
 
     public CodeGraphService(FocusMemoryContext dbContext)
-        : this(dbContext, new ContextService(dbContext))
+        : this(dbContext, new ContextService(dbContext), BuildFallbackPathPolicy())
     {
     }
 
     public CodeGraphService(FocusMemoryContext dbContext, ContextService contextService)
+        : this(dbContext, contextService, BuildFallbackPathPolicy())
+    {
+    }
+
+    public CodeGraphService(FocusMemoryContext dbContext, ContextService contextService, LocalPathPolicy pathPolicy)
     {
         _dbContext = dbContext;
         _contextService = contextService;
+        _pathPolicy = pathPolicy;
     }
 
     public async Task<CodeGraphBoardViewModel> GetBoardAsync(CancellationToken cancellationToken)
@@ -82,13 +90,14 @@ public sealed partial class CodeGraphService
 
         return new CodeGraphBoardViewModel
         {
-            Projects = projects.Select(MapProjectCard).ToArray()
+            Projects = projects.Select(MapProjectCard).ToArray(),
+            ApprovedRootPaths = _pathPolicy.ApprovedProjectRoots
         };
     }
 
     public async Task<Guid> CreateProjectAsync(CodeGraphProjectInput input, CancellationToken cancellationToken)
     {
-        var rootPath = NormalizeRootPath(input.RootPath);
+        var rootPath = _pathPolicy.EnsureApprovedProjectRoot(input.RootPath);
         if (!Directory.Exists(rootPath))
         {
             throw new InvalidOperationException("That repository root path does not exist on disk.");
@@ -273,10 +282,13 @@ public sealed partial class CodeGraphService
             throw new InvalidOperationException("That code graph project no longer exists.");
         }
 
-        if (!Directory.Exists(project.RootPath))
+        var approvedRootPath = _pathPolicy.EnsureApprovedProjectRoot(project.RootPath);
+        if (!Directory.Exists(approvedRootPath))
         {
             throw new InvalidOperationException("The repository root path for this code graph no longer exists.");
         }
+
+        project.RootPath = approvedRootPath;
 
         await _dbContext.CodeGraphEdges.Where(x => x.ProjectId == projectId).ExecuteDeleteAsync(cancellationToken);
         await _dbContext.CodeGraphNodes.Where(x => x.ProjectId == projectId).ExecuteDeleteAsync(cancellationToken);
@@ -509,9 +521,6 @@ public sealed partial class CodeGraphService
         });
     }
 
-    private static string NormalizeRootPath(string rootPath)
-        => Path.GetFullPath(rootPath.Trim()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
     private static IEnumerable<string> EnumerateProjectFiles(string rootPath)
     {
         var pending = new Stack<string>();
@@ -548,6 +557,26 @@ public sealed partial class CodeGraphService
             "PowerShell" => ExtractPowerShell(relativePath, content),
             _ => new FileExtraction()
         };
+
+    private static LocalPathPolicy BuildFallbackPathPolicy()
+    {
+        var basePath = AppContext.BaseDirectory;
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return new LocalPathPolicy(
+            approvedProjectRoots:
+            [
+                basePath,
+                Path.GetTempPath(),
+                Path.Combine(userProfile, "source")
+            ],
+            approvedDatabaseRoots:
+            [
+                basePath,
+                Path.GetTempPath(),
+                Path.Combine(localAppData, "FocusLAIci")
+            ]);
+    }
 
     private static FileExtraction ExtractCSharp(string relativePath, string content)
     {

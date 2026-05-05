@@ -1,4 +1,5 @@
 using FocusLAIci.Web.Models;
+using FocusLAIci.Web.Security;
 using FocusLAIci.Web.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -31,15 +32,19 @@ public sealed class PalaceApiController : ControllerBase
         CancellationToken cancellationToken = default,
         int? resultsPerSection = null)
     {
-        var contextInput = string.IsNullOrWhiteSpace(question) && !resultsPerSection.HasValue && !includeCompletedWork && expandHistory
-            ? null
-            : new ContextBriefInput
+        if (!RequestInputPolicy.TryCreateOptionalContextBriefInput(
+                question,
+                includeCompletedWork,
+                expandHistory,
+                resultsPerSection,
+                out var contextInput,
+                out var validationError))
+        {
+            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
             {
-                Question = question?.Trim() ?? string.Empty,
-                IncludeCompletedWork = includeCompletedWork,
-                ExpandHistory = expandHistory,
-                ResultsPerSection = resultsPerSection.GetValueOrDefault(6)
-            };
+                ["query"] = [validationError!]
+            }));
+        }
 
         var diagnostics = await _palaceService.GetDashboardDiagnosticsAsync(contextInput, cancellationToken);
         return Ok(new DashboardDiagnosticsViewModel

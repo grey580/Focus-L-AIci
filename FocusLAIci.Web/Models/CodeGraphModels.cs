@@ -118,6 +118,7 @@ public sealed class CodeGraphBoardViewModel
 {
     public CodeGraphProjectInput Input { get; init; } = new();
     public IReadOnlyCollection<CodeGraphProjectCardViewModel> Projects { get; init; } = Array.Empty<CodeGraphProjectCardViewModel>();
+    public IReadOnlyCollection<string> ApprovedRootPaths { get; init; } = Array.Empty<string>();
 }
 
 public sealed class CodeGraphProjectCardViewModel

@@ -51,6 +51,11 @@
     </div>
 </section>
 
+<div class="alert alert-info border-0 shadow-sm mb-4">
+    <strong>Best way to start a task:</strong> describe the task here, build a context pack, check <a asp-controller="Admin" asp-action="Inspect">Inspect</a> for recent changes and workspace export, then work from retrieved context instead of guessing.
+    <div class="small mt-2">For AI-assisted work: <code>Start with Focus. Read relevant memories, build a context pack, check recent changes and tickets if relevant, then begin the task.</code></div>
+</div>
+
 @if (Model.MissingContextWarnings.Count > 0)
 {
     <div class="alert alert-warning border-0 shadow-sm mb-4">
@@ -185,7 +190,7 @@
                             <input type="hidden" name="ExpandHistory" value="@Model.ContextInput.ExpandHistory.ToString().ToLowerInvariant()" />
                             <button type="submit" class="btn btn-outline-secondary">Export .txt</button>
                         </form>
-                        <button type="button" class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('context-pack-export').value)">Copy pack</button>
+                        <button type="button" class="btn btn-outline-secondary js-copy-target" data-copy-target="context-pack-export">Copy pack</button>
                     </div>
 
                     <div class="card shadow-sm border-0 inner-card mb-3">

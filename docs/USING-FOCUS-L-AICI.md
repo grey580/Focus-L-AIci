@@ -90,6 +90,14 @@ When creating a memory:
 3. Open pinned memories and recent related entries.
 4. Review linked memories if the issue spans multiple areas.
 
+If you are driving an AI assistant, use a direct opener like:
+
+```text
+Start with Focus. Read relevant memories, build a context pack, check recent changes and tickets if relevant, then begin the task.
+```
+
+That prompt reliably pushes the assistant into Focus-first retrieval before implementation.
+
 ### Use Inspect as the trust surface
 
 The **Inspect** page is now the fastest way to answer:
@@ -192,6 +200,31 @@ Focus is no longer just a read surface. If your workflow is scriptable or AI-ass
 - `POST /api/tickets/{id}/time-logs`
 
 These endpoints now accept readable string-enum payloads such as `Pending`, `InProgress`, `Medium`, and `Completed`, so callers do not need to know numeric enum values.
+
+### Use MCP when the client can speak Focus directly
+
+If your AI client or automation runner can keep a session open, prefer the MCP surface over ad hoc HTTP calls:
+
+- initialize with `POST /api/mcp/message` and `{ "type": "initialize", ... }`
+- inspect the available tools/resources with `GET /api/mcp/manifest`
+- subscribe to `focus://recent-changes`, `focus://tickets/board`, or `focus://todos/board` and open `GET /api/mcp/events/{sessionId}` for live updates
+- use `/Admin/McpConsole` when you want to test envelopes manually before wiring a real client
+
+Recommended pattern:
+
+1. initialize a session first
+2. read `focus://workspace` or `focus://recent-changes` to prime the model
+3. subscribe only to the resources the task actually needs
+4. invoke mutating tools only when you want Focus to become the source of truth for the outcome
+
+Today, the strongest new-project flow is usually:
+
+1. `focus.memory.search` for the project or subsystem name
+2. context-pack retrieval for the specific task
+3. `focus://recent-changes` or ticket/todo reads if active work exists
+4. code graph reads when repository structure matters
+
+That feels stronger than depending on the workspace resource alone, especially when a project already has a few good seed memories.
 
 ### After work
 

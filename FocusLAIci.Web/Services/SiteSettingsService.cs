@@ -54,6 +54,7 @@ public sealed class SiteSettingsService
             },
             DatabaseInput = BuildDatabaseInput(_databaseTargetService.GetCurrentTarget()),
             TimeZoneOptions = BuildTimeZoneOptions(settings.TimeZoneId),
+            ApprovedDatabaseRootPaths = _databaseTargetService.ApprovedDatabaseRoots,
             ActiveTimeZoneLabel = ResolveTimeZone(settings.TimeZoneId).DisplayName,
             DatabaseTarget = _databaseTargetService.GetCurrentTarget()
         };
@@ -144,6 +145,7 @@ public sealed class SiteSettingsService
             Input = input,
             DatabaseInput = BuildDatabaseInput(_databaseTargetService.GetCurrentTarget()),
             TimeZoneOptions = BuildTimeZoneOptions(resolved.Id),
+            ApprovedDatabaseRootPaths = _databaseTargetService.ApprovedDatabaseRoots,
             ActiveTimeZoneLabel = resolved.DisplayName,
             DatabaseTarget = _databaseTargetService.GetCurrentTarget()
         };

@@ -41,6 +41,31 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    document.addEventListener("click", async event => {
+        const copyButton = event.target.closest(".js-copy-target");
+        if (!(copyButton instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        const targetId = copyButton.dataset.copyTarget;
+        if (!targetId) {
+            return;
+        }
+
+        const target = document.getElementById(targetId);
+        if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(target.value);
+        } catch {
+            target.focus();
+            target.select();
+            document.execCommand("copy");
+        }
+    });
+
     const wingFilter = document.querySelector("select[name='wingId']");
     const roomFilter = document.getElementById("roomFilter");
     if (wingFilter instanceof HTMLSelectElement && roomFilter instanceof HTMLSelectElement) {

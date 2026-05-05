@@ -6,6 +6,7 @@
     var defaultSceneNode = Model.Scene.Nodes.FirstOrDefault(node => node.IsEmphasized) ?? Model.Scene.Nodes.FirstOrDefault();
     var defaultSceneTitle = defaultSceneNode?.Label ?? Model.Project.Name;
     var defaultSceneCopy = "The graph auto-rotates slowly on its own. Drag to spin it manually, use zoom to inspect clusters, and click a node to focus its neighborhood.";
+    var cspNonce = Context.Items[SecurityHeadersPolicy.CspNonceItemKey] as string ?? string.Empty;
     var sceneJson = JsonSerializer.Serialize(new
     {
         nodes = Model.Scene.Nodes.Select(node => new
@@ -324,7 +325,7 @@
 </section>
 
 @section Scripts {
-    <script>
+    <script nonce="@cspNonce">
         (() => {
             const data = @Html.Raw(sceneJson);
             const canvas = document.getElementById('codeGraph3dCanvas');
@@ -360,7 +361,11 @@
                     return;
                 }
 
-                overlay.innerHTML = `<strong>${title}</strong><span>${copy}</span>`;
+                const titleElement = document.createElement('strong');
+                titleElement.textContent = title;
+                const copyElement = document.createElement('span');
+                copyElement.textContent = copy;
+                overlay.replaceChildren(titleElement, copyElement);
             }
 
             function resizeCanvas() {
