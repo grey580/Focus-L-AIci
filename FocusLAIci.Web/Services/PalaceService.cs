@@ -11,22 +11,31 @@ public sealed class PalaceService
     private readonly FocusMemoryContext _dbContext;
     private readonly ContextService _contextService;
     private readonly IFocusEventPublisher _eventPublisher;
+    private readonly FocusDatabaseTargetService? _databaseTargetService;
+    private readonly FocusAgentCatalogService _agentCatalogService;
 
     public PalaceService(FocusMemoryContext dbContext)
-        : this(dbContext, new ContextService(dbContext), NullFocusEventPublisher.Instance)
+        : this(dbContext, new ContextService(dbContext), NullFocusEventPublisher.Instance, null, null)
     {
     }
 
     public PalaceService(FocusMemoryContext dbContext, ContextService contextService)
-        : this(dbContext, contextService, NullFocusEventPublisher.Instance)
+        : this(dbContext, contextService, NullFocusEventPublisher.Instance, null, null)
     {
     }
 
     public PalaceService(FocusMemoryContext dbContext, ContextService contextService, IFocusEventPublisher eventPublisher)
+        : this(dbContext, contextService, eventPublisher, null, null)
+    {
+    }
+
+    public PalaceService(FocusMemoryContext dbContext, ContextService contextService, IFocusEventPublisher eventPublisher, FocusDatabaseTargetService? databaseTargetService, FocusAgentCatalogService? agentCatalogService)
     {
         _dbContext = dbContext;
         _contextService = contextService;
         _eventPublisher = eventPublisher;
+        _databaseTargetService = databaseTargetService;
+        _agentCatalogService = agentCatalogService ?? new FocusAgentCatalogService();
     }
 
     public Task<DashboardViewModel> GetDashboardAsync(CancellationToken cancellationToken)
@@ -113,7 +122,14 @@ public sealed class PalaceService
             .ToListAsync(cancellationToken);
 
         var wings = await BuildWingSummariesAsync(cancellationToken);
-        var contextPack = await _contextService.BuildContextPackAsync(effectiveContextInput, cancellationToken);
+        var featuredSkills = await BuildSkillQuery()
+            .OrderByDescending(x => x.IsPinned)
+            .ThenBy(x => x.Category)
+            .ThenBy(x => x.Name)
+            .Take(6)
+            .ToListAsync(cancellationToken);
+        var mappedCurrentTodos = currentTodos.Select(MapTodo).ToArray();
+        var mappedActiveTickets = activeTickets.Select(MapDashboardTicketSummary).ToArray();
         var mappedRecentMemories = memories.Select(MapCard).ToArray();
         var mappedPinnedMemories = mappedRecentMemories.Where(x => x.IsPinned).ToArray();
         var recentActivity = recentTicketActivity
@@ -122,11 +138,26 @@ public sealed class PalaceService
             .OrderByDescending(x => x.OccurredUtc)
             .Take(8)
             .ToArray();
+        var fallbackContext = BuildDashboardFallbackContext(
+            effectiveContextInput,
+            mappedCurrentTodos,
+            mappedActiveTickets,
+            recentActivity,
+            mappedPinnedMemories,
+            mappedRecentMemories);
+        var resolvedContextInput = ResolveDashboardContextInput(effectiveContextInput, fallbackContext);
+        var contextPack = await _contextService.BuildContextPackAsync(resolvedContextInput, cancellationToken);
+        var recommendedAgents = _agentCatalogService.RecommendAgents(resolvedContextInput.Question, resolvedContextInput.PackGoal, 4);
+        var recommendedSkills = contextPack?.RecommendedSkills.Count > 0
+            ? contextPack.RecommendedSkills
+            : await RecommendSkillsAsync(resolvedContextInput.Question, resolvedContextInput.WingId, null, 4, cancellationToken);
         var warningItems = BuildDashboardWarnings(
             effectiveContextInput,
+            resolvedContextInput,
+            fallbackContext,
             contextPack,
-            currentTodos.Select(MapTodo).ToArray(),
-            activeTickets.Select(MapDashboardTicketSummary).ToArray(),
+            mappedCurrentTodos,
+            mappedActiveTickets,
             recentActivity,
             mappedPinnedMemories,
             mappedRecentMemories,
@@ -137,14 +168,19 @@ public sealed class PalaceService
             Stats = await BuildStatsAsync(cancellationToken),
             ContextInput = effectiveContextInput,
             ContextPack = contextPack,
+            FallbackContext = fallbackContext,
             QuickCaptureInput = new QuickCaptureInput(),
-            ActiveTickets = activeTickets.Select(MapDashboardTicketSummary).ToArray(),
+            ActiveTickets = mappedActiveTickets,
             RecentActivity = recentActivity,
             Wings = wings,
             RecentMemories = mappedRecentMemories,
             PinnedMemories = mappedPinnedMemories,
             ResurfacingMemories = BuildResurfacingMemories(resurfacingCandidates, contextPack),
-            CurrentTodos = currentTodos.Select(MapTodo).ToArray(),
+            RecommendedAgents = recommendedAgents,
+            FeaturedAgents = _agentCatalogService.GetFeaturedAgents(),
+            RecommendedSkills = recommendedSkills,
+            FeaturedSkills = featuredSkills.Select(skill => MapSkillCard(skill)).ToArray(),
+            CurrentTodos = mappedCurrentTodos,
             MissingContextWarnings = warningItems.Select(x => x.Message).ToArray(),
             MissingContextWarningItems = warningItems,
             SearchExamples =
@@ -166,6 +202,7 @@ public sealed class PalaceService
             GeneratedUtc = DateTime.UtcNow,
             Stats = dashboard.Stats,
             ContextInput = dashboard.ContextInput,
+            FallbackContext = dashboard.FallbackContext,
             ContextSummary = dashboard.ContextPack?.Summary ?? string.Empty,
             TopMatchCount = dashboard.ContextPack?.TopMatches.Count ?? 0,
             DetectedGaps = dashboard.MissingContextWarnings,
@@ -328,17 +365,116 @@ public sealed class PalaceService
         var mappedPinned = pinnedMemories.Select(MapCard).ToArray();
         var mappedTodos = activeTodos.Select(MapTodo).ToArray();
         var mappedTickets = activeTickets.Select(MapDashboardTicketSummary).ToArray();
+        var recommendedAgents = _agentCatalogService.RecommendAgents(null, ContextPackGoal.General, 4);
+        var recommendedSkills = await RecommendSkillsAsync(null, null, null, 6, cancellationToken);
 
         return new WorkspaceExportViewModel
         {
             GeneratedUtc = DateTime.UtcNow,
+            DatabaseTarget = _databaseTargetService?.GetCurrentTarget() ?? new FocusDatabaseTargetSnapshot(),
             Stats = await BuildStatsAsync(cancellationToken),
-            ExportText = BuildWorkspaceExportText(mappedPinned, mappedTodos, mappedTickets, codeGraphProjects, recentChanges),
+            ExportText = BuildWorkspaceExportText(recommendedAgents, recommendedSkills, mappedPinned, mappedTodos, mappedTickets, codeGraphProjects, recentChanges),
+            RecommendedAgents = recommendedAgents,
+            RecommendedSkills = recommendedSkills,
             PinnedMemories = mappedPinned,
             ActiveTodos = mappedTodos,
             ActiveTickets = mappedTickets,
             CodeGraphProjects = codeGraphProjects,
             RecentChanges = recentChanges
+        };
+    }
+
+    public async Task<WorkspaceBootstrapViewModel> GetWorkspaceBootstrapAsync(string? profile, CancellationToken cancellationToken)
+    {
+        var workspace = await GetWorkspaceExportAsync(cancellationToken);
+        var wings = (await BuildWingSummariesAsync(cancellationToken)).Take(10).ToArray();
+        var featuredSkills = await BuildSkillQuery()
+            .OrderByDescending(x => x.IsPinned)
+            .ThenBy(x => x.Category)
+            .ThenBy(x => x.Name)
+            .Take(6)
+            .ToListAsync(cancellationToken);
+        var normalizedProfile = NormalizeBootstrapProfile(profile);
+
+        var suggestedTaskPrompt = normalizedProfile switch
+        {
+            "operator" => "Start with Focus. Read the bootstrap, inspect recent changes, check governance and active tickets, then act.",
+            "incident-response" => "Start with Focus. Inspect recent changes, search incident memories, build a debugging context pack, then respond.",
+            _ => "Start with Focus. Search memories, build a context pack, review recent changes or tickets if relevant, then work."
+        };
+
+        IReadOnlyCollection<string> recommendedFlow = normalizedProfile switch
+        {
+            "operator" => new[]
+            {
+                "Read the bootstrap summary and recent changes first.",
+                "Check governance and active tickets before changing durable project memory.",
+                "Use wing and room discovery to route updates into the right project area.",
+                "Write back verified operational findings after the work is complete."
+            },
+            "incident-response" => new[]
+            {
+                "Search memories for the affected service, trap, or subsystem.",
+                "Build a debugging-focused context pack with recent-change bias.",
+                "Review recent changes, active tickets, and incident memories before editing anything.",
+                "Capture remediation and verification details in Focus once the issue is contained."
+            },
+            _ => new[]
+            {
+                "Search memories for the project, feature, or system you are about to touch.",
+                "Build a context pack for the exact task so recent memories, todos, tickets, and code graph hits get ranked together.",
+                "Check recent changes and active work before writing new code or capturing new memories.",
+                "Use wing and room discovery when you need the right destination for a new memory or update."
+            }
+        };
+
+        IReadOnlyCollection<string> suggestedQuestions = normalizedProfile switch
+        {
+            "operator" => new[]
+            {
+                "What changed recently that could affect operations?",
+                "Which tickets or governance items need attention first?",
+                "Where should I record the operational outcome?"
+            },
+            "incident-response" => new[]
+            {
+                "Which incident or debugging memories match this signal?",
+                "What changed recently in the impacted area?",
+                "What is the current canonical memory for this subsystem?"
+            },
+            _ => new[]
+            {
+                "What has changed recently for this project?",
+                "Which memories should I read before I modify this area?",
+                "Which wing and room best fit this new work?"
+            }
+        };
+        var recommendedSkills = await RecommendSkillsAsync(
+            $"{suggestedTaskPrompt} {string.Join(' ', suggestedQuestions)}",
+            null,
+            null,
+            6,
+            cancellationToken);
+        var recommendedAgents = _agentCatalogService.RecommendAgents(
+            $"{suggestedTaskPrompt} {string.Join(' ', suggestedQuestions)}",
+            normalizedProfile == "incident-response" ? ContextPackGoal.Debugging : ContextPackGoal.General,
+            4);
+
+        return new WorkspaceBootstrapViewModel
+        {
+            GeneratedUtc = workspace.GeneratedUtc,
+            Profile = normalizedProfile,
+            DatabaseTarget = workspace.DatabaseTarget,
+            SuggestedTaskPrompt = suggestedTaskPrompt,
+            BootstrapSummary = BuildWorkspaceBootstrapSummary(workspace, wings, normalizedProfile),
+            RecommendedFlow = recommendedFlow,
+            SuggestedQuestions = suggestedQuestions,
+            RecommendedAgents = recommendedAgents,
+            FeaturedAgents = _agentCatalogService.GetFeaturedAgents(),
+            RecommendedSkills = recommendedSkills,
+            FeaturedSkills = featuredSkills.Select(skill => MapSkillCard(skill)).ToArray(),
+            Wings = wings,
+            Workspace = workspace
         };
     }
 
@@ -655,6 +791,200 @@ public sealed class PalaceService
         };
     }
 
+    public async Task<SkillBrowseViewModel> GetSkillCatalogAsync(
+        string? query,
+        SkillCategory? category,
+        Guid? wingId,
+        bool pinnedOnly,
+        bool needsReviewOnly,
+        CancellationToken cancellationToken)
+    {
+        var skills = await BuildSkillQuery(query, category, wingId, pinnedOnly, needsReviewOnly)
+            .OrderByDescending(x => x.IsPinned)
+            .ThenByDescending(x => x.UseCount)
+            .ThenBy(x => x.ReviewAfterUtc == null ? 1 : 0)
+            .ThenBy(x => x.ReviewAfterUtc)
+            .ThenBy(x => x.Category)
+            .ThenBy(x => x.Name)
+            .ToListAsync(cancellationToken);
+
+        return new SkillBrowseViewModel
+        {
+            Query = query?.Trim() ?? string.Empty,
+            Category = category,
+            WingId = wingId,
+            PinnedOnly = pinnedOnly,
+            NeedsReviewOnly = needsReviewOnly,
+            WingOptions = await BuildWingOptionsAsync(cancellationToken),
+            Skills = skills.Select(skill => MapSkillCard(skill)).ToArray()
+        };
+    }
+
+    public async Task<SkillDetailViewModel?> GetSkillAsync(string slug, CancellationToken cancellationToken, bool trackUsage = false)
+    {
+        var skillQuery = _dbContext.Skills
+            .Include(x => x.Wing)
+            .AsQueryable();
+        if (!trackUsage)
+        {
+            skillQuery = skillQuery.AsNoTracking();
+        }
+
+        var skill = await skillQuery.FirstOrDefaultAsync(x => x.Slug == slug, cancellationToken);
+        if (skill is null)
+        {
+            return null;
+        }
+
+        if (trackUsage)
+        {
+            await TouchSkillUsageAsync(skill, cancellationToken);
+        }
+
+        var relatedContext = await _contextService.BuildContextPackAsync(new ContextBriefInput
+        {
+            Question = SkillRecommendationEngine.BuildSuggestedQuestion(skill),
+            WingId = skill.WingId,
+            IncludeCompletedWork = true,
+            ExpandHistory = true,
+            ResultsPerSection = 3,
+            PackGoal = MapSkillPackGoal(skill.Category),
+            PreferRecentChanges = true
+        }, cancellationToken);
+
+        return MapSkillDetail(skill, relatedContext);
+    }
+
+    public async Task<SkillEditorViewModel> BuildSkillEditorAsync(Guid? id, CancellationToken cancellationToken)
+    {
+        SkillEditorInput input;
+        string heading;
+        string submitLabel;
+
+        if (id.HasValue)
+        {
+            var skill = await _dbContext.Skills
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == id.Value, cancellationToken)
+                ?? throw new InvalidOperationException("That skill no longer exists.");
+
+            input = new SkillEditorInput
+            {
+                Id = skill.Id,
+                Name = skill.Name,
+                Summary = skill.Summary,
+                Category = skill.Category,
+                WhenToUse = skill.WhenToUse,
+                Flow = skill.Flow,
+                ExamplesText = skill.ExamplesText,
+                TriggerHintsText = skill.TriggerHintsText,
+                WingId = skill.WingId,
+                IsPinned = skill.IsPinned
+            };
+            heading = "Edit skill";
+            submitLabel = "Save Skill";
+        }
+        else
+        {
+            input = new SkillEditorInput();
+            heading = "New skill";
+            submitLabel = "Create Skill";
+        }
+
+        return new SkillEditorViewModel
+        {
+            Heading = heading,
+            SubmitLabel = submitLabel,
+            Input = input,
+            WingOptions = await BuildWingOptionsAsync(cancellationToken)
+        };
+    }
+
+    public async Task<Guid> SaveSkillAsync(SkillEditorInput input, CancellationToken cancellationToken)
+    {
+        var normalizedName = (input.Name ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalizedName))
+        {
+            throw new InvalidOperationException("Provide a skill name.");
+        }
+
+        var slug = SlugUtility.CreateSlug(normalizedName);
+        var duplicate = await _dbContext.Skills
+            .FirstOrDefaultAsync(x => x.Slug == slug && x.Id != input.Id, cancellationToken);
+        if (duplicate is not null)
+        {
+            throw new InvalidOperationException("A skill with that name already exists.");
+        }
+
+        SkillEntry skill;
+        if (input.Id.HasValue)
+        {
+            skill = await _dbContext.Skills.FirstOrDefaultAsync(x => x.Id == input.Id.Value, cancellationToken)
+                ?? throw new InvalidOperationException("That skill no longer exists.");
+        }
+        else
+        {
+            skill = new SkillEntry
+            {
+                CreatedUtc = DateTime.UtcNow
+            };
+            _dbContext.Skills.Add(skill);
+        }
+
+        var now = DateTime.UtcNow;
+        skill.Name = normalizedName;
+        skill.Slug = slug;
+        skill.Summary = (input.Summary ?? string.Empty).Trim();
+        skill.Category = input.Category;
+        skill.WhenToUse = (input.WhenToUse ?? string.Empty).Trim();
+        skill.Flow = (input.Flow ?? string.Empty).Trim();
+        skill.ExamplesText = (input.ExamplesText ?? string.Empty).Trim();
+        skill.TriggerHintsText = (input.TriggerHintsText ?? string.Empty).Trim();
+        skill.WingId = input.WingId;
+        skill.IsPinned = input.IsPinned;
+        skill.LastReviewedUtc = now;
+        skill.ReviewAfterUtc = now.AddDays(SkillRecommendationEngine.DefaultReviewWindowDays);
+        skill.UpdatedUtc = now;
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return skill.Id;
+    }
+
+    public async Task<IReadOnlyCollection<SkillCardViewModel>> GetSkillSummariesAsync(
+        string? query,
+        SkillCategory? category,
+        CancellationToken cancellationToken,
+        Guid? wingId = null,
+        bool pinnedOnly = false,
+        bool needsReviewOnly = false)
+    {
+        var skills = await BuildSkillQuery(query, category, wingId, pinnedOnly, needsReviewOnly)
+            .OrderByDescending(x => x.IsPinned)
+            .ThenByDescending(x => x.UseCount)
+            .ThenBy(x => x.Category)
+            .ThenBy(x => x.Name)
+            .ToListAsync(cancellationToken);
+
+        return skills.Select(skill => MapSkillCard(skill)).ToArray();
+    }
+
+    public async Task<IReadOnlyCollection<SkillCardViewModel>> RecommendSkillsAsync(
+        string? question,
+        Guid? wingId,
+        SkillCategory? category,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var skills = await _dbContext.Skills
+            .AsNoTracking()
+            .Include(x => x.Wing)
+            .ToListAsync(cancellationToken);
+
+        return SkillRecommendationEngine.Recommend(skills, question, wingId, category, limit)
+            .Select(x => MapSkillCard(x.Skill, x.Reason, x.Score))
+            .ToArray();
+    }
+
     public async Task<WingDetailViewModel?> GetWingAsync(string slug, string? selectedRoomSlug, CancellationToken cancellationToken)
     {
         var wing = await _dbContext.Wings
@@ -775,6 +1105,92 @@ public sealed class PalaceService
         };
     }
 
+    public async Task<(MemoryCardViewModel Canonical, IReadOnlyCollection<MemoryCardViewModel> Trail)> ResolveCanonicalMemoryAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var query = _dbContext.Memories
+            .AsNoTracking()
+            .Include(x => x.Wing)
+            .Include(x => x.Room)
+            .Include(x => x.SupersededByMemory)
+            .Include(x => x.MemoryTags)
+                .ThenInclude(x => x.Tag);
+
+        var current = await FindMemoryAsync(query, id, cancellationToken)
+            ?? throw new InvalidOperationException("Memory entry not found.");
+        var trail = new List<MemoryCardViewModel>();
+        var visited = new HashSet<Guid>();
+
+        for (var depth = 0; depth < 50 && visited.Add(current.Id); depth++)
+        {
+            trail.Add(MapCard(current));
+            if (!current.SupersededByMemoryId.HasValue)
+            {
+                return (MapCard(current), trail);
+            }
+
+            current = await FindMemoryAsync(query, current.SupersededByMemoryId.Value, cancellationToken)
+                ?? throw new InvalidOperationException("Canonical memory chain is broken.");
+        }
+
+        throw new InvalidOperationException("Canonical memory chain exceeded the safety limit.");
+    }
+
+    public async Task<Guid> MergeMemoryAsync(Guid sourceMemoryId, Guid targetMemoryId, string? reason, CancellationToken cancellationToken)
+    {
+        if (sourceMemoryId == targetMemoryId)
+        {
+            throw new InvalidOperationException("A memory cannot merge into itself.");
+        }
+
+        var source = await _dbContext.Memories
+            .Include(x => x.MemoryTags)
+                .ThenInclude(x => x.Tag)
+            .FirstOrDefaultAsync(x => x.Id == sourceMemoryId, cancellationToken)
+            ?? throw new InvalidOperationException("Source memory not found.");
+        var target = await _dbContext.Memories
+            .Include(x => x.MemoryTags)
+                .ThenInclude(x => x.Tag)
+            .FirstOrDefaultAsync(x => x.Id == targetMemoryId, cancellationToken)
+            ?? throw new InvalidOperationException("Target memory not found.");
+
+        if (target.LifecycleState != MemoryLifecycleState.Active)
+        {
+            throw new InvalidOperationException("Merge target must be active.");
+        }
+
+        var mergedReason = string.IsNullOrWhiteSpace(reason)
+            ? $"Merged into '{target.Title}'."
+            : reason.Trim();
+        var now = DateTime.UtcNow;
+
+        target.Summary = MergeSummary(target.Summary, source.Summary);
+        target.Content = MergeContent(target.Content, source.Title, source.Id, source.Content);
+        target.SourceReference = MergeMetadataField(target.SourceReference, source.SourceReference, 260);
+        target.Importance = Math.Max(target.Importance, source.Importance);
+        target.IsPinned = target.IsPinned || source.IsPinned;
+        target.OccurredUtc = MinDate(target.OccurredUtc, source.OccurredUtc);
+        target.UpdatedUtc = now;
+        target.ReviewAfterUtc = now;
+        if (source.VerificationStatus == MemoryVerificationStatus.Verified && target.VerificationStatus == MemoryVerificationStatus.Unverified)
+        {
+            target.VerificationStatus = MemoryVerificationStatus.NeedsReview;
+        }
+
+        var mergedTags = target.MemoryTags
+            .Select(x => x.Tag!.Name)
+            .Concat(source.MemoryTags.Select(x => x.Tag!.Name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SyncTagsAsync(target.Id, mergedTags, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await SupersedeMemoryAsync(sourceMemoryId, targetMemoryId, mergedReason, cancellationToken);
+        await PublishMemoryEventAsync("memory.merged", target.Id, target.Title, $"Merged '{source.Title}' into this memory.", cancellationToken);
+        return target.Id;
+    }
+
     public async Task<MemoryEditorViewModel> BuildMemoryEditorAsync(Guid? id, Guid? selectedWingId, CancellationToken cancellationToken)
     {
         await NormalizeWingLevelMemoriesIntoGeneralRoomsAsync(cancellationToken);
@@ -880,10 +1296,10 @@ public sealed class PalaceService
         return memories
             .Select(memory =>
             {
-                var score = ScoreDuplicateSimilarity(normalizedDraft, $"{memory.Title} {memory.Summary} {memory.Content}");
+                var score = ScoreDuplicateSimilarity(input, memory);
                 return new { Memory = memory, Score = score };
             })
-            .Where(x => x.Score >= 0.42m)
+            .Where(x => x.Score >= 0.34m)
             .OrderByDescending(x => x.Score)
             .ThenByDescending(x => x.Memory.UpdatedUtc)
             .Take(3)
@@ -1040,6 +1456,19 @@ public sealed class PalaceService
         await PublishMemoryEventAsync("memory.needs-review", memory.Id, memory.Title, "Memory marked for review.", cancellationToken);
     }
 
+    public async Task UpdateMemoryTagsAsync(Guid id, string tagsText, CancellationToken cancellationToken)
+    {
+        var memory = await _dbContext.Memories.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            ?? throw new InvalidOperationException("Memory entry not found.");
+
+        memory.UpdatedUtc = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await SyncTagsAsync(id, ParseTags(tagsText), cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        await PublishMemoryEventAsync("memory.tags-updated", memory.Id, memory.Title, "Memory tags updated.", cancellationToken);
+    }
+
     public async Task MarkMemoryActiveAsync(Guid id, CancellationToken cancellationToken)
     {
         var memory = await _dbContext.Memories.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
@@ -1147,6 +1576,9 @@ public sealed class PalaceService
             }
         }
     }
+
+    public async Task<MemoryGovernanceQueueViewModel> GetMemoryGovernanceQueueAsync(CancellationToken cancellationToken)
+        => await BuildGovernanceQueueAsync(cancellationToken);
 
     public async Task<Guid> CreateWingAsync(WingEditorInput input, CancellationToken cancellationToken)
     {
@@ -1293,8 +1725,21 @@ public sealed class PalaceService
     }
 
     public async Task<IReadOnlyCollection<MemoryCardViewModel>> SearchMemoriesAsync(string? query, Guid? wingId, Guid? roomId, MemoryKind? kind, string? tag, DateTime? updatedSince, CancellationToken cancellationToken)
+        => await SearchMemoriesAsync(query, wingId, roomId, kind, tag, updatedSince, includeRetired: false, lifecycleState: null, verificationStatus: null, cancellationToken);
+
+    public async Task<IReadOnlyCollection<MemoryCardViewModel>> SearchMemoriesAsync(
+        string? query,
+        Guid? wingId,
+        Guid? roomId,
+        MemoryKind? kind,
+        string? tag,
+        DateTime? updatedSince,
+        bool includeRetired,
+        MemoryLifecycleState? lifecycleState,
+        MemoryVerificationStatus? verificationStatus,
+        CancellationToken cancellationToken)
     {
-        var memories = await BuildMemoryQuery(query, wingId, roomId, kind, tag, updatedSince)
+        var memories = await BuildMemoryQuery(query, wingId, roomId, kind, tag, updatedSince, includeRetired, lifecycleState, verificationStatus)
             .OrderByDescending(x => x.IsPinned)
             .ThenByDescending(x => x.UpdatedUtc)
             .Take(100)
@@ -1303,7 +1748,16 @@ public sealed class PalaceService
         return memories.Select(MapCard).ToArray();
     }
 
-    private IQueryable<MemoryEntry> BuildMemoryQuery(string? query = null, Guid? wingId = null, Guid? roomId = null, MemoryKind? kind = null, string? tag = null, DateTime? updatedSince = null, bool includeRetired = false)
+    private IQueryable<MemoryEntry> BuildMemoryQuery(
+        string? query = null,
+        Guid? wingId = null,
+        Guid? roomId = null,
+        MemoryKind? kind = null,
+        string? tag = null,
+        DateTime? updatedSince = null,
+        bool includeRetired = false,
+        MemoryLifecycleState? lifecycleState = null,
+        MemoryVerificationStatus? verificationStatus = null)
     {
         var memories = _dbContext.Memories
             .AsNoTracking()
@@ -1317,6 +1771,15 @@ public sealed class PalaceService
         if (!includeRetired)
         {
             memories = memories.Where(x => x.LifecycleState == MemoryLifecycleState.Active);
+        }
+        else if (lifecycleState.HasValue)
+        {
+            memories = memories.Where(x => x.LifecycleState == lifecycleState.Value);
+        }
+
+        if (verificationStatus.HasValue)
+        {
+            memories = memories.Where(x => x.VerificationStatus == verificationStatus.Value);
         }
 
         if (wingId.HasValue)
@@ -1365,7 +1828,7 @@ public sealed class PalaceService
             EventType = eventType,
             Title = title,
             Description = description,
-            ResourceUris = ["focus://recent-changes", "focus://workspace", "focus://system/metrics", $"focus://memories/{memoryId}"]
+            ResourceUris = ["focus://recent-changes", "focus://workspace", "focus://workspace/bootstrap", "focus://memories/governance", "focus://system/metrics", $"focus://memories/{memoryId}"]
         }, cancellationToken);
     }
 
@@ -1404,6 +1867,7 @@ public sealed class PalaceService
             WingCount = await _dbContext.Wings.CountAsync(cancellationToken),
             RoomCount = await _dbContext.Rooms.CountAsync(cancellationToken),
             MemoryCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Active, cancellationToken),
+            SkillCount = await _dbContext.Skills.CountAsync(cancellationToken),
             PinnedCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Active && x.IsPinned, cancellationToken),
             TagCount = await _dbContext.Tags.CountAsync(cancellationToken),
             OpenTodoCount = await _dbContext.Todos.CountAsync(x => x.Status != TodoStatus.Done, cancellationToken),
@@ -1494,6 +1958,118 @@ public sealed class PalaceService
         return room;
     }
 
+    public async Task<IReadOnlyCollection<WingSummaryViewModel>> GetWingSummariesAsync(string? query, CancellationToken cancellationToken)
+    {
+        var wings = await BuildWingSummariesAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return wings;
+        }
+
+        var trimmedQuery = query.Trim();
+        return wings
+            .Where(x =>
+                x.Name.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase) ||
+                x.Slug.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase) ||
+                x.Description.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+    }
+
+    public async Task<IReadOnlyCollection<RoomBrowseItemViewModel>> GetRoomsAsync(Guid? wingId, string? wingSlug, string? wingName, string? query, CancellationToken cancellationToken)
+    {
+        var rooms = await _dbContext.Rooms
+            .AsNoTracking()
+            .Include(x => x.Wing)
+            .Include(x => x.Memories)
+            .OrderBy(x => x.Wing!.Name)
+            .ThenBy(x => x.Name)
+            .Select(x => new RoomBrowseItemViewModel
+            {
+                RoomId = x.Id,
+                WingId = x.WingId,
+                WingName = x.Wing!.Name,
+                WingSlug = x.Wing.Slug,
+                RoomName = x.Name,
+                RoomDescription = x.Description,
+                MemoryCount = x.Memories.Count(m => m.LifecycleState == MemoryLifecycleState.Active)
+            })
+            .ToListAsync(cancellationToken);
+
+        IEnumerable<RoomBrowseItemViewModel> filtered = rooms;
+        if (wingId.HasValue)
+        {
+            filtered = filtered.Where(x => x.WingId == wingId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(wingSlug))
+        {
+            filtered = filtered.Where(x => string.Equals(x.WingSlug, wingSlug.Trim(), StringComparison.OrdinalIgnoreCase));
+        }
+        else if (!string.IsNullOrWhiteSpace(wingName))
+        {
+            filtered = filtered.Where(x => string.Equals(x.WingName, wingName.Trim(), StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            var trimmedQuery = query.Trim();
+            filtered = filtered.Where(x =>
+                x.RoomName.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase) ||
+                x.RoomDescription.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase) ||
+                x.WingName.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase) ||
+                x.WingSlug.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return filtered.ToArray();
+    }
+
+    private IQueryable<SkillEntry> BuildSkillQuery(
+        string? query = null,
+        SkillCategory? category = null,
+        Guid? wingId = null,
+        bool pinnedOnly = false,
+        bool needsReviewOnly = false)
+    {
+        var skills = _dbContext.Skills
+            .AsNoTracking()
+            .Include(x => x.Wing)
+            .AsQueryable();
+
+        if (category.HasValue)
+        {
+            skills = skills.Where(x => x.Category == category.Value);
+        }
+
+        if (wingId.HasValue)
+        {
+            skills = skills.Where(x => x.WingId == wingId.Value);
+        }
+
+        if (pinnedOnly)
+        {
+            skills = skills.Where(x => x.IsPinned);
+        }
+
+        if (needsReviewOnly)
+        {
+            var now = DateTime.UtcNow;
+            skills = skills.Where(x => x.ReviewAfterUtc != null && x.ReviewAfterUtc <= now);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            var normalized = query.Trim().ToLowerInvariant();
+            skills = skills.Where(x =>
+                x.Name.ToLower().Contains(normalized) ||
+                x.Summary.ToLower().Contains(normalized) ||
+                x.WhenToUse.ToLower().Contains(normalized) ||
+                x.Flow.ToLower().Contains(normalized) ||
+                x.TriggerHintsText.ToLower().Contains(normalized) ||
+                (x.Wing != null && x.Wing.Name.ToLower().Contains(normalized)));
+        }
+
+        return skills;
+    }
+
     private async Task<IReadOnlyCollection<WingSummaryViewModel>> BuildWingSummariesAsync(CancellationToken cancellationToken)
     {
         return await _dbContext.Wings
@@ -1540,13 +2116,26 @@ public sealed class PalaceService
             .Take(60)
             .ToListAsync(cancellationToken);
 
+        var archivedCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Archived, cancellationToken);
+        var supersededCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Superseded, cancellationToken);
+        var needsReviewCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Active && x.VerificationStatus == MemoryVerificationStatus.NeedsReview, cancellationToken);
+        var unverifiedActiveCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Active && x.VerificationStatus == MemoryVerificationStatus.Unverified, cancellationToken);
+
         return new MemoryGovernanceQueueViewModel
         {
             Items = items.Select(MapCard).ToArray(),
-            ArchivedCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Archived, cancellationToken),
-            SupersededCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Superseded, cancellationToken),
-            NeedsReviewCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Active && x.VerificationStatus == MemoryVerificationStatus.NeedsReview, cancellationToken),
-            UnverifiedActiveCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Active && x.VerificationStatus == MemoryVerificationStatus.Unverified, cancellationToken)
+            Summary = new MemoryGovernanceSummaryViewModel
+            {
+                QueueItemCount = items.Count,
+                ArchivedCount = archivedCount,
+                SupersededCount = supersededCount,
+                NeedsReviewCount = needsReviewCount,
+                UnverifiedActiveCount = unverifiedActiveCount
+            },
+            ArchivedCount = archivedCount,
+            SupersededCount = supersededCount,
+            NeedsReviewCount = needsReviewCount,
+            UnverifiedActiveCount = unverifiedActiveCount
         };
     }
 
@@ -1661,6 +2250,7 @@ public sealed class PalaceService
         if (existingMemoryTags.Count > 0)
         {
             _dbContext.MemoryTags.RemoveRange(existingMemoryTags);
+            await _dbContext.SaveChangesAsync(cancellationToken);
         }
 
         foreach (var tag in existingTags.OrderBy(x => x.Name))
@@ -1767,6 +2357,46 @@ public sealed class PalaceService
         return Math.Round(Math.Max(tokenScore, phraseScore), 3);
     }
 
+    private static decimal ScoreDuplicateSimilarity(MemoryEditorInput draft, MemoryEntry memory)
+    {
+        var titleScore = ScoreDuplicateSimilarity(draft.Title, memory.Title);
+        var summaryScore = ScoreDuplicateSimilarity(draft.Summary, memory.Summary);
+        var contentScore = ScoreDuplicateSimilarity(draft.Content, memory.Content);
+        var combinedScore = ScoreDuplicateSimilarity(
+            $"{draft.Title} {draft.Summary} {draft.Content}",
+            $"{memory.Title} {memory.Summary} {memory.Content}");
+
+        var tagTokens = ParseTags(draft.TagsText);
+        var memoryTags = memory.MemoryTags.Select(x => x.Tag!.Name).ToArray();
+        var tagScore = tagTokens.Count == 0 || memoryTags.Length == 0
+            ? 0m
+            : ScoreDuplicateSimilarity(string.Join(' ', tagTokens), string.Join(' ', memoryTags));
+
+        var exactTitleLikeMatch =
+            !string.IsNullOrWhiteSpace(draft.Title) &&
+            (draft.Title.Contains(memory.Title, StringComparison.OrdinalIgnoreCase) ||
+             memory.Title.Contains(draft.Title, StringComparison.OrdinalIgnoreCase));
+
+        var weightedScore =
+            (titleScore * 0.45m) +
+            (summaryScore * 0.20m) +
+            (contentScore * 0.20m) +
+            (combinedScore * 0.10m) +
+            (tagScore * 0.05m);
+
+        if (exactTitleLikeMatch)
+        {
+            weightedScore = Math.Max(weightedScore, 0.78m);
+        }
+
+        if (memory.VerificationStatus == MemoryVerificationStatus.Verified)
+        {
+            weightedScore += 0.03m;
+        }
+
+        return Math.Round(Math.Min(weightedScore, 1m), 3);
+    }
+
     private static IReadOnlyCollection<MemoryCardViewModel> BuildResurfacingMemories(
         IReadOnlyCollection<MemoryEntry> memories,
         ContextPackViewModel? contextPack)
@@ -1846,8 +2476,17 @@ public sealed class PalaceService
         _ => status.ToString()
     };
 
+    private static ContextPackGoal MapSkillPackGoal(SkillCategory category) => category switch
+    {
+        SkillCategory.System => ContextPackGoal.Architecture,
+        SkillCategory.Tooling => ContextPackGoal.Delivery,
+        _ => ContextPackGoal.General
+    };
+
     private static IReadOnlyCollection<DashboardWarningViewModel> BuildDashboardWarnings(
         ContextBriefInput contextInput,
+        ContextBriefInput resolvedContextInput,
+        DashboardFallbackContextViewModel? fallbackContext,
         ContextPackViewModel? contextPack,
         IReadOnlyCollection<TodoItemViewModel> currentTodos,
         IReadOnlyCollection<TicketSummaryViewModel> activeTickets,
@@ -1856,11 +2495,16 @@ public sealed class PalaceService
         IReadOnlyCollection<MemoryCardViewModel> recentMemories,
         IReadOnlyCollection<WingSummaryViewModel> wings)
     {
+        var now = DateTime.UtcNow;
         var warnings = new List<DashboardWarningViewModel>();
-        var stalePinnedMemories = pinnedMemories.Where(x => x.IsReviewDue || x.FreshnessLabel == "Unverified").ToArray();
-        var agingUnverifiedCount = recentMemories.Count(x => x.VerificationStatus == MemoryVerificationStatus.Unverified && x.FreshnessLabel == "Unverified");
+        var stalePinnedMemories = pinnedMemories
+            .Where(x => x.IsReviewDue || (x.VerificationStatus == MemoryVerificationStatus.Unverified && x.UpdatedUtc <= now.AddDays(-14)))
+            .ToArray();
+        var agingUnverifiedCount = recentMemories.Count(x => x.VerificationStatus == MemoryVerificationStatus.Unverified && x.UpdatedUtc <= now.AddDays(-14));
 
-        if (currentTodos.Count == 0 && activeTickets.Count == 0)
+        if (currentTodos.Count == 0 &&
+            activeTickets.Count == 0 &&
+            string.IsNullOrWhiteSpace(fallbackContext?.CurrentWorkSummary))
         {
             warnings.Add(new DashboardWarningViewModel
             {
@@ -1946,7 +2590,8 @@ public sealed class PalaceService
             });
         }
 
-        if (string.IsNullOrWhiteSpace(contextInput.Question))
+        if (string.IsNullOrWhiteSpace(contextInput.Question) &&
+            string.IsNullOrWhiteSpace(fallbackContext?.SuggestedQuestion))
         {
             warnings.Add(new DashboardWarningViewModel
             {
@@ -1957,22 +2602,157 @@ public sealed class PalaceService
                 ActionUrl = "/Admin/Inspect"
             });
         }
-        else if (contextPack is null || contextPack.TopMatches.Count == 0)
+        else if (!string.IsNullOrWhiteSpace(resolvedContextInput.Question) &&
+                 (contextPack is null || contextPack.TopMatches.Count == 0))
         {
             warnings.Add(new DashboardWarningViewModel
             {
                 Code = "no-context-matches",
                 Severity = "warning",
-                Message = "A context question was supplied, but no strong top matches were returned.",
+                Message = string.IsNullOrWhiteSpace(contextInput.Question)
+                    ? "Focus derived a context question from recent signal, but no strong top matches were returned."
+                    : "A context question was supplied, but no strong top matches were returned.",
                 ActionLabel = "Open Inspect",
-                ActionUrl = $"/Admin/Inspect?Question={Uri.EscapeDataString(contextInput.Question)}&IncludeCompletedWork={contextInput.IncludeCompletedWork.ToString().ToLowerInvariant()}&ExpandHistory={contextInput.ExpandHistory.ToString().ToLowerInvariant()}&ResultsPerSection={contextInput.ResultsPerSection}"
+                ActionUrl = $"/Admin/Inspect?Question={Uri.EscapeDataString(resolvedContextInput.Question)}&IncludeCompletedWork={resolvedContextInput.IncludeCompletedWork.ToString().ToLowerInvariant()}&ExpandHistory={resolvedContextInput.ExpandHistory.ToString().ToLowerInvariant()}&ResultsPerSection={resolvedContextInput.ResultsPerSection}"
             });
         }
 
         return warnings;
     }
 
+    private static DashboardFallbackContextViewModel? BuildDashboardFallbackContext(
+        ContextBriefInput contextInput,
+        IReadOnlyCollection<TodoItemViewModel> currentTodos,
+        IReadOnlyCollection<TicketSummaryViewModel> activeTickets,
+        IReadOnlyCollection<DashboardActivityViewModel> recentActivity,
+        IReadOnlyCollection<MemoryCardViewModel> pinnedMemories,
+        IReadOnlyCollection<MemoryCardViewModel> recentMemories)
+    {
+        var suggestions = new List<string>();
+        string sourceLabel;
+        string currentWorkSummary;
+
+        var activeTodo = currentTodos.FirstOrDefault(todo => todo.Status == TodoStatus.InProgress) ?? currentTodos.FirstOrDefault();
+        if (activeTodo is not null)
+        {
+            sourceLabel = "Active todo";
+            currentWorkSummary = $"Focus is tracking current work through the todo \"{activeTodo.Title}\".";
+            AddDashboardSuggestion(suggestions, $"What context should I review before I continue \"{activeTodo.Title}\"?");
+        }
+        else
+        {
+            var activeTicket = activeTickets.FirstOrDefault(ticket => ticket.Status == TicketStatus.InProgress) ?? activeTickets.FirstOrDefault();
+            if (activeTicket is not null)
+            {
+                sourceLabel = "Active ticket";
+                currentWorkSummary = $"Focus is tracking current work through the ticket \"{activeTicket.TicketNumber} - {activeTicket.Title}\".";
+                AddDashboardSuggestion(suggestions, $"What changed recently around \"{activeTicket.Title}\" and what context should I review before continuing?");
+            }
+            else
+            {
+                var latestActivity = recentActivity.FirstOrDefault();
+                if (latestActivity is not null)
+                {
+                    sourceLabel = "Recent activity";
+                    currentWorkSummary = $"No formal todo or ticket is active, so Focus is using recent activity as the current-work signal. Latest update: {latestActivity.Label} - {latestActivity.Title}.";
+                    AddDashboardSuggestion(suggestions, $"What changed recently around \"{latestActivity.Title}\" and what should I read before I continue?");
+                }
+                else
+                {
+                    var pinnedMemory = pinnedMemories.FirstOrDefault();
+                    if (pinnedMemory is not null)
+                    {
+                        sourceLabel = "Pinned memory";
+                        currentWorkSummary = $"No active work item is visible, so Focus is falling back to pinned memory \"{pinnedMemory.Title}\" as durable context.";
+                        AddDashboardSuggestion(suggestions, $"What is the current trusted context for \"{pinnedMemory.Title}\"?");
+                    }
+                    else
+                    {
+                        var recentMemory = recentMemories.FirstOrDefault();
+                        if (recentMemory is null)
+                        {
+                            return null;
+                        }
+
+                        sourceLabel = "Recent memory";
+                        currentWorkSummary = $"No active work item is visible, so Focus is falling back to the recent memory \"{recentMemory.Title}\".";
+                        AddDashboardSuggestion(suggestions, $"What recent project context should I review around \"{recentMemory.Title}\"?");
+                    }
+                }
+            }
+        }
+
+        var durableMemory = pinnedMemories.FirstOrDefault();
+        if (durableMemory is not null)
+        {
+            AddDashboardSuggestion(suggestions, $"Which pinned memory should I trust before I change \"{durableMemory.Title}\"?");
+        }
+
+        var freshMemory = recentMemories.FirstOrDefault();
+        if (freshMemory is not null)
+        {
+            AddDashboardSuggestion(suggestions, $"What changed recently around \"{freshMemory.Title}\"?");
+        }
+
+        AddDashboardSuggestion(suggestions, "What changed recently for this project?");
+
+        return new DashboardFallbackContextViewModel
+        {
+            SourceLabel = sourceLabel,
+            CurrentWorkSummary = currentWorkSummary,
+            SuggestedQuestion = suggestions.FirstOrDefault() ?? string.Empty,
+            SuggestedQuestions = suggestions,
+            WasApplied = string.IsNullOrWhiteSpace(contextInput.Question) && suggestions.Count > 0
+        };
+    }
+
+    private static ContextBriefInput ResolveDashboardContextInput(
+        ContextBriefInput contextInput,
+        DashboardFallbackContextViewModel? fallbackContext)
+    {
+        if (!string.IsNullOrWhiteSpace(contextInput.Question) ||
+            string.IsNullOrWhiteSpace(fallbackContext?.SuggestedQuestion))
+        {
+            return CloneContextBriefInput(contextInput);
+        }
+
+        var resolvedInput = CloneContextBriefInput(contextInput);
+        resolvedInput.Question = fallbackContext.SuggestedQuestion;
+        return resolvedInput;
+    }
+
+    private static ContextBriefInput CloneContextBriefInput(ContextBriefInput input)
+    {
+        return new ContextBriefInput
+        {
+            Question = input.Question,
+            IncludeCompletedWork = input.IncludeCompletedWork,
+            WingId = input.WingId,
+            RoomId = input.RoomId,
+            Kind = input.Kind,
+            Tag = input.Tag,
+            IncludeRetired = input.IncludeRetired,
+            ExpandHistory = input.ExpandHistory,
+            ResultsPerSection = input.ResultsPerSection,
+            PackGoal = input.PackGoal,
+            PreferRecentChanges = input.PreferRecentChanges
+        };
+    }
+
+    private static void AddDashboardSuggestion(List<string> suggestions, string suggestion)
+    {
+        if (string.IsNullOrWhiteSpace(suggestion) ||
+            suggestions.Contains(suggestion, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        suggestions.Add(suggestion);
+    }
+
     private static string BuildWorkspaceExportText(
+        IReadOnlyCollection<AgentCardViewModel> recommendedAgents,
+        IReadOnlyCollection<SkillCardViewModel> recommendedSkills,
         IReadOnlyCollection<MemoryCardViewModel> pinnedMemories,
         IReadOnlyCollection<TodoItemViewModel> activeTodos,
         IReadOnlyCollection<TicketSummaryViewModel> activeTickets,
@@ -1983,6 +2763,28 @@ public sealed class PalaceService
         builder.AppendLine("Focus workspace export");
         builder.AppendLine();
 
+        builder.AppendLine("Scoped agents:");
+        foreach (var agent in recommendedAgents)
+        {
+            builder.Append("- ")
+                .Append(agent.Name)
+                .Append(" | ")
+                .Append(string.IsNullOrWhiteSpace(agent.RecommendationReason) ? agent.Summary : agent.RecommendationReason)
+                .AppendLine();
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Recommended skills:");
+        foreach (var skill in recommendedSkills)
+        {
+            builder.Append("- ")
+                .Append(skill.Name)
+                .Append(" | ")
+                .Append(string.IsNullOrWhiteSpace(skill.RecommendationReason) ? skill.Summary : skill.RecommendationReason)
+                .AppendLine();
+        }
+
+        builder.AppendLine();
         builder.AppendLine("Pinned memories:");
         foreach (var memory in pinnedMemories)
         {
@@ -2055,6 +2857,170 @@ public sealed class PalaceService
         }
 
         return builder.ToString().TrimEnd();
+    }
+
+    private static string BuildWorkspaceBootstrapSummary(
+        WorkspaceExportViewModel workspace,
+        IReadOnlyCollection<WingSummaryViewModel> wings,
+        string profile)
+    {
+        var builder = new StringBuilder();
+        builder.Append(profile switch
+        {
+            "operator" => "Use Focus as the operational truth layer. Check recent changes, governance, and active work first. ",
+            "incident-response" => "Use Focus as the incident bootstrap. Bias toward recent changes, incident memory, and canonical subsystem context. ",
+            _ => "Start with Focus. Search memories, build a context pack, then check recent changes and active work. "
+        });
+        builder.Append("Workspace snapshot: ");
+        builder.Append(workspace.RecommendedAgents.Count).Append(" recommended agents, ");
+        builder.Append(workspace.RecommendedSkills.Count).Append(" recommended skills, ");
+        builder.Append(workspace.PinnedMemories.Count).Append(" pinned memories, ");
+        builder.Append(workspace.ActiveTodos.Count).Append(" active todos, ");
+        builder.Append(workspace.ActiveTickets.Count).Append(" active tickets, ");
+        builder.Append(workspace.CodeGraphProjects.Count).Append(" code graph projects");
+
+        if (wings.Count > 0)
+        {
+            builder.Append(". Top wings: ");
+            builder.Append(string.Join(", ", wings.Take(4).Select(x => x.Name)));
+        }
+
+        return builder.ToString();
+    }
+
+    private static string NormalizeBootstrapProfile(string? profile)
+    {
+        var normalized = (profile ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "operator" => "operator",
+            "incident-response" or "incident" => "incident-response",
+            _ => "developer"
+        };
+    }
+
+    private static string MergeSummary(string existingSummary, string incomingSummary)
+    {
+        var merged = MergeMetadataField(existingSummary, incomingSummary, 500);
+        return string.IsNullOrWhiteSpace(merged) ? existingSummary : merged;
+    }
+
+    private static string MergeContent(string existingContent, string sourceTitle, Guid sourceId, string incomingContent)
+    {
+        if (string.IsNullOrWhiteSpace(incomingContent) || existingContent.Contains(incomingContent, StringComparison.Ordinal))
+        {
+            return existingContent;
+        }
+
+        var builder = new StringBuilder(existingContent.Trim());
+        if (builder.Length > 0)
+        {
+            builder.AppendLine().AppendLine();
+        }
+
+        builder.AppendLine($"Merged from {sourceTitle} ({sourceId}):");
+        builder.Append(incomingContent.Trim());
+        return builder.ToString();
+    }
+
+    private static string MergeMetadataField(string existingValue, string incomingValue, int maxLength)
+    {
+        var parts = new[] { existingValue?.Trim(), incomingValue?.Trim() }
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (parts.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var combined = string.Join("; ", parts);
+        return combined.Length <= maxLength ? combined : combined[..maxLength];
+    }
+
+    private static DateTime? MinDate(DateTime? left, DateTime? right)
+    {
+        if (!left.HasValue)
+        {
+            return right;
+        }
+
+        if (!right.HasValue)
+        {
+            return left;
+        }
+
+        return left.Value <= right.Value ? left : right;
+    }
+
+    private static SkillCardViewModel MapSkillCard(SkillEntry skill, string recommendationReason = "", decimal recommendationScore = 0m)
+    {
+        var now = DateTime.UtcNow;
+        return new SkillCardViewModel
+        {
+            Id = skill.Id,
+            WingId = skill.WingId,
+            Name = skill.Name,
+            Slug = skill.Slug,
+            Summary = skill.Summary,
+            Category = skill.Category,
+            CategoryLabel = skill.Category.ToString(),
+            WingName = skill.Wing?.Name ?? string.Empty,
+            TriggerHintsText = skill.TriggerHintsText,
+            TriggerHints = SplitSkillText(skill.TriggerHintsText, ',', ';'),
+            IsPinned = skill.IsPinned,
+            UseCount = skill.UseCount,
+            LastUsedUtc = skill.LastUsedUtc,
+            LastReviewedUtc = skill.LastReviewedUtc,
+            ReviewAfterUtc = skill.ReviewAfterUtc,
+            NeedsReview = SkillRecommendationEngine.NeedsReview(skill, now),
+            ReviewLabel = SkillRecommendationEngine.GetReviewLabel(skill, now),
+            RecommendationReason = recommendationReason,
+            RecommendationScore = recommendationScore,
+            RecommendationScoreLabel = recommendationScore <= 0m ? string.Empty : recommendationScore.ToString("0.#"),
+            UpdatedUtc = skill.UpdatedUtc
+        };
+    }
+
+    private static SkillDetailViewModel MapSkillDetail(SkillEntry skill, ContextPackViewModel? relatedContext)
+    {
+        return new SkillDetailViewModel
+        {
+            Skill = MapSkillCard(skill),
+            WhenToUse = skill.WhenToUse,
+            Flow = skill.Flow,
+            ExamplesText = skill.ExamplesText,
+            WhenToUsePoints = SplitSkillText(skill.WhenToUse),
+            FlowSteps = SplitSkillText(skill.Flow),
+            ExamplePrompts = SplitSkillText(skill.ExamplesText),
+            SuggestedQuestion = SkillRecommendationEngine.BuildSuggestedQuestion(skill),
+            RelatedContext = relatedContext
+        };
+    }
+
+    private async Task TouchSkillUsageAsync(SkillEntry skill, CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        skill.UseCount += 1;
+        skill.LastUsedUtc = now;
+        skill.ReviewAfterUtc ??= now.AddDays(SkillRecommendationEngine.DefaultReviewWindowDays);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static IReadOnlyCollection<string> SplitSkillText(string? value, params char[] separators)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Array.Empty<string>();
+        }
+
+        if (separators is { Length: > 0 })
+        {
+            return value.Split(separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
+
+        return value.Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
     private static MemoryCardViewModel MapCard(MemoryEntry memory)

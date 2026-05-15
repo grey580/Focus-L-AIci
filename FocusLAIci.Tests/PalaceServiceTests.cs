@@ -157,6 +157,213 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task UpdateMemoryTagsAsync_ReplacesSuggestedTagsWithExplicitTags()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        Guid memoryId;
+
+        await using (var setupContext = harness.CreateDbContext())
+        {
+            var service = new PalaceService(setupContext);
+            var wingId = await service.CreateWingAsync(new WingEditorInput
+            {
+                Name = "Grey Canary",
+                Description = "Endpoint and platform memory."
+            }, CancellationToken.None);
+
+            var roomId = await service.CreateRoomAsync(new RoomEditorInput
+            {
+                WingId = wingId,
+                Name = "Platform",
+                Description = "Platform delivery notes."
+            }, CancellationToken.None);
+
+            memoryId = await service.SaveMemoryAsync(new MemoryEditorInput
+            {
+                Title = "Grey Canary incidents page uses POST-backed AJAX partial refresh",
+                Summary = "Grey Canary incidents now refresh through a POST-backed AJAX partial flow with bulk close, page-size, and status filters.",
+                Content = "The Grey Canary incidents page was refactored so GET renders the shell and POST returns partial refreshes. Bulk close now binds incident IDs reliably, and recent branch state also includes IP-inclusive auth logs in AuthController.",
+                Kind = MemoryKind.Fact,
+                SourceKind = SourceKind.ChatSession,
+                SourceReference = "regression test",
+                Importance = 4,
+                WingId = wingId,
+                RoomId = roomId
+            }, CancellationToken.None);
+        }
+
+        await using (var updateContext = harness.CreateDbContext())
+        {
+            var service = new PalaceService(updateContext);
+            await service.UpdateMemoryTagsAsync(memoryId, "grey-canary, incidents, ajax, paging, auth-logs", CancellationToken.None);
+        }
+
+        await using var verifyContext = harness.CreateDbContext();
+        var verifyService = new PalaceService(verifyContext);
+        var detail = await verifyService.GetMemoryAsync(memoryId, CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.Equal(["ajax", "auth-logs", "grey-canary", "incidents", "paging"], detail!.Memory.Tags.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public async Task SaveSkillAsync_PersistsSearchableSkillDetails()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Local System",
+            Description = "Machine-specific workflows."
+        }, CancellationToken.None);
+
+        var skillId = await service.SaveSkillAsync(new SkillEditorInput
+        {
+            Name = "Investigate CSS regressions",
+            Summary = "Trace static asset failures and MIME issues.",
+            Category = SkillCategory.Task,
+            WhenToUse = "Use this when CSS or JS stops loading.",
+            Flow = "Check the launch root.\nCheck rendered asset URLs.\nFetch browser-visible asset GET responses.",
+            ExamplesText = "Investigate why site.css is not loading.",
+            TriggerHintsText = "css, static files, mime",
+            WingId = wingId,
+            IsPinned = true
+        }, CancellationToken.None);
+
+        var detail = await service.GetSkillAsync("investigate-css-regressions", CancellationToken.None);
+        var search = await service.GetSkillSummariesAsync("mime", null, CancellationToken.None);
+
+        Assert.NotEqual(Guid.Empty, skillId);
+        Assert.NotNull(detail);
+        Assert.Equal("Investigate CSS regressions", detail!.Skill.Name);
+        Assert.Equal("Local System", detail.Skill.WingName);
+        Assert.Contains("Check the launch root.", detail.FlowSteps);
+        Assert.Contains(search, skill => skill.Id == skillId);
+    }
+
+    [Fact]
+    public async Task SkillRecommendationsAndUsageMetadata_AreSurfacedAcrossCatalogAndDetail()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Platform Delivery",
+            Description = "Platform delivery workflows."
+        }, CancellationToken.None);
+
+        var recommendedId = await service.SaveSkillAsync(new SkillEditorInput
+        {
+            Name = "Stabilize CSS pipeline",
+            Summary = "Trace broken styles and static asset failures.",
+            Category = SkillCategory.Task,
+            WhenToUse = "Use this when CSS or JavaScript stops loading in production.",
+            Flow = "Check launch root.\nInspect rendered asset URLs.\nFetch browser-visible static files.",
+            ExamplesText = "Fix why the dashboard CSS is missing.",
+            TriggerHintsText = "css, javascript, static files, mime",
+            WingId = wingId,
+            IsPinned = true
+        }, CancellationToken.None);
+
+        var staleId = await service.SaveSkillAsync(new SkillEditorInput
+        {
+            Name = "Legacy static fallback",
+            Summary = "Legacy fallback workflow.",
+            Category = SkillCategory.Task,
+            WhenToUse = "Use this only for old static fallback checks.",
+            Flow = "Open fallback checks.",
+            ExamplesText = "Review old static fallback behavior.",
+            TriggerHintsText = "legacy, fallback",
+            WingId = wingId,
+            IsPinned = false
+        }, CancellationToken.None);
+
+        await using (var staleContext = harness.CreateDbContext())
+        {
+            var staleSkill = await staleContext.Skills.FirstAsync(x => x.Id == staleId);
+            staleSkill.ReviewAfterUtc = DateTime.UtcNow.AddDays(-2);
+            await staleContext.SaveChangesAsync();
+        }
+
+        var recommendations = await service.RecommendSkillsAsync("css asset mime issue", wingId, null, 3, CancellationToken.None);
+        var detail = await service.GetSkillAsync("stabilize-css-pipeline", CancellationToken.None, trackUsage: true);
+        var catalog = await service.GetSkillCatalogAsync(null, null, wingId, false, true, CancellationToken.None);
+
+        Assert.NotEmpty(recommendations);
+        Assert.Equal(recommendedId, recommendations.First().Id);
+        Assert.NotNull(detail);
+        Assert.Equal(1, detail!.Skill.UseCount);
+        Assert.NotNull(detail.RelatedContext);
+        Assert.Single(catalog.Skills);
+        Assert.Equal(staleId, catalog.Skills.Single().Id);
+        Assert.True(catalog.Skills.Single().NeedsReview);
+    }
+
+    [Fact]
+    public async Task EnsureDatabaseAsync_SeedsImportedStarterSkills()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var scope = harness.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<FocusMemoryContext>();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        var slugs = await dbContext.Skills
+            .AsNoTracking()
+            .Select(x => new { x.Slug, x.ReviewAfterUtc })
+            .ToListAsync();
+
+        Assert.Contains(slugs, x => x.Slug == "acquire-codebase-knowledge");
+        Assert.Contains(slugs, x => x.Slug == "generate-architecture-blueprint");
+        Assert.Contains(slugs, x => x.Slug == "design-agent-governance");
+        Assert.Contains(slugs, x => x.Slug == "check-agent-owasp-compliance");
+        Assert.Contains(slugs, x => x.Slug == "orchestrate-ai-delivery-team");
+        Assert.Contains(slugs, x => x.Slug == "instrument-app-insights-telemetry");
+        Assert.Contains(slugs, x => x.Slug == "apply-dotnet-best-practices");
+        Assert.Contains(slugs, x => x.Slug == "review-dotnet-design-patterns");
+        Assert.Contains(slugs, x => x.Slug == "plan-dotnet-upgrade");
+        Assert.Contains(slugs, x => x.Slug == "review-csharp-async-workflows");
+        Assert.Contains(slugs, x => x.Slug == "review-ef-core-data-access");
+        Assert.Contains(slugs, x => x.Slug == "work-as-web-coder");
+        Assert.Contains(slugs, x => x.Slug == "review-web-design-quality");
+        Assert.Contains(slugs, x => x.Slug == "test-web-application-flows");
+        Assert.Contains(slugs, x => x.Slug == "review-sql-code-safety");
+        Assert.Contains(slugs, x => x.Slug == "optimize-sql-performance");
+        Assert.Contains(slugs, x => x.Slug == "run-security-review");
+        Assert.Contains(slugs, x => x.Slug == "plan-threat-model-analysis");
+        Assert.Contains(slugs, x => x.Slug == "manage-secret-scanning");
+        Assert.Contains(slugs, x => x.Slug == "configure-codeql-scanning");
+        Assert.All(slugs, x => Assert.NotNull(x.ReviewAfterUtc));
+    }
+
+    [Fact]
+    public async Task DashboardAndWorkspaceBootstrap_SurfaceScopedAgents()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var dashboard = await service.GetDashboardAsync(new ContextBriefInput
+        {
+            Question = "review the riskiest delivery changes before shipping",
+            PackGoal = ContextPackGoal.Delivery
+        }, CancellationToken.None);
+        var workspace = await service.GetWorkspaceExportAsync(CancellationToken.None);
+        var bootstrap = await service.GetWorkspaceBootstrapAsync("operator", CancellationToken.None);
+
+        Assert.Equal(4, dashboard.FeaturedAgents.Count);
+        Assert.Contains(dashboard.RecommendedAgents, x => x.Slug == "review-agent");
+        Assert.Equal(4, workspace.RecommendedAgents.Count);
+        Assert.Equal(4, bootstrap.FeaturedAgents.Count);
+        Assert.Contains(bootstrap.RecommendedAgents, x => x.Slug == "context-agent");
+        Assert.Contains("Scoped agents:", workspace.ExportText);
+    }
+
+    [Fact]
     public async Task SaveMemoryAsync_AssignsWingMemoriesToGeneralRoom()
     {
         await using var harness = await TestHarness.CreateAsync();
@@ -1534,6 +1741,87 @@ public sealed class PalaceServiceTests
         var dashboard = await service.GetDashboardAsync(CancellationToken.None);
 
         Assert.Contains(dashboard.MissingContextWarningItems, warning => warning.Code == "stale-pinned-memories");
+    }
+
+    [Fact]
+    public async Task Dashboard_DoesNotWarnForFreshUnverifiedMemories()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        dbContext.Wings.Add(new Wing
+        {
+            Name = "Fresh",
+            Slug = "fresh",
+            Description = "Fresh context wing."
+        });
+        dbContext.Memories.AddRange(
+            new MemoryEntry
+            {
+                Title = "Pinned and fresh",
+                Summary = "Fresh pinned memory should not be treated as stale immediately.",
+                Content = "Fresh pinned content.",
+                IsPinned = true,
+                VerificationStatus = MemoryVerificationStatus.Unverified,
+                UpdatedUtc = DateTime.UtcNow.AddDays(-2)
+            },
+            new MemoryEntry
+            {
+                Title = "Recent and fresh",
+                Summary = "Recent memory should not trigger aging warning immediately.",
+                Content = "Fresh recent content.",
+                VerificationStatus = MemoryVerificationStatus.Unverified,
+                UpdatedUtc = DateTime.UtcNow.AddDays(-1)
+            });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new PalaceService(dbContext);
+        var dashboard = await service.GetDashboardAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(dashboard.MissingContextWarningItems, warning => warning.Code == "stale-pinned-memories");
+        Assert.DoesNotContain(dashboard.MissingContextWarningItems, warning => warning.Code == "aging-unverified-memories");
+    }
+
+    [Fact]
+    public async Task Dashboard_UsesFallbackContextWhenQuestionAndActiveWorkAreMissing()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Fallback",
+            Description = "Fallback dashboard context coverage."
+        }, CancellationToken.None);
+
+        await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Installer diagnostics follow-up",
+            Summary = "Recent work should become fallback dashboard context.",
+            Content = "Use recent diagnostics memory when no explicit task prompt is present.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.DebugSession,
+            Importance = 4,
+            IsPinned = true,
+            WingId = wingId,
+            TagsText = "installer, diagnostics, fallback"
+        }, CancellationToken.None);
+
+        var dashboard = await service.GetDashboardAsync(CancellationToken.None);
+        var diagnostics = await service.GetDashboardDiagnosticsAsync(null, CancellationToken.None);
+
+        Assert.NotNull(dashboard.FallbackContext);
+        Assert.True(dashboard.FallbackContext!.WasApplied);
+        Assert.False(string.IsNullOrWhiteSpace(dashboard.FallbackContext.SuggestedQuestion));
+        Assert.NotNull(dashboard.ContextPack);
+        Assert.NotEmpty(dashboard.ContextPack!.TopMatches);
+        Assert.DoesNotContain(dashboard.MissingContextWarningItems, warning => warning.Code == "no-active-work");
+        Assert.DoesNotContain(dashboard.MissingContextWarningItems, warning => warning.Code == "no-context-question");
+        Assert.NotNull(diagnostics.FallbackContext);
+        Assert.True(diagnostics.FallbackContext!.WasApplied);
+        Assert.DoesNotContain(diagnostics.DetectedGaps, gap => gap.Contains("No active todos or tickets", StringComparison.Ordinal));
+        Assert.DoesNotContain(diagnostics.DetectedGaps, gap => gap.Contains("No context question", StringComparison.Ordinal));
     }
 
     [Fact]
