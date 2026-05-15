@@ -16,6 +16,7 @@ public sealed class FocusMcpSessionService
             input.ClientVersion.Trim(),
             remoteAddress,
             authMode,
+            false,
             now,
             now,
             new HashSet<string>(StringComparer.OrdinalIgnoreCase));
@@ -27,6 +28,7 @@ public sealed class FocusMcpSessionService
     public bool TryTouch(string sessionId, out FocusMcpSessionSummaryViewModel session)
     {
         session = new FocusMcpSessionSummaryViewModel();
+        sessionId = sessionId?.Trim() ?? string.Empty;
         if (!_sessions.TryGetValue(sessionId, out var current))
         {
             if (string.IsNullOrWhiteSpace(sessionId))
@@ -40,6 +42,7 @@ public sealed class FocusMcpSessionService
                 "unknown",
                 "unknown",
                 "recovered",
+                true,
                 DateTime.UtcNow,
                 DateTime.UtcNow,
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase));
@@ -150,6 +153,7 @@ public sealed class FocusMcpSessionService
         string ClientVersion,
         string RemoteAddress,
         string AuthMode,
+        bool IsRecovered,
         DateTime CreatedUtc,
         DateTime LastSeenUtc,
         HashSet<string> ResourceSubscriptions)
@@ -163,6 +167,7 @@ public sealed class FocusMcpSessionService
                 ClientVersion = ClientVersion,
                 RemoteAddress = RemoteAddress,
                 AuthMode = AuthMode,
+                IsRecovered = IsRecovered,
                 CreatedUtc = CreatedUtc,
                 LastSeenUtc = LastSeenUtc,
                 ResourceSubscriptions = ResourceSubscriptions.OrderBy(x => x).ToArray()

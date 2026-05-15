@@ -119,9 +119,15 @@
                             <div class="mt-2 d-grid gap-2">
                                 @foreach (var suggestion in Model.DuplicateSuggestions)
                                 {
-                                    <a class="text-decoration-none" href="@suggestion.Url">
-                                        <strong>@suggestion.Title</strong> - @suggestion.ScoreLabel - @suggestion.MatchReason
-                                    </a>
+                                    <div>
+                                        <a class="text-decoration-none" href="@suggestion.Url">
+                                            <strong>@suggestion.Title</strong> - @suggestion.ScoreLabel - @suggestion.MatchReason
+                                        </a>
+                                        @if (suggestion.CanMerge)
+                                        {
+                                            <div class="small text-secondary">This one is strong enough that merge or supersede is usually safer than creating a new copy.</div>
+                                        }
+                                    </div>
                                 }
                             </div>
                         </div>

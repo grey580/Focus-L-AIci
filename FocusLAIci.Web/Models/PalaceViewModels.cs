@@ -8,6 +8,7 @@ public sealed class DashboardViewModel
     public PalaceStatsViewModel Stats { get; init; } = new();
     public ContextBriefInput ContextInput { get; init; } = new();
     public ContextPackViewModel? ContextPack { get; init; }
+    public DashboardFallbackContextViewModel? FallbackContext { get; init; }
     public QuickCaptureInput QuickCaptureInput { get; init; } = new();
     public IReadOnlyCollection<TicketSummaryViewModel> ActiveTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
     public IReadOnlyCollection<DashboardActivityViewModel> RecentActivity { get; init; } = Array.Empty<DashboardActivityViewModel>();
@@ -15,6 +16,10 @@ public sealed class DashboardViewModel
     public IReadOnlyCollection<MemoryCardViewModel> RecentMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
     public IReadOnlyCollection<MemoryCardViewModel> PinnedMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
     public IReadOnlyCollection<MemoryCardViewModel> ResurfacingMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
+    public IReadOnlyCollection<AgentCardViewModel> RecommendedAgents { get; init; } = Array.Empty<AgentCardViewModel>();
+    public IReadOnlyCollection<AgentCardViewModel> FeaturedAgents { get; init; } = Array.Empty<AgentCardViewModel>();
+    public IReadOnlyCollection<SkillCardViewModel> RecommendedSkills { get; init; } = Array.Empty<SkillCardViewModel>();
+    public IReadOnlyCollection<SkillCardViewModel> FeaturedSkills { get; init; } = Array.Empty<SkillCardViewModel>();
     public IReadOnlyCollection<TodoItemViewModel> CurrentTodos { get; init; } = Array.Empty<TodoItemViewModel>();
     public IReadOnlyCollection<string> MissingContextWarnings { get; init; } = Array.Empty<string>();
     public IReadOnlyCollection<DashboardWarningViewModel> MissingContextWarningItems { get; init; } = Array.Empty<DashboardWarningViewModel>();
@@ -27,6 +32,7 @@ public sealed class DashboardDiagnosticsViewModel
     public FocusDatabaseTargetSnapshot DatabaseTarget { get; init; } = new();
     public PalaceStatsViewModel Stats { get; init; } = new();
     public ContextBriefInput ContextInput { get; init; } = new();
+    public DashboardFallbackContextViewModel? FallbackContext { get; init; }
     public string ContextSummary { get; init; } = string.Empty;
     public int TopMatchCount { get; init; }
     public IReadOnlyCollection<string> DetectedGaps { get; init; } = Array.Empty<string>();
@@ -42,6 +48,15 @@ public sealed class DashboardWarningViewModel
     public string Message { get; init; } = string.Empty;
     public string ActionLabel { get; init; } = string.Empty;
     public string ActionUrl { get; init; } = string.Empty;
+}
+
+public sealed class DashboardFallbackContextViewModel
+{
+    public string SourceLabel { get; init; } = string.Empty;
+    public string CurrentWorkSummary { get; init; } = string.Empty;
+    public string SuggestedQuestion { get; init; } = string.Empty;
+    public IReadOnlyCollection<string> SuggestedQuestions { get; init; } = Array.Empty<string>();
+    public bool WasApplied { get; init; }
 }
 
 public sealed class DashboardSectionSnapshotViewModel
@@ -69,8 +84,12 @@ public sealed class InspectorViewModel
     public string DiagnosticsApiUrl { get; init; } = string.Empty;
     public string RecentChangesApiUrl { get; init; } = string.Empty;
     public string WorkspaceApiUrl { get; init; } = string.Empty;
+    public string OperatorDiagnosticsApiUrl { get; init; } = string.Empty;
+    public string SelfTestApiUrl { get; init; } = string.Empty;
     public WorkspaceExportViewModel WorkspaceExport { get; init; } = new();
     public MemoryGovernanceQueueViewModel GovernanceQueue { get; init; } = new();
+    public TagGovernanceViewModel TagGovernance { get; init; } = new();
+    public FocusOperatorDiagnosticsViewModel OperatorDiagnostics { get; init; } = new();
 }
 
 public sealed class RecentChangeItemViewModel
@@ -88,11 +107,30 @@ public sealed class WorkspaceExportViewModel
     public FocusDatabaseTargetSnapshot DatabaseTarget { get; init; } = new();
     public PalaceStatsViewModel Stats { get; init; } = new();
     public string ExportText { get; init; } = string.Empty;
+    public IReadOnlyCollection<AgentCardViewModel> RecommendedAgents { get; init; } = Array.Empty<AgentCardViewModel>();
+    public IReadOnlyCollection<SkillCardViewModel> RecommendedSkills { get; init; } = Array.Empty<SkillCardViewModel>();
     public IReadOnlyCollection<MemoryCardViewModel> PinnedMemories { get; init; } = Array.Empty<MemoryCardViewModel>();
     public IReadOnlyCollection<TodoItemViewModel> ActiveTodos { get; init; } = Array.Empty<TodoItemViewModel>();
     public IReadOnlyCollection<TicketSummaryViewModel> ActiveTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
     public IReadOnlyCollection<CodeGraphProjectCardViewModel> CodeGraphProjects { get; init; } = Array.Empty<CodeGraphProjectCardViewModel>();
     public IReadOnlyCollection<RecentChangeItemViewModel> RecentChanges { get; init; } = Array.Empty<RecentChangeItemViewModel>();
+}
+
+public sealed class WorkspaceBootstrapViewModel
+{
+    public DateTime GeneratedUtc { get; init; }
+    public string Profile { get; init; } = "developer";
+    public FocusDatabaseTargetSnapshot DatabaseTarget { get; init; } = new();
+    public string SuggestedTaskPrompt { get; init; } = string.Empty;
+    public string BootstrapSummary { get; init; } = string.Empty;
+    public IReadOnlyCollection<string> RecommendedFlow { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<string> SuggestedQuestions { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<AgentCardViewModel> RecommendedAgents { get; init; } = Array.Empty<AgentCardViewModel>();
+    public IReadOnlyCollection<AgentCardViewModel> FeaturedAgents { get; init; } = Array.Empty<AgentCardViewModel>();
+    public IReadOnlyCollection<SkillCardViewModel> RecommendedSkills { get; init; } = Array.Empty<SkillCardViewModel>();
+    public IReadOnlyCollection<SkillCardViewModel> FeaturedSkills { get; init; } = Array.Empty<SkillCardViewModel>();
+    public IReadOnlyCollection<WingSummaryViewModel> Wings { get; init; } = Array.Empty<WingSummaryViewModel>();
+    public WorkspaceExportViewModel Workspace { get; init; } = new();
 }
 
 public sealed class TodoStatusUpdateInput
@@ -128,11 +166,37 @@ public sealed class MemorySupersedeInput
 public sealed class MemoryGovernanceQueueViewModel
 {
     public IReadOnlyCollection<MemoryCardViewModel> Items { get; init; } = Array.Empty<MemoryCardViewModel>();
+    public MemoryGovernanceSummaryViewModel Summary { get; init; } = new();
     public int ArchivedCount { get; init; }
     public int SupersededCount { get; init; }
     public int NeedsReviewCount { get; init; }
     public int UnverifiedActiveCount { get; init; }
     public MemoryBulkGovernanceInput BulkInput { get; init; } = new();
+}
+
+public sealed class MemoryGovernanceSummaryViewModel
+{
+    public int QueueItemCount { get; init; }
+    public int ArchivedCount { get; init; }
+    public int SupersededCount { get; init; }
+    public int NeedsReviewCount { get; init; }
+    public int UnverifiedActiveCount { get; init; }
+}
+
+public sealed class TagGovernanceViewModel
+{
+    public int TotalTagCount { get; init; }
+    public int LowSignalTagCount { get; init; }
+    public int UnusedTagCount { get; init; }
+    public IReadOnlyCollection<TagGovernanceItemViewModel> LowSignalTags { get; init; } = Array.Empty<TagGovernanceItemViewModel>();
+    public IReadOnlyCollection<TagGovernanceItemViewModel> UnusedTags { get; init; } = Array.Empty<TagGovernanceItemViewModel>();
+}
+
+public sealed class TagGovernanceItemViewModel
+{
+    public string Name { get; init; } = string.Empty;
+    public string Slug { get; init; } = string.Empty;
+    public int UsageCount { get; init; }
 }
 
 public sealed class DashboardActivityViewModel
@@ -213,6 +277,7 @@ public sealed class PalaceStatsViewModel
     public int WingCount { get; init; }
     public int RoomCount { get; init; }
     public int MemoryCount { get; init; }
+    public int SkillCount { get; init; }
     public int PinnedCount { get; init; }
     public int TagCount { get; init; }
     public int OpenTodoCount { get; init; }
@@ -650,6 +715,133 @@ public sealed class ExploreViewModel
     public IReadOnlyCollection<SelectListItem> RoomOptions { get; init; } = Array.Empty<SelectListItem>();
 }
 
+public sealed class SkillBrowseViewModel
+{
+    public string Query { get; init; } = string.Empty;
+    public SkillCategory? Category { get; init; }
+    public Guid? WingId { get; init; }
+    public bool PinnedOnly { get; init; }
+    public bool NeedsReviewOnly { get; init; }
+    public IReadOnlyCollection<SelectListItem> WingOptions { get; init; } = Array.Empty<SelectListItem>();
+    public IReadOnlyCollection<SkillCardViewModel> Skills { get; init; } = Array.Empty<SkillCardViewModel>();
+}
+
+public sealed class AgentBrowseViewModel
+{
+    public string Query { get; init; } = string.Empty;
+    public IReadOnlyCollection<AgentCardViewModel> Agents { get; init; } = Array.Empty<AgentCardViewModel>();
+}
+
+public sealed class AgentCardViewModel
+{
+    public string Slug { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public string Summary { get; init; } = string.Empty;
+    public string Mission { get; init; } = string.Empty;
+    public string ScopeLabel { get; init; } = string.Empty;
+    public string OutputLabel { get; init; } = string.Empty;
+    public bool SupportsWriteActions { get; init; }
+    public IReadOnlyCollection<string> BestFor { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<string> Guardrails { get; init; } = Array.Empty<string>();
+    public string RecommendationReason { get; init; } = string.Empty;
+    public decimal RecommendationScore { get; init; }
+    public string RecommendationScoreLabel { get; init; } = string.Empty;
+}
+
+public sealed class AgentDetailViewModel
+{
+    public AgentCardViewModel Agent { get; init; } = new();
+    public IReadOnlyCollection<string> Inputs { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<string> Outputs { get; init; } = Array.Empty<string>();
+    public string SuggestedPrompt { get; init; } = string.Empty;
+}
+
+public sealed class SkillCardViewModel
+{
+    public Guid Id { get; init; }
+    public Guid? WingId { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Slug { get; init; } = string.Empty;
+    public string Summary { get; init; } = string.Empty;
+    public SkillCategory Category { get; init; }
+    public string CategoryLabel { get; init; } = string.Empty;
+    public string WingName { get; init; } = string.Empty;
+    public string TriggerHintsText { get; init; } = string.Empty;
+    public IReadOnlyCollection<string> TriggerHints { get; init; } = Array.Empty<string>();
+    public bool IsPinned { get; init; }
+    public int UseCount { get; init; }
+    public DateTime? LastUsedUtc { get; init; }
+    public DateTime? LastReviewedUtc { get; init; }
+    public DateTime? ReviewAfterUtc { get; init; }
+    public bool NeedsReview { get; init; }
+    public string ReviewLabel { get; init; } = string.Empty;
+    public string RecommendationReason { get; init; } = string.Empty;
+    public decimal RecommendationScore { get; init; }
+    public string RecommendationScoreLabel { get; init; } = string.Empty;
+    public DateTime UpdatedUtc { get; init; }
+}
+
+public sealed class SkillDetailViewModel
+{
+    public SkillCardViewModel Skill { get; init; } = new();
+    public string WhenToUse { get; init; } = string.Empty;
+    public string Flow { get; init; } = string.Empty;
+    public string ExamplesText { get; init; } = string.Empty;
+    public IReadOnlyCollection<string> WhenToUsePoints { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<string> FlowSteps { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<string> ExamplePrompts { get; init; } = Array.Empty<string>();
+    public string SuggestedQuestion { get; init; } = string.Empty;
+    public ContextPackViewModel? RelatedContext { get; init; }
+}
+
+public sealed class SkillEditorViewModel
+{
+    public string Heading { get; init; } = string.Empty;
+    public string SubmitLabel { get; init; } = string.Empty;
+    public SkillEditorInput Input { get; init; } = new();
+    public IReadOnlyCollection<SelectListItem> WingOptions { get; init; } = Array.Empty<SelectListItem>();
+}
+
+public sealed class SkillEditorInput
+{
+    public Guid? Id { get; set; }
+
+    [Required]
+    [StringLength(160)]
+    [Display(Name = "Skill name")]
+    public string Name { get; set; } = string.Empty;
+
+    [Required]
+    [StringLength(500)]
+    [Display(Name = "Summary")]
+    public string Summary { get; set; } = string.Empty;
+
+    [Required]
+    [Display(Name = "Skill category")]
+    public SkillCategory Category { get; set; } = SkillCategory.Task;
+
+    [Required]
+    [Display(Name = "When to use")]
+    public string WhenToUse { get; set; } = string.Empty;
+
+    [Required]
+    [Display(Name = "Flow")]
+    public string Flow { get; set; } = string.Empty;
+
+    [Display(Name = "Examples")]
+    public string ExamplesText { get; set; } = string.Empty;
+
+    [StringLength(500)]
+    [Display(Name = "Trigger hints")]
+    public string TriggerHintsText { get; set; } = string.Empty;
+
+    [Display(Name = "Related wing")]
+    public Guid? WingId { get; set; }
+
+    [Display(Name = "Pin this skill")]
+    public bool IsPinned { get; set; } = true;
+}
+
 public sealed class WingDetailViewModel
 {
     public Guid Id { get; init; }
@@ -773,6 +965,7 @@ public sealed class DuplicateSuggestionViewModel
     public string ScoreLabel { get; init; } = string.Empty;
     public decimal Score { get; init; }
     public string MatchReason { get; init; } = string.Empty;
+    public bool CanMerge { get; init; }
 }
 
 public enum MemoryBulkGovernanceAction

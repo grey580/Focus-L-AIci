@@ -107,6 +107,8 @@
                     <li><code>@Model.DiagnosticsApiUrl</code></li>
                     <li><code>@Model.RecentChangesApiUrl</code></li>
                     <li><code>@Model.WorkspaceApiUrl</code></li>
+                    <li><code>@Model.OperatorDiagnosticsApiUrl</code></li>
+                    <li><code>@Model.SelfTestApiUrl</code></li>
                     <li><code>/api/todos</code></li>
                     <li><code>/api/tickets</code></li>
                 </ul>
@@ -115,18 +117,133 @@
     </div>
 </div>
 
+<div class="row g-4 mb-4">
+    <div class="col-xl-6">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>MCP operator diagnostics</h2>
+                    <span class="text-secondary small">@Model.OperatorDiagnostics.ApplicationVersion • @Model.OperatorDiagnostics.EnvironmentName</span>
+                </div>
+                <ul class="api-list">
+                    <li><strong>Auth mode:</strong> @Model.OperatorDiagnostics.AuthMode</li>
+                    <li><strong>Tools:</strong> @Model.OperatorDiagnostics.ToolCount</li>
+                    <li><strong>Resources:</strong> @Model.OperatorDiagnostics.ResourceCount</li>
+                    <li><strong>Active sessions:</strong> @Model.OperatorDiagnostics.ActiveSessionCount</li>
+                    <li><strong>Recovered sessions:</strong> @Model.OperatorDiagnostics.RecoveredSessionCount</li>
+                    <li><strong>Publish script:</strong> <code>@Model.OperatorDiagnostics.PublishScriptPath</code></li>
+                </ul>
+                <div class="text-secondary small">Content root: <code>@Model.OperatorDiagnostics.ContentRootPath</code></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-6">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>MCP self-test</h2>
+                    <span class="text-secondary small">@Model.OperatorDiagnostics.SelfTest.Status • @Model.OperatorDiagnostics.SelfTest.PassedCount passed / @Model.OperatorDiagnostics.SelfTest.FailedCount failed</span>
+                </div>
+                <p class="text-secondary small">@Model.OperatorDiagnostics.SelfTest.Summary</p>
+                <div class="dashboard-scroll-list">
+                    @foreach (var check in Model.OperatorDiagnostics.SelfTest.Checks)
+                    {
+                        <div class="todo-preview-item">
+                            <div class="memory-meta">@(check.Passed ? "pass" : "fail")</div>
+                            <div class="fw-semibold">@check.Name</div>
+                            <div class="text-secondary small">@check.Summary</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (Model.Diagnostics.FallbackContext is not null)
+{
+    <div class="alert alert-info border-0 shadow-sm mb-4">
+        <strong>@Model.Diagnostics.FallbackContext.SourceLabel fallback:</strong> @Model.Diagnostics.FallbackContext.CurrentWorkSummary
+        @if (Model.Diagnostics.FallbackContext.WasApplied)
+        {
+            <div class="small mt-2">Diagnostics auto-ran task retrieval using <code>@Model.Diagnostics.FallbackContext.SuggestedQuestion</code>.</div>
+        }
+    </div>
+}
+
 <div class="card shadow-sm border-0 mb-4">
     <div class="card-body">
         <div class="section-heading">
             <h2>Workspace export</h2>
-            <span class="text-secondary small">@Model.WorkspaceExport.PinnedMemories.Count pinned memories • @Model.WorkspaceExport.ActiveTodos.Count active todos • @Model.WorkspaceExport.ActiveTickets.Count active tickets</span>
+            <span class="text-secondary small">@Model.WorkspaceExport.RecommendedAgents.Count recommended agents • @Model.WorkspaceExport.RecommendedSkills.Count recommended skills • @Model.WorkspaceExport.PinnedMemories.Count pinned memories • @Model.WorkspaceExport.ActiveTodos.Count active todos • @Model.WorkspaceExport.ActiveTickets.Count active tickets</span>
         </div>
         <p class="text-secondary small">Use this when a new AI session needs fast orientation without asking a question first.</p>
         <div class="d-flex gap-2 flex-wrap mb-3">
             <button type="button" class="btn btn-outline-primary js-copy-target" data-copy-target="workspace-export-text">Copy workspace export</button>
             <a class="btn btn-outline-secondary" href="@Model.WorkspaceApiUrl">Open workspace API</a>
         </div>
+        @if (Model.WorkspaceExport.RecommendedAgents.Count > 0)
+        {
+            <div class="tag-row mb-3">
+                @foreach (var agent in Model.WorkspaceExport.RecommendedAgents.Take(4))
+                {
+                    <a class="tag-pill text-decoration-none" href="/Agents/Agent/@agent.Slug">@agent.Name</a>
+                }
+            </div>
+        }
+        @if (Model.WorkspaceExport.RecommendedSkills.Count > 0)
+        {
+            <div class="tag-row mb-3">
+                @foreach (var skill in Model.WorkspaceExport.RecommendedSkills.Take(6))
+                {
+                    <a class="tag-pill text-decoration-none" href="/Skills/Skill/@skill.Slug">@skill.Name</a>
+                }
+            </div>
+        }
         <textarea id="workspace-export-text" class="form-control" rows="10" readonly>@Model.WorkspaceExport.ExportText</textarea>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <div class="section-heading">
+            <h2>Tag governance</h2>
+            <span class="text-secondary small">@Model.TagGovernance.TotalTagCount total tags • @Model.TagGovernance.LowSignalTagCount single-use • @Model.TagGovernance.UnusedTagCount unused</span>
+        </div>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <h3 class="h6">Low-signal tags</h3>
+                @if (Model.TagGovernance.LowSignalTags.Count == 0)
+                {
+                    <div class="text-secondary small">No single-use tags detected.</div>
+                }
+                else
+                {
+                    <div class="tag-row">
+                        @foreach (var tag in Model.TagGovernance.LowSignalTags)
+                        {
+                            <span class="tag-pill">@tag.Name (@tag.UsageCount)</span>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="col-md-6">
+                <h3 class="h6">Unused tags</h3>
+                @if (Model.TagGovernance.UnusedTags.Count == 0)
+                {
+                    <div class="text-secondary small">No unused tags detected.</div>
+                }
+                else
+                {
+                    <div class="tag-row">
+                        @foreach (var tag in Model.TagGovernance.UnusedTags)
+                        {
+                            <span class="tag-pill">@tag.Name</span>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
     </div>
 </div>
 

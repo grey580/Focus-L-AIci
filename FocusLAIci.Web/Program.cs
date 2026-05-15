@@ -49,6 +49,7 @@ builder.Services.AddSingleton<IFocusEventPublisher>(serviceProvider => servicePr
 builder.Services.AddSingleton<FocusMcpAuthService>();
 builder.Services.AddSingleton<FocusMcpToolRegistry>();
 builder.Services.AddSingleton<FocusMcpResourceRegistry>();
+builder.Services.AddSingleton<FocusDiagnosticsService>();
 
 var app = builder.Build();
 

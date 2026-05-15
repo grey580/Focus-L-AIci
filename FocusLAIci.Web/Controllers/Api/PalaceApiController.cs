@@ -11,11 +11,13 @@ public sealed class PalaceApiController : ControllerBase
 {
     private readonly PalaceService _palaceService;
     private readonly FocusDatabaseTargetService _databaseTargetService;
+    private readonly FocusDiagnosticsService _diagnosticsService;
 
-    public PalaceApiController(PalaceService palaceService, FocusDatabaseTargetService databaseTargetService)
+    public PalaceApiController(PalaceService palaceService, FocusDatabaseTargetService databaseTargetService, FocusDiagnosticsService diagnosticsService)
     {
         _palaceService = palaceService;
         _databaseTargetService = databaseTargetService;
+        _diagnosticsService = diagnosticsService;
     }
 
     [HttpGet("summary")]
@@ -84,6 +86,18 @@ public sealed class PalaceApiController : ControllerBase
     public async Task<ActionResult<IReadOnlyCollection<RecentChangeItemViewModel>>> RecentChanges(int limit = 20, CancellationToken cancellationToken = default)
     {
         return Ok(await _palaceService.GetRecentChangesAsync(limit, cancellationToken));
+    }
+
+    [HttpGet("operator-diagnostics")]
+    public async Task<ActionResult<FocusOperatorDiagnosticsViewModel>> OperatorDiagnostics(CancellationToken cancellationToken)
+    {
+        return Ok(await _diagnosticsService.GetOperatorDiagnosticsAsync("api", cancellationToken));
+    }
+
+    [HttpGet("mcp-self-test")]
+    public async Task<ActionResult<FocusMcpSelfTestViewModel>> McpSelfTest(CancellationToken cancellationToken)
+    {
+        return Ok(await _diagnosticsService.RunMcpSelfTestAsync("api", cancellationToken));
     }
 
     [HttpGet("memories")]

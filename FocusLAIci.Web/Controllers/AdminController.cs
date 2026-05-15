@@ -15,6 +15,7 @@ public sealed class AdminController : Controller
     private readonly FocusMcpResourceRegistry _mcpResourceRegistry;
     private readonly FocusMcpEventBus _mcpEventBus;
     private readonly FocusMcpAuthService _mcpAuthService;
+    private readonly FocusDiagnosticsService _diagnosticsService;
 
     public AdminController(
         SiteSettingsService siteSettingsService,
@@ -24,7 +25,8 @@ public sealed class AdminController : Controller
         FocusMcpToolRegistry mcpToolRegistry,
         FocusMcpResourceRegistry mcpResourceRegistry,
         FocusMcpEventBus mcpEventBus,
-        FocusMcpAuthService mcpAuthService)
+        FocusMcpAuthService mcpAuthService,
+        FocusDiagnosticsService diagnosticsService)
     {
         _siteSettingsService = siteSettingsService;
         _databaseTargetService = databaseTargetService;
@@ -34,6 +36,7 @@ public sealed class AdminController : Controller
         _mcpResourceRegistry = mcpResourceRegistry;
         _mcpEventBus = mcpEventBus;
         _mcpAuthService = mcpAuthService;
+        _diagnosticsService = diagnosticsService;
     }
 
     [HttpGet]
@@ -67,10 +70,14 @@ public sealed class AdminController : Controller
                 : input,
             cancellationToken);
         var workspace = await _palaceService.GetWorkspaceExportAsync(cancellationToken);
+        var tagGovernance = await _palaceService.GetTagGovernanceAsync(cancellationToken);
+        var operatorDiagnostics = await _diagnosticsService.GetOperatorDiagnosticsAsync(_mcpAuthService.DescribeMode(), cancellationToken);
 
         var diagnosticsUrl = "/api/palace/dashboard-diagnostics";
         var recentChangesUrl = "/api/palace/recent-changes";
         var workspaceUrl = "/api/palace/workspace";
+        var operatorDiagnosticsUrl = "/api/palace/operator-diagnostics";
+        var selfTestUrl = "/api/palace/mcp-self-test";
         var diagnosticsQuery = new List<string>();
         if (!string.IsNullOrWhiteSpace(model.Diagnostics.ContextInput.Question))
         {
@@ -89,6 +96,7 @@ public sealed class AdminController : Controller
             DatabaseTarget = _databaseTargetService.GetCurrentTarget(),
             Stats = model.Diagnostics.Stats,
             ContextInput = model.Diagnostics.ContextInput,
+            FallbackContext = model.Diagnostics.FallbackContext,
             ContextSummary = model.Diagnostics.ContextSummary,
             TopMatchCount = model.Diagnostics.TopMatchCount,
             DetectedGaps = model.Diagnostics.DetectedGaps,
@@ -104,6 +112,8 @@ public sealed class AdminController : Controller
             DiagnosticsApiUrl = diagnosticsUrl,
             RecentChangesApiUrl = recentChangesUrl,
             WorkspaceApiUrl = workspaceUrl,
+            OperatorDiagnosticsApiUrl = operatorDiagnosticsUrl,
+            SelfTestApiUrl = selfTestUrl,
             WorkspaceExport = new WorkspaceExportViewModel
             {
                 GeneratedUtc = workspace.GeneratedUtc,
@@ -115,12 +125,14 @@ public sealed class AdminController : Controller
                 ActiveTickets = workspace.ActiveTickets,
                 CodeGraphProjects = workspace.CodeGraphProjects,
                 RecentChanges = workspace.RecentChanges
-            }
+            },
+            TagGovernance = tagGovernance,
+            OperatorDiagnostics = operatorDiagnostics
         });
     }
 
     [HttpGet]
-    public IActionResult McpConsole()
+    public async Task<IActionResult> McpConsole(CancellationToken cancellationToken)
     {
         return View(new FocusMcpConsoleViewModel
         {
@@ -128,6 +140,7 @@ public sealed class AdminController : Controller
             MessageEndpointUrl = Url.Content("~/api/mcp/message"),
             ManifestEndpointUrl = Url.Content("~/api/mcp/manifest"),
             StreamEndpointTemplate = Url.Content("~/api/mcp/events/{sessionId}"),
+            SelfTestApiUrl = Url.Content("~/api/palace/mcp-self-test"),
             SampleRequestJson =
                 """
                 {
@@ -141,7 +154,8 @@ public sealed class AdminController : Controller
             Tools = _mcpToolRegistry.GetTools(),
             Resources = _mcpResourceRegistry.GetResources(),
             Sessions = _mcpSessionService.GetSessions(),
-            RecentEvents = _mcpEventBus.GetRecentEvents(25)
+            RecentEvents = _mcpEventBus.GetRecentEvents(25),
+            OperatorDiagnostics = await _diagnosticsService.GetOperatorDiagnosticsAsync(_mcpAuthService.DescribeMode(), cancellationToken)
         });
     }
 

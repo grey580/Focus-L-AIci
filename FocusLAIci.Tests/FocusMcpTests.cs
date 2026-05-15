@@ -613,6 +613,7 @@ public sealed class FocusMcpTests
             services.AddSingleton<FocusMcpSessionService>();
             services.AddSingleton<FocusMcpEventBus>();
             services.AddSingleton<FocusAgentCatalogService>();
+            services.AddSingleton<FocusDiagnosticsService>();
             services.AddDbContext<FocusMemoryContext>(options => options.UseSqlite(connection));
             services.AddScoped<IFocusEventPublisher>(_ => NullFocusEventPublisher.Instance);
             services.AddScoped<ContextService>();

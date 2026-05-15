@@ -1,6 +1,7 @@
 @model FocusMcpConsoleViewModel
 @{
     ViewData["Title"] = "MCP Console";
+    var cspNonce = Context.Items[SecurityHeadersPolicy.CspNonceItemKey] as string ?? string.Empty;
 }
 
 <section class="page-header">
@@ -59,6 +60,31 @@
                         }
                     </div>
                 }
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2 class="h5">Self-test</h2>
+                    <span class="text-secondary small">@Model.OperatorDiagnostics.SelfTest.Status • @Model.OperatorDiagnostics.SelfTest.PassedCount passed / @Model.OperatorDiagnostics.SelfTest.FailedCount failed</span>
+                </div>
+                <div class="text-secondary small mb-3">@Model.OperatorDiagnostics.SelfTest.Summary</div>
+                <div class="d-flex gap-2 flex-wrap mb-3">
+                    <button type="button" id="mcp-self-test-button" class="btn btn-outline-primary btn-sm">Run self-test</button>
+                    <code>@Model.SelfTestApiUrl</code>
+                </div>
+                <div id="mcp-self-test-results" class="dashboard-scroll-list">
+                    @foreach (var check in Model.OperatorDiagnostics.SelfTest.Checks)
+                    {
+                        <div class="todo-preview-item">
+                            <div class="memory-meta">@(check.Passed ? "pass" : "fail")</div>
+                            <div class="fw-semibold">@check.Name</div>
+                            <div class="text-secondary small">@check.Summary</div>
+                        </div>
+                    }
+                </div>
             </div>
         </div>
     </div>
@@ -149,11 +175,12 @@
 </div>
 
 @section Scripts {
-    <script>
-        document.addEventListener("DOMContentLoaded", function () {
+    <script nonce="@cspNonce">
+        const initializeMcpConsole = () => {
             const messageEndpoint = "@Model.MessageEndpointUrl";
             const manifestEndpoint = "@Model.ManifestEndpointUrl";
             const streamTemplate = "@Model.StreamEndpointTemplate";
+            const selfTestEndpoint = "@Model.SelfTestApiUrl";
             const requestEditor = document.getElementById("mcp-request-editor");
             const responseViewer = document.getElementById("mcp-response-viewer");
             const sessionLabel = document.getElementById("mcp-session-label");
@@ -162,6 +189,8 @@
             const manifestButton = document.getElementById("mcp-manifest-button");
             const subscribeButton = document.getElementById("mcp-subscribe-button");
             const liveEvents = document.getElementById("mcp-live-events");
+            const selfTestButton = document.getElementById("mcp-self-test-button");
+            const selfTestResults = document.getElementById("mcp-self-test-results");
             let currentSessionId = "";
             let currentSource = null;
 
@@ -178,59 +207,109 @@
                 });
 
                 const payload = await response.json();
+                if (!response.ok) {
+                    throw new Error(payload?.error?.message || `MCP request failed with status ${response.status}.`);
+                }
+
                 writeResponse(payload);
                 return payload;
             };
 
             initButton.addEventListener("click", async function () {
-                const payload = await sendEnvelope({
-                    type: "initialize",
-                    payload: {
-                        clientName: "Focus admin console",
-                        clientVersion: "1.0"
-                    }
-                });
+                try {
+                    const payload = await sendEnvelope({
+                        type: "initialize",
+                        payload: {
+                            clientName: "Focus admin console",
+                            clientVersion: "1.0"
+                        }
+                    });
 
-                currentSessionId = payload.sessionId || payload.result?.session?.sessionId || "";
-                sessionLabel.textContent = currentSessionId ? `Session: ${currentSessionId}` : "Session not initialized";
-                subscribeButton.disabled = !currentSessionId;
+                    currentSessionId = payload.sessionId || payload.result?.session?.sessionId || "";
+                    sessionLabel.textContent = currentSessionId ? `Session: ${currentSessionId}` : "Session not initialized";
+                    subscribeButton.disabled = !currentSessionId;
+                } catch (error) {
+                    writeResponse(error.message || String(error));
+                }
             });
 
             manifestButton.addEventListener("click", async function () {
-                const response = await fetch(manifestEndpoint);
-                writeResponse(await response.json());
+                try {
+                    const response = await fetch(manifestEndpoint);
+                    const payload = await response.json();
+                    if (!response.ok) {
+                        throw new Error(payload?.error?.message || `Manifest request failed with status ${response.status}.`);
+                    }
+
+                    writeResponse(payload);
+                } catch (error) {
+                    writeResponse(error.message || String(error));
+                }
+            });
+
+            selfTestButton.addEventListener("click", async function () {
+                try {
+                    const response = await fetch(selfTestEndpoint);
+                    const payload = await response.json();
+                    if (!response.ok) {
+                        throw new Error(`Self-test request failed with status ${response.status}.`);
+                    }
+
+                    selfTestResults.innerHTML = "";
+                    for (const check of payload.checks || []) {
+                        const item = document.createElement("div");
+                        item.className = "todo-preview-item";
+                        item.innerHTML = `
+                            <div class="memory-meta">${check.passed ? "pass" : "fail"}</div>
+                            <div class="fw-semibold">${check.name}</div>
+                            <div class="text-secondary small">${check.summary}</div>
+                        `;
+                        selfTestResults.appendChild(item);
+                    }
+                    writeResponse(payload);
+                } catch (error) {
+                    writeResponse(error.message || String(error));
+                }
             });
 
             subscribeButton.addEventListener("click", async function () {
-                if (!currentSessionId) {
-                    return;
-                }
-
-                await sendEnvelope({
-                    sessionId: currentSessionId,
-                    type: "resource_subscribe",
-                    payload: {
-                        resourceUris: ["focus://system/events", "focus://recent-changes", "focus://tickets/board", "focus://todos/board"]
+                try {
+                    if (!currentSessionId) {
+                        writeResponse("Initialize a session before subscribing to events.");
+                        return;
                     }
-                });
 
-                if (currentSource) {
-                    currentSource.close();
+                    await sendEnvelope({
+                        sessionId: currentSessionId,
+                        type: "resource_subscribe",
+                        payload: {
+                            resourceUris: ["focus://system/events", "focus://recent-changes", "focus://tickets/board", "focus://todos/board"]
+                        }
+                    });
+
+                    if (currentSource) {
+                        currentSource.close();
+                    }
+
+                    currentSource = new EventSource(streamTemplate.replace("{sessionId}", currentSessionId));
+                    currentSource.addEventListener("resource_updated", function (event) {
+                        const payload = JSON.parse(event.data);
+                        const result = payload.result;
+                        const item = document.createElement("div");
+                        item.className = "todo-preview-item";
+                        item.innerHTML = `
+                            <div class="memory-meta">${result.eventType} • ${result.occurredUtc}</div>
+                            <div class="fw-semibold">${result.title}</div>
+                            <div class="text-secondary small">${result.description}</div>
+                        `;
+                        liveEvents.prepend(item);
+                    });
+                    currentSource.addEventListener("error", function () {
+                        writeResponse("The MCP event stream disconnected.");
+                    });
+                } catch (error) {
+                    writeResponse(error.message || String(error));
                 }
-
-                currentSource = new EventSource(streamTemplate.replace("{sessionId}", currentSessionId));
-                currentSource.addEventListener("resource_updated", function (event) {
-                    const payload = JSON.parse(event.data);
-                    const result = payload.result;
-                    const item = document.createElement("div");
-                    item.className = "todo-preview-item";
-                    item.innerHTML = `
-                        <div class="memory-meta">${result.eventType} • ${result.occurredUtc}</div>
-                        <div class="fw-semibold">${result.title}</div>
-                        <div class="text-secondary small">${result.description}</div>
-                    `;
-                    liveEvents.prepend(item);
-                });
             });
 
             sendButton.addEventListener("click", async function () {
@@ -250,6 +329,12 @@
                     writeResponse(error.message || String(error));
                 }
             });
-        });
+        };
+
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", initializeMcpConsole, { once: true });
+        } else {
+            initializeMcpConsole();
+        }
     </script>
 }

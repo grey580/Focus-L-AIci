@@ -9,6 +9,38 @@ namespace FocusLAIci.Web.Services;
 
 public sealed class PalaceService
 {
+    private static readonly HashSet<string> IgnoredSuggestedTags = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "that",
+        "this",
+        "with",
+        "from",
+        "have",
+        "were",
+        "into",
+        "about",
+        "after",
+        "before",
+        "there",
+        "their",
+        "focus"
+    };
+
+    private static readonly IReadOnlyDictionary<string, string> SuggestedTagAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["authentication"] = "auth",
+        ["authorize"] = "auth",
+        ["authorized"] = "auth",
+        ["incident"] = "incidents",
+        ["incidents"] = "incidents",
+        ["deploy"] = "deployment",
+        ["deployment"] = "deployment",
+        ["errors"] = "errors",
+        ["error"] = "errors",
+        ["logging"] = "logs",
+        ["logged"] = "logs"
+    };
+
     private readonly FocusMemoryContext _dbContext;
     private readonly ContextService _contextService;
     private readonly IFocusEventPublisher _eventPublisher;
@@ -1270,7 +1302,10 @@ public sealed class PalaceService
     {
         var explicitTags = ParseTags(input.TagsText);
         var suggestedTokens = TokenizeDraftText($"{input.Title} {input.Summary} {input.Content}")
+            .Select(NormalizeSuggestedTag)
+            .Where(token => !string.IsNullOrWhiteSpace(token))
             .Where(token => token.Length > 3)
+            .Where(token => !IgnoredSuggestedTags.Contains(token))
             .Where(token => !explicitTags.Contains(token, StringComparer.OrdinalIgnoreCase))
             .Take(6)
             .ToArray();
@@ -1278,6 +1313,29 @@ public sealed class PalaceService
         return explicitTags.Concat(suggestedTokens)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    public async Task<TagGovernanceViewModel> GetTagGovernanceAsync(CancellationToken cancellationToken)
+    {
+        var tags = await _dbContext.Tags
+            .AsNoTracking()
+            .Select(tag => new TagGovernanceItemViewModel
+            {
+                Name = tag.Name,
+                Slug = tag.Slug,
+                UsageCount = tag.MemoryTags.Count
+            })
+            .OrderBy(x => x.Name)
+            .ToListAsync(cancellationToken);
+
+        return new TagGovernanceViewModel
+        {
+            TotalTagCount = tags.Count,
+            LowSignalTagCount = tags.Count(x => x.UsageCount == 1),
+            UnusedTagCount = tags.Count(x => x.UsageCount == 0),
+            LowSignalTags = tags.Where(x => x.UsageCount == 1).Take(12).ToArray(),
+            UnusedTags = tags.Where(x => x.UsageCount == 0).Take(12).ToArray()
+        };
     }
 
     public async Task<IReadOnlyCollection<DuplicateSuggestionViewModel>> FindDuplicateSuggestionsAsync(MemoryEditorInput input, CancellationToken cancellationToken)
@@ -1313,10 +1371,24 @@ public sealed class PalaceService
                 Score = Math.Round(x.Score * 100m, 1),
                 ScoreLabel = x.Score >= 0.75m ? "Likely duplicate" : "Related memory",
                 MatchReason = x.Score >= 0.75m
-                    ? "High overlap with the current draft."
-                    : "Similar language and intent detected."
+                    ? "High overlap with the current draft. Prefer merge or supersede instead of saving another copy."
+                    : "Similar language and intent detected.",
+                CanMerge = x.Score >= 0.75m
             })
             .ToArray();
+    }
+
+    private static string NormalizeSuggestedTag(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return string.Empty;
+        }
+
+        var normalized = token.Trim().ToLowerInvariant();
+        return SuggestedTagAliases.TryGetValue(normalized, out var alias)
+            ? alias
+            : normalized;
     }
 
     public async Task<RoomEditorViewModel> BuildRoomEditorAsync(CancellationToken cancellationToken)
