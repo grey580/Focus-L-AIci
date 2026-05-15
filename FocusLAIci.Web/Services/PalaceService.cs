@@ -1,4 +1,5 @@
 using System.Text;
+using System.Data;
 using FocusLAIci.Web.Data;
 using FocusLAIci.Web.Models;
 using Microsoft.AspNetCore.Mvc.Rendering;
@@ -2253,15 +2254,84 @@ public sealed class PalaceService
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        foreach (var tag in existingTags.OrderBy(x => x.Name))
+        var storedTags = await LoadStoredTagsAsync(desiredSlugs, cancellationToken);
+        foreach (var tag in storedTags.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
         {
-            _dbContext.MemoryTags.Add(new MemoryEntryTag
-            {
-                MemoryEntryId = memoryId,
-                TagId = tag.Id
-            });
+            await InsertMemoryTagAsync(memoryId, tag.Id, cancellationToken);
         }
     }
+
+    private async Task<IReadOnlyCollection<StoredTagRecord>> LoadStoredTagsAsync(IReadOnlyCollection<string> desiredSlugs, CancellationToken cancellationToken)
+    {
+        var connection = _dbContext.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        await using var command = connection.CreateCommand();
+        var parameterNames = desiredSlugs
+            .Select((slug, index) =>
+            {
+                var parameterName = $"$slug{index}";
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = parameterName;
+                parameter.Value = slug;
+                command.Parameters.Add(parameter);
+                return parameterName;
+            })
+            .ToArray();
+
+        command.CommandText = $"SELECT \"Id\", \"Name\", \"Slug\" FROM \"Tags\" WHERE \"Slug\" IN ({string.Join(", ", parameterNames)})";
+        var results = new List<StoredTagRecord>();
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            results.Add(new StoredTagRecord(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2)));
+        }
+
+        if (shouldClose)
+        {
+            await connection.CloseAsync();
+        }
+
+        return results;
+    }
+
+    private async Task InsertMemoryTagAsync(Guid memoryId, string tagId, CancellationToken cancellationToken)
+    {
+        var connection = _dbContext.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "INSERT INTO \"MemoryTags\" (\"MemoryEntryId\", \"TagId\") VALUES ($memoryId, $tagId)";
+        var memoryParameter = command.CreateParameter();
+        memoryParameter.ParameterName = "$memoryId";
+        memoryParameter.Value = memoryId.ToString().ToUpperInvariant();
+        command.Parameters.Add(memoryParameter);
+
+        var tagParameter = command.CreateParameter();
+        tagParameter.ParameterName = "$tagId";
+        tagParameter.Value = tagId;
+        command.Parameters.Add(tagParameter);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        if (shouldClose)
+        {
+            await connection.CloseAsync();
+        }
+    }
+
+    private sealed record StoredTagRecord(string Id, string Name, string Slug);
 
     private async Task<string> BuildUniqueWingSlugAsync(string name, CancellationToken cancellationToken)
     {

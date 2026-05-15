@@ -29,7 +29,24 @@ public sealed class FocusMcpSessionService
         session = new FocusMcpSessionSummaryViewModel();
         if (!_sessions.TryGetValue(sessionId, out var current))
         {
-            return false;
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                return false;
+            }
+
+            var restored = new FocusMcpSessionState(
+                sessionId.Trim(),
+                "unknown",
+                "unknown",
+                "unknown",
+                "recovered",
+                DateTime.UtcNow,
+                DateTime.UtcNow,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+            _sessions[restored.SessionId] = restored;
+            session = restored.ToViewModel();
+            return true;
         }
 
         var updated = current with { LastSeenUtc = DateTime.UtcNow };
@@ -39,6 +56,11 @@ public sealed class FocusMcpSessionService
     }
 
     public bool Exists(string sessionId) => _sessions.ContainsKey(sessionId);
+
+    public bool Remove(string sessionId)
+    {
+        return _sessions.TryRemove(sessionId, out _);
+    }
 
     public IReadOnlyCollection<FocusMcpSessionSummaryViewModel> GetSessions()
     {
