@@ -34,7 +34,7 @@ dotnet run --project .\FocusLAIci.Web\FocusLAIci.Web.csproj
 4. Open the local URL printed by the app. By default that is:
 
 ```text
-http://127.0.0.1:5187
+http://127.0.0.1:5191
 ```
 
 ## Important database note
@@ -137,7 +137,7 @@ dotnet run --project .\\FocusLAIci.Web\\FocusLAIci.Web.csproj
 
 Default local URL:
 
-http://127.0.0.1:5187
+http://127.0.0.1:5191
 
 Your first goal after startup is to identify the correct active database, confirm the app is serving static assets correctly, and summarize how the current Focus instance is organized.
 ```
@@ -153,6 +153,7 @@ Before implementation:
 - search for relevant memories
 - check Inspect and copy the workspace export when fast cold-start context is useful
 - initialize MCP and read Focus-native resources first when the client can keep a session open
+- prefer `focus://workspace/bootstrap` for cold starts, use profile variants like `focus://workspace/bootstrap/operator` or `focus://workspace/bootstrap/incident-response` when the task shape is obvious, then use `focus.wing.list` / `focus.room.list` if you need to place new memories cleanly
 - inspect related todos and tickets
 - check code graph context if repository orientation matters
 
@@ -168,6 +169,9 @@ After implementation:
 - write back durable findings, decisions, fixes, or reusable patterns into Focus
 - mark a memory verified when you have checked it against current source truth, and mark it for review again after meaningful edits
 - archive or supersede memories instead of deleting useful history when the canonical answer changes
+- use MCP governance tools for verify / mark-review / archive / restore / supersede / update-tags instead of bypassing Focus state
+- use `focus.memory.duplicates`, `focus.memory.resolve-canonical`, and `focus.memory.merge` when you need to deduplicate or consolidate existing knowledge
+- use dry-run / duplicate-confirmation save options before writing memories automatically from large or noisy agent workflows
 - prefer concise, high-signal memory entries that remain useful without the original chat
 
 Use Focus as a working system of memory, not as a dump of raw conversation.

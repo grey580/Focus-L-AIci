@@ -31,11 +31,13 @@ Focus L-AIci turns that lost context into a searchable, browsable, persistent kn
 
 - a structured memory palace built around wings, rooms, memories, tags, and links
 - a dashboard context workspace for task-specific retrieval and export
+- four built-in scoped agents for context, research, bounded execution, and review
 - todo and ticket tracking for active implementation work
 - a persistent code graph with repository browsing and symbol relationships
 - a **3D palace graph** / visualizer for wings, rooms, memories, and active work
 - inspect and governance surfaces for trust, freshness, and lifecycle review
 - a local-first **MCP server surface** with tools, resources, sessions, and live event streaming
+- safer MCP memory automation with duplicate detection, merge/canonical flows, filtered context retrieval, bootstrap profiles, governance queues, and scoped API-key access
 
 For the full capability breakdown, recent additions, and API surface, see [docs/FEATURES.md](docs/FEATURES.md).
 
@@ -78,16 +80,19 @@ dotnet run --project .\FocusLAIci.Web\FocusLAIci.Web.csproj
 By default, the app listens on:
 
 ```text
-http://127.0.0.1:5187
+http://127.0.0.1:5191
 ```
 
 ## MCP server quick start
 
 Focus L-AIci now exposes a local-first MCP surface for AI clients and automation:
 
-- `GET /api/mcp/manifest` - discover tools, resources, and auth mode
-- `POST /api/mcp/message` - initialize sessions, call tools, and read resources
-- `GET /api/mcp/events/{sessionId}` - subscribe to live SSE resource updates
+- `POST /api/mcp` - standard streamable HTTP MCP endpoint for initialize, tools, resources, and completions
+- `GET /api/mcp` - optional SSE stream for resource update notifications after initialization
+- `DELETE /api/mcp` - end an MCP session by `Mcp-Session-Id`
+- `GET /api/mcp/manifest` - discover Focus-specific auth details and compatibility metadata
+- `POST /api/mcp/message` - legacy local Focus MCP envelope maintained for the admin console
+- `GET /api/mcp/events/{sessionId}` - legacy SSE endpoint for the local Focus envelope
 - `/Admin/McpConsole` - operator console for testing requests and watching event flow
 
 By default, loopback clients are allowed without an API key. Non-loopback clients remain blocked unless `FocusPalace:Mcp:ApiKeys` or `FocusPalace:Mcp:ApiKeysCsv` is configured.

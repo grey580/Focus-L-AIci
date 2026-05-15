@@ -6,8 +6,12 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.EntityFrameworkCore;
 
-var builder = WebApplication.CreateBuilder(args);
-const string DefaultLocalUrl = "http://127.0.0.1:5187";
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = ResolveContentRoot()
+});
+const string DefaultLocalUrl = "http://127.0.0.1:5191";
 
 if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]))
 {
@@ -38,6 +42,7 @@ builder.Services.AddScoped<TicketingService>();
 builder.Services.AddScoped<SiteSettingsService>();
 builder.Services.AddScoped<CodeGraphService>();
 builder.Services.AddScoped<ContextService>();
+builder.Services.AddSingleton<FocusAgentCatalogService>();
 builder.Services.AddSingleton<FocusMcpSessionService>();
 builder.Services.AddSingleton<FocusMcpEventBus>();
 builder.Services.AddSingleton<IFocusEventPublisher>(serviceProvider => serviceProvider.GetRequiredService<FocusMcpEventBus>());
@@ -66,11 +71,10 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<ApiWriteOriginGuardMiddleware>();
+app.UseStaticFiles();
 app.UseRouting();
 
 app.UseAuthorization();
-
-app.UseStaticFiles();
 
 app.MapControllerRoute(
     name: "palace-wing",
@@ -106,3 +110,29 @@ app.Lifetime.ApplicationStarted.Register(() =>
 });
 
 app.Run();
+
+static string ResolveContentRoot()
+{
+    foreach (var candidate in GetContentRootCandidates())
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            continue;
+        }
+
+        var fullPath = Path.GetFullPath(candidate);
+        if (Directory.Exists(Path.Combine(fullPath, "wwwroot")))
+        {
+            return fullPath;
+        }
+    }
+
+    return Directory.GetCurrentDirectory();
+}
+
+static IEnumerable<string> GetContentRootCandidates()
+{
+    yield return Directory.GetCurrentDirectory();
+    yield return AppContext.BaseDirectory;
+    yield return Path.Combine(AppContext.BaseDirectory, "..", "..", "..");
+}
