@@ -66,7 +66,8 @@ Once the site is open:
 3. Open **Todos** to see active work.
 4. Open **Tickets** for larger tracked workstreams.
 5. Open **Code Graph** before broad code searching when repository orientation matters.
-6. Add or update memories only when the information is durable and worth preserving.
+6. Review **Admin -> Settings** if the instance uses external skill website catalogs for pack refinement.
+7. Add or update memories only when the information is durable and worth preserving.
 
 ## How AI models should use Focus L-AIci
 
@@ -81,6 +82,8 @@ The highest-signal retrieval surfaces are now:
 - **Inspect** for active database truth, dashboard diagnostics, recent changes, the workspace export block, and the memory governance queue
 - `GET /api/palace/workspace` for a prompt-ready snapshot of pinned memories, active work, code graph projects, and recent changes
 - `POST /api/context/brief` when you want the app to assemble a context pack instead of searching manually
+- archived pack-build records when you need to review or later rank the quality of prior context packs
+- the dashboard external-skill alert plus the **Admin -> Settings** source registry when context packs need extra reusable skills
 - the MCP surface (`GET /api/mcp/manifest`, `POST /api/mcp/message`, `GET /api/mcp/events/{sessionId}`) when the client can keep a session open and wants Focus-native tools/resources instead of ad hoc endpoint calls
 - memory trust signals (`Verified`, `Unverified`, `Needs review`) on memory cards, detail pages, and context results so stale knowledge is easier to spot
 - memory lifecycle signals (`Active`, `Archived`, `Superseded`) so retired knowledge stays historical without polluting default retrieval
@@ -118,6 +121,7 @@ Operating rules:
 
 - Search Focus before making assumptions.
 - Use Inspect and the workspace export first when you need fast orientation.
+- If pack refinement is in scope, review the configured external skill websites in Admin settings and use the dashboard import flow instead of hard-coding new skill sources.
 - If MCP is available, initialize a session and read Focus-native resources/tools before falling back to lower-level endpoint calls.
 - Use the Inspect governance queue when memory cleanup or trust triage is needed.
 - Use Code Graph before broad raw code searching when repository structure matters.
@@ -172,6 +176,7 @@ After implementation:
 - use MCP governance tools for verify / mark-review / archive / restore / supersede / update-tags instead of bypassing Focus state
 - use `focus.memory.duplicates`, `focus.memory.resolve-canonical`, and `focus.memory.merge` when you need to deduplicate or consolidate existing knowledge
 - use dry-run / duplicate-confirmation save options before writing memories automatically from large or noisy agent workflows
+- if a context pack is missing a reusable workflow, check the dashboard external skill suggestions before inventing a one-off local skill
 - prefer concise, high-signal memory entries that remain useful without the original chat
 
 Use Focus as a working system of memory, not as a dump of raw conversation.

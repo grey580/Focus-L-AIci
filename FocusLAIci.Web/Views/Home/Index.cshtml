@@ -83,6 +83,20 @@
     </div>
 </section>
 
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-success shadow-sm border-0" role="alert">
+        @Model.StatusMessage
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-danger shadow-sm border-0" role="alert">
+        @Model.ErrorMessage
+    </div>
+}
+
 <section class="dashboard-summary-strip mb-4" aria-label="Dashboard summary">
     <a class="dashboard-summary-tile" asp-controller="Todos" asp-action="Index">
         <span class="dashboard-summary-value">@(Model.CurrentTodos.Count + Model.ActiveTickets.Count)</span>
@@ -238,11 +252,15 @@
                     </div>
                 </div>
                 <strong>@Model.ContextPack.Summary</strong>
-                <div class="dashboard-feature-workflow-meta">
-                    <span>Built from your question</span>
-                    <span>@Model.ContextPack.TopMatches.Count prioritized matches</span>
-                    @if (topMatch is not null)
-                    {
+                 <div class="dashboard-feature-workflow-meta">
+                     <span>Built from your question</span>
+                     <span>@Model.ContextPack.TopMatches.Count prioritized matches</span>
+                     @if (Model.ContextPack.ArchivedBuildId.HasValue)
+                     {
+                         <span>Archived for later ranking</span>
+                     }
+                     @if (topMatch is not null)
+                     {
                         <span>@topMatch.KindLabel • @topMatch.ScoreLabel</span>
                         @if (topMatch.SemanticScore > 0m)
                         {
@@ -259,8 +277,8 @@
                         }
                     </div>
                 }
-                @if (extraCommandSuggestions.Length > 0)
-                {
+                 @if (extraCommandSuggestions.Length > 0)
+                 {
                     <div class="dashboard-command-followups">
                         <span class="dashboard-suggestion-label">Try another command</span>
                         <div class="dashboard-command-shortcut-list">
@@ -277,10 +295,22 @@
                                 </form>
                             }
                         </div>
-                    </div>
-                }
-            </div>
-        </div>
+                     </div>
+                 }
+                 @if (Model.ContextPack.ExternalSkillAlert.HasSuggestions)
+                 {
+                     <div class="alert alert-warning mt-3 mb-0 d-flex justify-content-between align-items-center gap-3" role="alert">
+                         <div>
+                             <strong>External skill alert.</strong>
+                             <span>@Model.ContextPack.ExternalSkillAlert.Message</span>
+                         </div>
+                         <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="offcanvas" data-bs-target="#externalSkillSuggestions" aria-controls="externalSkillSuggestions">
+                             Review suggestions
+                         </button>
+                     </div>
+                 }
+             </div>
+         </div>
 
         <div class="card shadow-sm border-0 dashboard-panel dashboard-launch-card dashboard-launch-card-highlight">
             <div class="card-body dashboard-mini-panel">
@@ -333,6 +363,54 @@
     </section>
 
     <textarea id="context-pack-export" class="form-control d-none">@Model.ContextPack.ExportText</textarea>
+
+    @if (Model.ContextPack.ExternalSkillAlert.HasSuggestions)
+    {
+        <div class="offcanvas offcanvas-end" tabindex="-1" id="externalSkillSuggestions" aria-labelledby="externalSkillSuggestionsLabel">
+            <div class="offcanvas-header">
+                <h2 class="offcanvas-title h5" id="externalSkillSuggestionsLabel">Suggested external skills</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+            </div>
+            <div class="offcanvas-body">
+                <p class="text-secondary">Import a suggested skill and Focus will rebuild the current pack against the updated skill catalog.</p>
+                <div class="d-grid gap-3">
+                    @foreach (var suggestion in Model.ContextPack.ExternalSkillAlert.Suggestions)
+                    {
+                        <div class="card border-0 shadow-sm">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start gap-3">
+                                    <div>
+                                        <h3 class="h6 mb-1">@suggestion.Name</h3>
+                                        <div class="small text-secondary mb-2">@suggestion.SourceName</div>
+                                    </div>
+                                    <span class="badge text-bg-light">Score @suggestion.Score</span>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(suggestion.Summary))
+                                {
+                                    <p class="small mb-2">@suggestion.Summary</p>
+                                }
+                                <p class="small text-secondary">@suggestion.MatchReason</p>
+                                <div class="d-flex gap-2">
+                                    <a class="btn btn-sm btn-outline-secondary" href="@suggestion.SkillUrl" target="_blank" rel="noreferrer">Open source</a>
+                                    <form method="post" asp-action="ImportExternalSkill" class="d-inline">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="skillUrl" value="@suggestion.SkillUrl" />
+                                        <input type="hidden" name="sourceName" value="@suggestion.SourceName" />
+                                        <input type="hidden" name="Question" value="@Model.ContextInput.Question" />
+                                        <input type="hidden" name="PackGoal" value="@Model.ContextInput.PackGoal" />
+                                        <input type="hidden" name="ResultsPerSection" value="@Model.ContextInput.ResultsPerSection" />
+                                        <input type="hidden" name="IncludeCompletedWork" value="@Model.ContextInput.IncludeCompletedWork.ToString().ToLowerInvariant()" />
+                                        <input type="hidden" name="ExpandHistory" value="@Model.ContextInput.ExpandHistory.ToString().ToLowerInvariant()" />
+                                        <button type="submit" class="btn btn-sm btn-primary">Add and rebuild</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
 }
 
 <section class="dashboard-status-grid mb-4">

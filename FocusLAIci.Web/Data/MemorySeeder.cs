@@ -210,6 +210,47 @@ public static class MemorySeeder
             cancellationToken);
         await dbContext.Database.ExecuteSqlRawAsync(
             """
+            CREATE TABLE IF NOT EXISTS PackBuildRecords (
+                Id TEXT NOT NULL CONSTRAINT PK_PackBuildRecords PRIMARY KEY,
+                Question TEXT NOT NULL,
+                GoalLabel TEXT NOT NULL,
+                Summary TEXT NOT NULL,
+                ExportText TEXT NOT NULL,
+                SearchTokensJson TEXT NOT NULL,
+                SuggestedSkillNamesJson TEXT NOT NULL,
+                ResultsPerSection INTEGER NOT NULL DEFAULT 6,
+                TopMatchCount INTEGER NOT NULL DEFAULT 0,
+                MemoryCount INTEGER NOT NULL DEFAULT 0,
+                TodoCount INTEGER NOT NULL DEFAULT 0,
+                TicketCount INTEGER NOT NULL DEFAULT 0,
+                CodeGraphProjectCount INTEGER NOT NULL DEFAULT 0,
+                CodeGraphFileCount INTEGER NOT NULL DEFAULT 0,
+                CodeGraphNodeCount INTEGER NOT NULL DEFAULT 0,
+                RecommendedSkillCount INTEGER NOT NULL DEFAULT 0,
+                SuggestedExternalSkillCount INTEGER NOT NULL DEFAULT 0,
+                ReviewScore INTEGER NULL,
+                ReviewNotes TEXT NOT NULL DEFAULT '',
+                CreatedUtc TEXT NOT NULL
+            );
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS ExternalSkillSources (
+                Id TEXT NOT NULL CONSTRAINT PK_ExternalSkillSources PRIMARY KEY,
+                Name TEXT NOT NULL,
+                CatalogUrl TEXT NOT NULL,
+                Description TEXT NOT NULL,
+                IsEnabled INTEGER NOT NULL DEFAULT 1,
+                CreatedUtc TEXT NOT NULL,
+                UpdatedUtc TEXT NOT NULL,
+                LastCheckedUtc TEXT NULL,
+                LastCheckStatus TEXT NOT NULL DEFAULT ''
+            );
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
             INSERT OR IGNORE INTO SiteSettings (Id, DisplayName, HomeHeroCopy, TimeZoneId, ShowUtcTimestamps, DefaultMemoryImportance)
             VALUES (1, 'Focus L-AIci', 'A local-first C# memory system for app development: wings, rooms, verbatim notes, searchable context, and an explorer UI for finding past reasoning fast.', 'UTC', 0, 3);
             """,
@@ -245,6 +286,30 @@ public static class MemorySeeder
             """
             CREATE INDEX IF NOT EXISTS IX_Todos_Status_UpdatedUtc
             ON Todos(Status, UpdatedUtc DESC);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_PackBuildRecords_CreatedUtc
+            ON PackBuildRecords(CreatedUtc DESC);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_PackBuildRecords_ReviewScore
+            ON PackBuildRecords(ReviewScore);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_ExternalSkillSources_Name
+            ON ExternalSkillSources(Name);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_ExternalSkillSources_CatalogUrl
+            ON ExternalSkillSources(CatalogUrl);
             """,
             cancellationToken);
         await dbContext.Database.ExecuteSqlRawAsync(

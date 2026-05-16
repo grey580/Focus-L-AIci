@@ -5,25 +5,39 @@ namespace FocusLAIci.Web.Services;
 internal static class SkillRecommendationEngine
 {
     internal const int DefaultReviewWindowDays = 90;
+    private static readonly HashSet<string> PreservedShortTokens = ["ad"];
     private static readonly HashSet<string> GenericQueryTokens = ["build", "check", "create", "fix", "make", "need", "review", "run", "script", "show", "use", "users", "user", "work"];
     private static readonly HashSet<string> ExternalOpsTokens = ["powershell", "script", "active", "directory", "emails", "email", "mail", "ldap", "ad"];
-    private static readonly HashSet<string> DirectoryAdminTokens = ["directory", "emails", "email", "mail", "ldap", "ad", "graph", "entra", "mailbox"];
+    private static readonly HashSet<string> DirectoryAdminTokens = ["directory", "emails", "email", "mail", "ldap", "ad", "graph", "entra", "mailbox", "exchange", "o365", "m365", "proxyaddresses", "upn", "userprincipalname", "mailnickname", "attribute", "attributes"];
     private static readonly HashSet<string> CodeIntentTokens = ["code", "repo", "project", "file", "files", "symbol", "symbols", "class", "method", "controller", "service", "implementation", "source"];
+    private static readonly HashSet<string> GenericAutomationTokens = ["powershell", "script", "export", "csv", "disabled", "audit", "report", "query", "list", "automation"];
+    private static readonly HashSet<string> LocalSupportTokens = ["windows", "pc", "network", "wifi", "slow", "performance", "troubleshoot", "troubleshooting", "latency", "local"];
+    private static readonly HashSet<string> WebUiTokens = ["website", "web", "ui", "layout", "homepage", "spacing", "css", "frontend", "design"];
+    private static readonly HashSet<string> CloudOpsTokens = ["azure", "cloud", "deployment", "entra", "identity", "tenant", "subscription", "insights", "appinsights", "microsoft", "graph", "oauth", "mailbox"];
+    private static readonly HashSet<string> DesktopAppTokens = ["desktop", "winforms", "windowsforms", "forms", "dotnet", "csharp"];
+    private static readonly HashSet<string> RepositoryArchitectureTokens = ["repo", "repository", "codebase", "architecture", "refactor", "map", "structure", "design", "system", "module", "component", "onboarding"];
 
     public static IReadOnlyCollection<SkillRecommendationMatch> Recommend(
         IEnumerable<SkillEntry> skills,
         string? question,
         Guid? wingId,
         SkillCategory? category,
-        int limit)
+        int limit,
+        PackIntentPrediction? intentPrediction = null)
     {
         var now = DateTime.UtcNow;
         var trimmedQuestion = question?.Trim() ?? string.Empty;
         var queryTokens = Tokenize(trimmedQuestion);
         var substantiveQueryTokens = queryTokens.Where(token => !GenericQueryTokens.Contains(token)).ToArray();
-        var externalOpsQuery = substantiveQueryTokens.Count(token => ExternalOpsTokens.Contains(token)) >= 2;
-        var explicitCodeQuery = substantiveQueryTokens.Any(token => CodeIntentTokens.Contains(token));
-        var directoryAdminQuery = substantiveQueryTokens.Count(token => DirectoryAdminTokens.Contains(token)) >= 2;
+        var externalOpsQuery = intentPrediction?.IsExternalOperationsQuery ?? substantiveQueryTokens.Count(token => ExternalOpsTokens.Contains(token)) >= 2;
+        var explicitCodeQuery = intentPrediction?.HasExplicitCodeIntent ?? substantiveQueryTokens.Any(token => CodeIntentTokens.Contains(token));
+        var directoryAdminQuery = intentPrediction?.IsDirectoryAdminQuery ?? substantiveQueryTokens.Count(token => DirectoryAdminTokens.Contains(token)) >= 2;
+        var genericAutomationQuery = intentPrediction?.IsGenericAutomationQuery ?? substantiveQueryTokens.Count(token => GenericAutomationTokens.Contains(token)) >= 2;
+        var repositoryArchitectureQuery = intentPrediction?.IsRepositoryArchitectureQuery ?? substantiveQueryTokens.Count(token => RepositoryArchitectureTokens.Contains(token)) >= 2;
+        var localSupportQuery = substantiveQueryTokens.Count(token => LocalSupportTokens.Contains(token)) >= 2;
+        var webUiQuery = substantiveQueryTokens.Count(token => WebUiTokens.Contains(token)) >= 2;
+        var cloudOpsQuery = substantiveQueryTokens.Count(token => CloudOpsTokens.Contains(token)) >= 2;
+        var desktopAppQuery = substantiveQueryTokens.Count(token => DesktopAppTokens.Contains(token)) >= 2;
         var effectiveLimit = Math.Clamp(limit, 1, 12);
         var filteredSkills = skills
             .Where(skill => !category.HasValue || skill.Category == category.Value)
@@ -36,7 +50,20 @@ internal static class SkillRecommendationEngine
         }
 
         var ranked = filteredSkills
-            .Select(skill => ScoreSkill(skill, trimmedQuestion, queryTokens, wingId, now))
+            .Select(skill => ScoreSkill(
+                skill,
+                trimmedQuestion,
+                queryTokens,
+                wingId,
+                now,
+                externalOpsQuery,
+                directoryAdminQuery,
+                genericAutomationQuery,
+                repositoryArchitectureQuery,
+                localSupportQuery,
+                webUiQuery,
+                cloudOpsQuery,
+                desktopAppQuery))
             .OrderByDescending(x => x.Score)
             .ThenByDescending(x => x.Skill.IsPinned)
             .ThenByDescending(x => x.Skill.UseCount)
@@ -49,6 +76,8 @@ internal static class SkillRecommendationEngine
             var matched = ranked
                 .Where(x => x.Score > 0m)
                 .Where(x => !externalOpsQuery || explicitCodeQuery || (!directoryAdminQuery ? x.IsExternalOpsQualified : x.IsDirectoryAdminQualified))
+                .Where(x => !genericAutomationQuery || x.IsGenericAutomationQualified)
+                .Where(x => !repositoryArchitectureQuery || x.IsRepositoryArchitectureQualified)
                 .Take(effectiveLimit)
                 .ToArray();
             if (matched.Length > 0)
@@ -111,7 +140,15 @@ internal static class SkillRecommendationEngine
         string question,
         IReadOnlyCollection<string> queryTokens,
         Guid? wingId,
-        DateTime now)
+        DateTime now,
+        bool externalOpsQuery,
+        bool directoryAdminQuery,
+        bool genericAutomationQuery,
+        bool repositoryArchitectureQuery,
+        bool localSupportQuery,
+        bool webUiQuery,
+        bool cloudOpsQuery,
+        bool desktopAppQuery)
     {
         var nameTokens = Tokenize(skill.Name);
         var summaryTokens = Tokenize(skill.Summary);
@@ -157,8 +194,6 @@ internal static class SkillRecommendationEngine
                                  + CountOverlap(substantiveQueryTokens, triggerTokens)
                                  + CountOverlap(substantiveQueryTokens, summaryTokens)
                                  + CountOverlap(substantiveQueryTokens, guidanceTokens);
-        var externalOpsQuery = substantiveQueryTokens.Count(token => ExternalOpsTokens.Contains(token)) >= 2;
-        var directoryAdminQuery = substantiveQueryTokens.Count(token => DirectoryAdminTokens.Contains(token)) >= 2;
         var externalOpsMatches = CountOverlap(ExternalOpsTokens, nameTokens)
                                  + CountOverlap(ExternalOpsTokens, triggerTokens)
                                  + CountOverlap(ExternalOpsTokens, summaryTokens)
@@ -167,6 +202,30 @@ internal static class SkillRecommendationEngine
                                     + CountOverlap(DirectoryAdminTokens, triggerTokens)
                                     + CountOverlap(DirectoryAdminTokens, summaryTokens)
                                     + CountOverlap(DirectoryAdminTokens, guidanceTokens);
+        var genericAutomationMatches = CountOverlap(GenericAutomationTokens, nameTokens)
+                                       + CountOverlap(GenericAutomationTokens, triggerTokens)
+                                       + CountOverlap(GenericAutomationTokens, summaryTokens)
+                                       + CountOverlap(GenericAutomationTokens, guidanceTokens);
+        var localSupportMatches = CountOverlap(LocalSupportTokens, nameTokens)
+                                  + CountOverlap(LocalSupportTokens, triggerTokens)
+                                  + CountOverlap(LocalSupportTokens, summaryTokens)
+                                  + CountOverlap(LocalSupportTokens, guidanceTokens);
+        var webUiMatches = CountOverlap(WebUiTokens, nameTokens)
+                           + CountOverlap(WebUiTokens, triggerTokens)
+                           + CountOverlap(WebUiTokens, summaryTokens)
+                           + CountOverlap(WebUiTokens, guidanceTokens);
+        var cloudOpsMatches = CountOverlap(CloudOpsTokens, nameTokens)
+                              + CountOverlap(CloudOpsTokens, triggerTokens)
+                              + CountOverlap(CloudOpsTokens, summaryTokens)
+                              + CountOverlap(CloudOpsTokens, guidanceTokens);
+        var desktopAppMatches = CountOverlap(DesktopAppTokens, nameTokens)
+                                + CountOverlap(DesktopAppTokens, triggerTokens)
+                                + CountOverlap(DesktopAppTokens, summaryTokens)
+                                + CountOverlap(DesktopAppTokens, guidanceTokens);
+        var repositoryArchitectureMatches = CountOverlap(RepositoryArchitectureTokens, nameTokens)
+                                            + CountOverlap(RepositoryArchitectureTokens, triggerTokens)
+                                            + CountOverlap(RepositoryArchitectureTokens, summaryTokens)
+                                            + CountOverlap(RepositoryArchitectureTokens, guidanceTokens);
 
         if (nameHits > 0)
         {
@@ -224,6 +283,52 @@ internal static class SkillRecommendationEngine
             score -= 24m;
         }
 
+        if (genericAutomationQuery && genericAutomationMatches == 0)
+        {
+            score -= 24m;
+        }
+
+        if (repositoryArchitectureQuery && repositoryArchitectureMatches == 0)
+        {
+            score -= 24m;
+        }
+
+        if (localSupportQuery && localSupportMatches == 0)
+        {
+            score -= 28m;
+        }
+        else if (localSupportMatches > 0)
+        {
+            score += Math.Min(localSupportMatches, 3) * 6m;
+        }
+
+        if (webUiQuery && webUiMatches == 0)
+        {
+            score -= 28m;
+        }
+        else if (webUiMatches > 0)
+        {
+            score += Math.Min(webUiMatches, 3) * 6m;
+        }
+
+        if (cloudOpsQuery && cloudOpsMatches == 0)
+        {
+            score -= 28m;
+        }
+        else if (cloudOpsMatches > 0)
+        {
+            score += Math.Min(cloudOpsMatches, 3) * 6m;
+        }
+
+        if (desktopAppQuery && desktopAppMatches == 0)
+        {
+            score -= 28m;
+        }
+        else if (desktopAppMatches > 0)
+        {
+            score += Math.Min(desktopAppMatches, 3) * 6m;
+        }
+
         if (queryTokens.Count == 0)
         {
             score += skill.IsPinned ? 6m : 0m;
@@ -236,7 +341,9 @@ internal static class SkillRecommendationEngine
             Math.Round(score, 2),
             reason,
             externalOpsMatches > 0 && substantiveMatches > 0,
-            directoryAdminMatches > 0 && substantiveMatches > 0);
+            directoryAdminMatches > 0 && substantiveMatches > 0,
+            genericAutomationMatches > 0 && substantiveMatches > 0,
+            repositoryArchitectureMatches > 0 && substantiveMatches > 0);
     }
 
     private static string BuildReason(IReadOnlyCollection<string> reasons, SkillEntry skill, Guid? wingId, DateTime now)
@@ -299,7 +406,7 @@ internal static class SkillRecommendationEngine
         return value
             .ToLowerInvariant()
             .Split([' ', '\r', '\n', '\t', ',', '.', ':', ';', '/', '\\', '(', ')', '[', ']', '{', '}', '-', '_', '"', '\''], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(token => token.Length > 2)
+            .Where(token => token.Length > 2 || PreservedShortTokens.Contains(token))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(token => token)
             .ToArray();
@@ -327,4 +434,11 @@ internal static class SkillRecommendationEngine
     }
 }
 
-internal sealed record SkillRecommendationMatch(SkillEntry Skill, decimal Score, string Reason, bool IsExternalOpsQualified = false, bool IsDirectoryAdminQualified = false);
+internal sealed record SkillRecommendationMatch(
+    SkillEntry Skill,
+    decimal Score,
+    string Reason,
+    bool IsExternalOpsQualified = false,
+    bool IsDirectoryAdminQualified = false,
+    bool IsGenericAutomationQualified = false,
+    bool IsRepositoryArchitectureQualified = false);

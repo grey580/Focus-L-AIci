@@ -3,7 +3,7 @@
 ## Core capabilities
 
 - dashboard with palace stats and recent activity
-- dashboard context workspace with multi-source retrieval, match explanations, and export/save actions
+- dashboard context workspace with multi-source retrieval, match explanations, export/save actions, pack archival, and refinement hooks
 - native Inspect page for database/app-state inspection and missing-context review
 - wing and room browsing
 - palace visualizer with both list and **3D graph views** for wings, rooms, memories, links, and active work
@@ -23,6 +23,9 @@
 - workspace export API and Inspect-page export panel for cold-start AI sessions
 - recent-changes feed plus structured context provenance for inspectable retrieval reasoning
 - local-first MCP server endpoints with Focus-native tools, resources, sessions, and SSE event streaming
+- external skill-source registry managed from Admin settings
+- dashboard-side external skill suggestions with import-and-rebuild flow
+- archived context-pack build history for later ranking and tuning
 - sample data seeding for quick onboarding
 
 ## Memory model
@@ -94,12 +97,21 @@ The intended workflow is to use Code Graph first for orientation and narrowing, 
 
 Focus L-AIci's homepage includes a richer **context workspace** that can pull from memories, todos, tickets, ticket history, and code graph data to build a task-specific pack before you start working.
 
+![Current dashboard](../images/dashboard-current.png)
+
 The intended operator flow is:
 
 1. state the task on the dashboard
 2. build a context pack before coding
 3. inspect the top matches and per-source sections
 4. save or export the pack when it should travel into a new AI/session handoff
+
+Recent pack-refinement additions extend that flow:
+
+1. every built pack can now be archived into SQLite for later review and ranking
+2. Focus can inspect configured external skill websites when the pack looks skill-thin
+3. the dashboard can raise an external skill alert and open a right-side slideout with suggested imports
+4. importing a suggested skill rebuilds the current pack against the updated skill catalog
 
 It also exposes:
 
@@ -124,6 +136,19 @@ Memory detail, search, dashboard, workspace, and Inspect expose the anti-context
 - active-only default retrieval so archived and superseded memories stay historical without polluting normal search, dashboard, workspace, or context flows
 - freshness chips and warnings in dashboard/context results so stale items do not silently outrank fresher ones
 - pinned-memory export annotations like `[Verified]` in the workspace snapshot
+
+### Admin-managed external skill sources
+
+Focus L-AIci now exposes an **External skill websites** section on **Admin -> Settings**.
+
+![Admin settings external skill websites](../images/admin-settings-skill-sources.png)
+
+This admin surface lets operators:
+
+- add or remove external skill catalog URLs
+- keep the list local to the current Focus instance
+- see the last check status for each configured source
+- drive dashboard-side skill suggestion/import behavior without editing code
 
 ### MCP server and admin console
 

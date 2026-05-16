@@ -9,12 +9,17 @@ public sealed class SiteSettingsService
 {
     private readonly FocusMemoryContext _dbContext;
     private readonly FocusDatabaseTargetService _databaseTargetService;
+    private readonly ExternalSkillSuggestionService? _externalSkillSuggestionService;
     private SiteSettingsSnapshot? _cached;
 
-    public SiteSettingsService(FocusMemoryContext dbContext, FocusDatabaseTargetService databaseTargetService)
+    public SiteSettingsService(
+        FocusMemoryContext dbContext,
+        FocusDatabaseTargetService databaseTargetService,
+        ExternalSkillSuggestionService? externalSkillSuggestionService = null)
     {
         _dbContext = dbContext;
         _databaseTargetService = databaseTargetService;
+        _externalSkillSuggestionService = externalSkillSuggestionService;
     }
 
     public async Task<SiteSettingsSnapshot> GetSettingsAsync(CancellationToken cancellationToken = default)
@@ -53,10 +58,14 @@ public sealed class SiteSettingsService
                 DefaultMemoryImportance = settings.DefaultMemoryImportance
             },
             DatabaseInput = BuildDatabaseInput(_databaseTargetService.GetCurrentTarget()),
+            SkillSourceInput = new SkillSourceEditorInput(),
             TimeZoneOptions = BuildTimeZoneOptions(settings.TimeZoneId),
             ApprovedDatabaseRootPaths = _databaseTargetService.ApprovedDatabaseRoots,
             ActiveTimeZoneLabel = ResolveTimeZone(settings.TimeZoneId).DisplayName,
-            DatabaseTarget = _databaseTargetService.GetCurrentTarget()
+            DatabaseTarget = _databaseTargetService.GetCurrentTarget(),
+            ExternalSkillSources = _externalSkillSuggestionService is null
+                ? Array.Empty<SkillSourceCardViewModel>()
+                : await _externalSkillSuggestionService.GetSourcesAsync(cancellationToken)
         };
     }
 
@@ -144,6 +153,7 @@ public sealed class SiteSettingsService
         {
             Input = input,
             DatabaseInput = BuildDatabaseInput(_databaseTargetService.GetCurrentTarget()),
+            SkillSourceInput = new SkillSourceEditorInput(),
             TimeZoneOptions = BuildTimeZoneOptions(resolved.Id),
             ApprovedDatabaseRootPaths = _databaseTargetService.ApprovedDatabaseRoots,
             ActiveTimeZoneLabel = resolved.DisplayName,

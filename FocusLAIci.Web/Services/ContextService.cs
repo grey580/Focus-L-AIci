@@ -17,6 +17,7 @@ public sealed partial class ContextService
         "they", "this", "those", "through", "use", "using", "very", "want", "what", "when", "where", "which",
         "with", "would", "your"
     ];
+    private static readonly HashSet<string> PreservedShortTokens = ["ad"];
     private static readonly Dictionary<string, string[]> SemanticAliases = new(StringComparer.OrdinalIgnoreCase)
     {
         ["bug"] = ["issue", "failure", "incident"],
@@ -47,24 +48,108 @@ public sealed partial class ContextService
     ];
     private static readonly HashSet<string> DirectoryDomainTokens =
     [
-        "active", "directory", "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "domain", "ad", "forest", "dns", "forwarder"
+        "active", "directory", "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "domain", "ad", "forest", "dns", "forwarder", "exchange", "o365", "m365", "proxyaddresses", "upn", "userprincipalname", "mailnickname"
     ];
     private static readonly HashSet<string> DirectoryAdminTokens =
     [
-        "directory", "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "domain", "ad"
+        "directory", "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "domain", "ad", "exchange", "o365", "m365", "proxyaddresses", "upn", "userprincipalname", "mailnickname", "attribute", "attributes"
     ];
     private static readonly HashSet<string> DirectoryAdminHighSignalTokens =
     [
-        "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "domain", "forest", "dns", "forwarder"
+        "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "domain", "forest", "dns", "forwarder", "exchange", "o365", "m365", "proxyaddresses", "upn", "userprincipalname", "mailnickname"
+    ];
+    private static readonly HashSet<string> DirectoryAdminAttributeTokens =
+    [
+        "email", "emails", "mail", "mailbox", "proxyaddresses", "attribute", "attributes", "upn", "userprincipalname", "mailnickname"
+    ];
+    private static readonly string[] DirectoryAdminAttributePhrases =
+    [
+        "proxy addresses", "user principal name", "mail nickname"
+    ];
+    private static readonly HashSet<string> DirectoryAdminBroadInfraTokens =
+    [
+        "migration", "migrate", "admt", "immutable", "consistencyguid", "forwarder", "forest", "dns", "sidhistory"
+    ];
+    private static readonly HashSet<string> DirectoryAdminAuditActionTokens =
+    [
+        "audit", "check", "report", "reports", "find", "verify", "export", "query", "list", "missing", "blank"
+    ];
+    private static readonly HashSet<string> TicketingTokens =
+    [
+        "ticket", "tickets", "task", "tasks", "subticket", "subtickets", "completed", "backlog"
+    ];
+    private static readonly HashSet<string> GenericAutomationTokens =
+    [
+        "powershell", "script", "export", "csv", "disabled", "audit", "report", "query", "list", "automation"
+    ];
+    private static readonly HashSet<string> GenericAutomationHighSignalTokens =
+    [
+        "export", "csv", "disabled", "audit", "report", "query", "list", "automation", "inactive", "users", "user"
+    ];
+    private static readonly HashSet<string> LocalSupportTokens =
+    [
+        "windows", "pc", "network", "wifi", "slow", "performance", "troubleshoot", "troubleshooting", "latency", "local"
+    ];
+    private static readonly HashSet<string> LocalSupportHighSignalTokens =
+    [
+        "network", "wifi", "slow", "performance", "troubleshoot", "troubleshooting", "latency"
+    ];
+    private static readonly HashSet<string> WebUiTokens =
+    [
+        "website", "web", "ui", "layout", "homepage", "spacing", "css", "frontend", "design"
+    ];
+    private static readonly HashSet<string> WebUiHighSignalTokens =
+    [
+        "website", "web", "ui", "layout", "homepage", "spacing", "css", "frontend"
+    ];
+    private static readonly HashSet<string> CloudOpsTokens =
+    [
+        "azure", "cloud", "deployment", "entra", "identity", "tenant", "subscription", "app", "insights", "appinsights"
+    ];
+    private static readonly HashSet<string> CloudOpsHighSignalTokens =
+    [
+        "azure", "cloud", "deployment", "entra", "identity", "tenant", "subscription", "insights", "appinsights", "microsoft", "graph", "oauth", "mailbox"
+    ];
+    private static readonly HashSet<string> CloudOpsSkillTokens =
+    [
+        "azure", "cloud", "deployment", "entra", "identity", "tenant", "subscription", "insights", "appinsights", "telemetry", "microsoft", "graph", "mailbox", "oauth"
+    ];
+    private static readonly HashSet<string> DesktopAppTokens =
+    [
+        "desktop", "winforms", "windowsforms", "forms", "windows", "app"
+    ];
+    private static readonly HashSet<string> DesktopAppSkillTokens =
+    [
+        "desktop", "winforms", "windowsforms", "forms", "dotnet", "csharp"
+    ];
+    private static readonly string[] DesktopAppPhrases =
+    [
+        "windows forms", "desktop app"
+    ];
+    private static readonly HashSet<string> RepositoryArchitectureTokens =
+    [
+        "repo", "repository", "codebase", "architecture", "refactor", "map", "structure", "design", "system", "module", "component", "onboarding"
+    ];
+    private static readonly HashSet<string> CodeMemoryTokens =
+    [
+        "code", "repo", "repository", "project", "file", "files", "class", "method", "controller", "service", "implementation", "source", "startup", "runtime", "path", "ranking"
     ];
 
     private readonly FocusMemoryContext _dbContext;
     private readonly CurrentProjectContext? _currentProjectContext;
+    private readonly IPackIntentModel _packIntentModel;
+    private readonly PackBuildArchiveService? _packBuildArchiveService;
 
-    public ContextService(FocusMemoryContext dbContext, IHostEnvironment? hostEnvironment = null)
+    public ContextService(
+        FocusMemoryContext dbContext,
+        IHostEnvironment? hostEnvironment = null,
+        IPackIntentModel? packIntentModel = null,
+        PackBuildArchiveService? packBuildArchiveService = null)
     {
         _dbContext = dbContext;
         _currentProjectContext = ResolveCurrentProjectContext(hostEnvironment?.ContentRootPath);
+        _packIntentModel = packIntentModel ?? TinyLocalPackIntentModel.Shared;
+        _packBuildArchiveService = packBuildArchiveService;
     }
 
     public async Task<ContextPackViewModel?> BuildContextPackAsync(string? question, CancellationToken cancellationToken)
@@ -77,12 +162,25 @@ public sealed partial class ContextService
     {
         var effectiveInput = input ?? new ContextBriefInput();
         var normalizedQuestion = effectiveInput.Question?.Trim() ?? string.Empty;
+        var normalizedQuestionPhrase = NormalizePhrase(normalizedQuestion);
         var tokens = Tokenize(normalizedQuestion);
         var semanticTokens = ExpandSemanticTokens(tokens);
+        var intentPrediction = _packIntentModel.Predict(normalizedQuestion);
         var preferDurableMemoryLead = ShouldPreferDurableMemoryLead(normalizedQuestion, effectiveInput);
-        var externalAdminQuery = IsExternalOperationsQuery(tokens);
-        var directoryAdminQuery = IsDirectoryAdminQuery(tokens);
-        var explicitCodeQuery = HasExplicitCodeIntent(tokens);
+        var externalAdminQuery = intentPrediction.IsExternalOperationsQuery || IsExternalOperationsQuery(tokens);
+        var directoryAdminQuery = intentPrediction.IsDirectoryAdminQuery || IsDirectoryAdminQuery(tokens);
+        var explicitCodeQuery = intentPrediction.HasExplicitCodeIntent || HasExplicitCodeIntent(tokens);
+        var genericAutomationQuery = intentPrediction.IsGenericAutomationQuery && !directoryAdminQuery && !explicitCodeQuery;
+        var repositoryArchitectureQuery = intentPrediction.IsRepositoryArchitectureQuery;
+        var currentProjectCodeQuery = explicitCodeQuery && HasCurrentProjectHint(tokens);
+        var localSupportQuery = IsLocalSupportQuery(tokens);
+        var webUiQuery = IsWebUiQuery(tokens);
+        var cloudOpsQuery = IsCloudOpsQuery(tokens);
+        var desktopAppQuery = IsDesktopAppQuery(tokens, normalizedQuestionPhrase);
+        var suppressCodeGraph = (externalAdminQuery && !explicitCodeQuery)
+                                || localSupportQuery
+                                || (cloudOpsQuery && !explicitCodeQuery)
+                                || ((webUiQuery || desktopAppQuery) && !currentProjectCodeQuery && !repositoryArchitectureQuery);
         if (tokens.Count == 0)
         {
             return null;
@@ -275,8 +373,15 @@ public sealed partial class ContextService
                 return new { Memory = memory, Match = score, Trust = trust };
             })
             .Where(x => x.Match.Score > 0)
-            .Where(x => !directoryAdminQuery || explicitCodeQuery || IsDirectoryAdminRelevantMemory(x.Memory))
+            .Where(x => !directoryAdminQuery || explicitCodeQuery || IsDirectoryAdminRelevantMemory(x.Memory, tokens, normalizedQuestionPhrase))
             .Where(x => !directoryAdminQuery || explicitCodeQuery || x.Match.Score >= 20m)
+            .Where(x => !genericAutomationQuery || IsGenericAutomationRelevantMemory(x.Memory))
+            .Where(x => !localSupportQuery || IsLocalSupportRelevantMemory(x.Memory))
+            .Where(x => !webUiQuery || currentProjectCodeQuery || IsWebUiRelevantMemory(x.Memory))
+            .Where(x => !cloudOpsQuery || IsCloudOpsRelevantMemory(x.Memory))
+            .Where(x => !desktopAppQuery || currentProjectCodeQuery || IsDesktopAppRelevantMemory(x.Memory))
+            .Where(x => !repositoryArchitectureQuery || IsRepositoryArchitectureRelevantMemory(x.Memory) || IsCurrentProjectRelevantMemory(x.Memory))
+            .Where(x => !currentProjectCodeQuery || IsCurrentProjectRelevantMemory(x.Memory) || IsCodeRelevantMemory(x.Memory))
             .OrderByDescending(x => x.Match.Score)
             .ThenByDescending(x => x.Memory.UpdatedUtc)
             .Take(resultsPerSection)
@@ -381,7 +486,7 @@ public sealed partial class ContextService
             })
             .ToArray();
 
-        var projectResults = externalAdminQuery && !explicitCodeQuery
+        var projectResults = suppressCodeGraph
             ? Array.Empty<ContextRecordViewModel>()
             : projects
             .Select(project =>
@@ -429,7 +534,7 @@ public sealed partial class ContextService
             })
             .ToArray();
 
-        var fileResults = externalAdminQuery && !explicitCodeQuery
+        var fileResults = suppressCodeGraph
             ? Array.Empty<ContextRecordViewModel>()
             : files
             .Select(file =>
@@ -479,7 +584,7 @@ public sealed partial class ContextService
             })
             .ToArray();
 
-        var nodeResults = externalAdminQuery && !explicitCodeQuery
+        var nodeResults = suppressCodeGraph
             ? Array.Empty<ContextRecordViewModel>()
             : nodes
             .Select(node =>
@@ -563,11 +668,46 @@ public sealed partial class ContextService
                 normalizedQuestion,
                 effectiveInput.WingId,
                 null,
-                Math.Clamp(resultsPerSection, 3, 6));
+                Math.Clamp(resultsPerSection, 3, 6),
+                intentPrediction);
         if (directoryAdminQuery && !explicitCodeQuery)
         {
             recommendedSkillMatches = recommendedSkillMatches
-                .Where(match => IsDirectoryAdminRelevantSkill(match.Skill))
+                .Where(match => IsDirectoryAdminRelevantSkill(match.Skill, tokens, normalizedQuestionPhrase))
+                .ToArray();
+        }
+        else if (genericAutomationQuery)
+        {
+            recommendedSkillMatches = recommendedSkillMatches
+                .Where(match => IsGenericAutomationRelevantSkill(match.Skill))
+                .ToArray();
+        }
+        else if (localSupportQuery)
+        {
+            recommendedSkillMatches = Array.Empty<SkillRecommendationMatch>();
+        }
+        else if (webUiQuery)
+        {
+            recommendedSkillMatches = recommendedSkillMatches
+                .Where(match => IsWebUiRelevantSkill(match.Skill))
+                .ToArray();
+        }
+        else if (cloudOpsQuery)
+        {
+            recommendedSkillMatches = recommendedSkillMatches
+                .Where(match => IsCloudOpsRelevantSkill(match.Skill))
+                .ToArray();
+        }
+        else if (desktopAppQuery)
+        {
+            recommendedSkillMatches = recommendedSkillMatches
+                .Where(match => IsDesktopAppRelevantSkill(match.Skill))
+                .ToArray();
+        }
+        else if (repositoryArchitectureQuery)
+        {
+            recommendedSkillMatches = recommendedSkillMatches
+                .Where(match => IsRepositoryArchitectureRelevantSkill(match.Skill))
                 .ToArray();
         }
 
@@ -575,7 +715,7 @@ public sealed partial class ContextService
             .Select(MapRecommendedSkill)
             .ToArray();
 
-        return new ContextPackViewModel
+        var pack = new ContextPackViewModel
         {
             Question = normalizedQuestion,
             Summary = BuildSummary(memoryResults, todoResults, ticketResults, projectResults, fileResults, nodeResults),
@@ -604,6 +744,33 @@ public sealed partial class ContextService
             CodeGraphNodes = nodeResults,
             RecommendedSkills = recommendedSkills,
             ExportText = BuildExportText(normalizedQuestion, effectiveInput.PackGoal, recommendedSkills, memoryResults, todoResults, ticketResults, projectResults, fileResults, nodeResults)
+        };
+
+        if (_packBuildArchiveService is null)
+        {
+            return pack;
+        }
+
+        var archivedBuildId = await _packBuildArchiveService.RecordAsync(pack, cancellationToken);
+        return new ContextPackViewModel
+        {
+            ArchivedBuildId = archivedBuildId,
+            Question = pack.Question,
+            Summary = pack.Summary,
+            GoalLabel = pack.GoalLabel,
+            Input = pack.Input,
+            SearchTokens = pack.SearchTokens,
+            DetectedGapItems = pack.DetectedGapItems,
+            TopMatches = pack.TopMatches,
+            Memories = pack.Memories,
+            Todos = pack.Todos,
+            Tickets = pack.Tickets,
+            CodeGraphProjects = pack.CodeGraphProjects,
+            CodeGraphFiles = pack.CodeGraphFiles,
+            CodeGraphNodes = pack.CodeGraphNodes,
+            RecommendedSkills = pack.RecommendedSkills,
+            ExternalSkillAlert = pack.ExternalSkillAlert,
+            ExportText = pack.ExportText
         };
     }
 
@@ -1440,7 +1607,7 @@ public sealed partial class ContextService
         };
     }
 
-    private static string NormalizePhrase(string? value) => string.Join(' ', Tokenize(value, keepStopWords: true));
+    private static string NormalizePhrase(string? value) => string.Join(' ', EnumerateTokens(value, keepStopWords: true));
 
     private static string GetPackGoalLabel(ContextPackGoal goal) => goal switch
     {
@@ -1655,6 +1822,19 @@ public sealed partial class ContextService
     private static bool IsDirectoryAdminQuery(IReadOnlyCollection<string> tokens)
         => tokens.Count(token => DirectoryAdminTokens.Contains(token)) >= 2;
 
+    private static bool IsLocalSupportQuery(IReadOnlyCollection<string> tokens)
+        => tokens.Count(token => LocalSupportTokens.Contains(token)) >= 2;
+
+    private static bool IsWebUiQuery(IReadOnlyCollection<string> tokens)
+        => tokens.Count(token => WebUiTokens.Contains(token)) >= 2;
+
+    private static bool IsCloudOpsQuery(IReadOnlyCollection<string> tokens)
+        => tokens.Count(token => CloudOpsTokens.Contains(token)) >= 2;
+
+    private static bool IsDesktopAppQuery(IReadOnlyCollection<string> tokens, string normalizedQuery)
+        => tokens.Count(token => DesktopAppTokens.Contains(token)) >= 2
+           || ContainsAnyPhrase(normalizedQuery, DesktopAppPhrases);
+
     private static decimal BuildExternalAdminMemoryBoost(MemoryEntry memory)
     {
         var text = string.Join(' ', new[]
@@ -1714,7 +1894,7 @@ public sealed partial class ContextService
         return Tokenize(text).Count(token => DirectoryAdminTokens.Contains(token));
     }
 
-    private static bool IsDirectoryAdminRelevantMemory(MemoryEntry memory)
+    private static bool IsDirectoryAdminRelevantMemory(MemoryEntry memory, IReadOnlyCollection<string> queryTokens, string normalizedQuery)
     {
         var highSignalText = string.Join(' ', new[]
         {
@@ -1735,11 +1915,51 @@ public sealed partial class ContextService
         });
         var highSignalTokens = Tokenize(highSignalText);
         var structuralTokens = Tokenize(structuralText);
+        var normalizedHighSignalText = NormalizePhrase(highSignalText);
+        var queryHasAttributeIntent = queryTokens.Any(token => DirectoryAdminAttributeTokens.Contains(token))
+                                     || ContainsAnyPhrase(normalizedQuery, DirectoryAdminAttributePhrases);
+        var queryHasAttributeAuditIntent = queryHasAttributeIntent && queryTokens.Any(token => DirectoryAdminAuditActionTokens.Contains(token));
+        var memoryHasAttributeSignal = highSignalTokens.Any(token => DirectoryAdminAttributeTokens.Contains(token))
+                                       || ContainsAnyPhrase(normalizedHighSignalText, DirectoryAdminAttributePhrases);
+        var memoryHasAttributeAuditSignal = memoryHasAttributeSignal && highSignalTokens.Any(token => DirectoryAdminAuditActionTokens.Contains(token));
+        var memoryHasBroadInfraSignal = highSignalTokens.Count(token => DirectoryAdminBroadInfraTokens.Contains(token)) >= 2;
+        var memoryHasTicketingSignal = structuralTokens.Any(token => TicketingTokens.Contains(token));
+
+        if (memory.Kind == MemoryKind.Task)
+        {
+            return memoryHasAttributeSignal && !memoryHasTicketingSignal;
+        }
+
+        if (memoryHasTicketingSignal && !memoryHasAttributeSignal)
+        {
+            return false;
+        }
+
+        if (queryHasAttributeIntent && !memoryHasAttributeSignal)
+        {
+            return false;
+        }
+
+        if (queryHasAttributeAuditIntent && !memoryHasAttributeAuditSignal)
+        {
+            return false;
+        }
+
+        if (queryHasAttributeIntent && memoryHasBroadInfraSignal && !memoryHasAttributeSignal)
+        {
+            return false;
+        }
+
+        if (memory.Kind == MemoryKind.Task && highSignalTokens.Count(token => DirectoryAdminHighSignalTokens.Contains(token)) == 0)
+        {
+            return false;
+        }
+
         return highSignalTokens.Count(token => DirectoryAdminHighSignalTokens.Contains(token)) > 0
                || structuralTokens.Count(token => DirectoryAdminTokens.Contains(token)) >= 2;
     }
 
-    private static bool IsDirectoryAdminRelevantSkill(SkillEntry skill)
+    private static bool IsDirectoryAdminRelevantSkill(SkillEntry skill, IReadOnlyCollection<string> queryTokens, string normalizedQuery)
     {
         var text = string.Join(' ', new[]
         {
@@ -1750,8 +1970,257 @@ public sealed partial class ContextService
             skill.TriggerHintsText
         });
         var tokens = Tokenize(text);
+        var normalizedSkillText = NormalizePhrase(text);
+        var queryHasAttributeIntent = queryTokens.Any(token => DirectoryAdminAttributeTokens.Contains(token))
+                                     || ContainsAnyPhrase(normalizedQuery, DirectoryAdminAttributePhrases);
+        var queryHasAttributeAuditIntent = queryHasAttributeIntent && queryTokens.Any(token => DirectoryAdminAuditActionTokens.Contains(token));
+        var skillHasAttributeSignal = tokens.Any(token => DirectoryAdminAttributeTokens.Contains(token))
+                                      || ContainsAnyPhrase(normalizedSkillText, DirectoryAdminAttributePhrases);
+        var skillHasAttributeAuditSignal = skillHasAttributeSignal && tokens.Any(token => DirectoryAdminAuditActionTokens.Contains(token));
+
+        if (queryHasAttributeIntent && !skillHasAttributeSignal)
+        {
+            return false;
+        }
+
+        if (queryHasAttributeAuditIntent && !skillHasAttributeAuditSignal)
+        {
+            return false;
+        }
+
         return tokens.Count(token => DirectoryAdminHighSignalTokens.Contains(token)) > 0
                || tokens.Count(token => DirectoryAdminTokens.Contains(token)) >= 2;
+    }
+
+    private static bool IsGenericAutomationRelevantMemory(MemoryEntry memory)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var tokens = Tokenize(text);
+        var productTokens = new[] { "grey", "canary", "focus", "sophos", "dstc" };
+        return tokens.Count(token => GenericAutomationHighSignalTokens.Contains(token)) >= 2
+               && productTokens.Count(token => tokens.Contains(token)) == 0;
+    }
+
+    private static bool IsGenericAutomationRelevantSkill(SkillEntry skill)
+    {
+        var text = string.Join(' ', new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.WhenToUse,
+            skill.Flow,
+            skill.TriggerHintsText
+        });
+        var tokens = Tokenize(text);
+        return tokens.Count(token => GenericAutomationHighSignalTokens.Contains(token)) >= 2;
+    }
+
+    private static bool IsLocalSupportRelevantMemory(MemoryEntry memory)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var tokens = Tokenize(text);
+        return tokens.Count(token => LocalSupportTokens.Contains(token)) >= 2
+               && tokens.Any(token => LocalSupportHighSignalTokens.Contains(token));
+    }
+
+    private static bool IsLocalSupportRelevantSkill(SkillEntry skill)
+    {
+        var text = string.Join(' ', new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.WhenToUse,
+            skill.Flow,
+            skill.TriggerHintsText
+        });
+        var tokens = Tokenize(text);
+        return tokens.Count(token => LocalSupportTokens.Contains(token)) >= 2
+               && tokens.Any(token => LocalSupportHighSignalTokens.Contains(token));
+    }
+
+    private static bool IsWebUiRelevantMemory(MemoryEntry memory)
+    {
+        if (memory.Kind == MemoryKind.Task)
+        {
+            return false;
+        }
+
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var tokens = Tokenize(text);
+        return tokens.Count(token => WebUiHighSignalTokens.Contains(token)) >= 2;
+    }
+
+    private static bool IsWebUiRelevantSkill(SkillEntry skill)
+    {
+        var text = string.Join(' ', new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.WhenToUse,
+            skill.Flow,
+            skill.TriggerHintsText
+        });
+        var tokens = Tokenize(text);
+        return tokens.Count(token => WebUiHighSignalTokens.Contains(token)) >= 2;
+    }
+
+    private static bool IsCloudOpsRelevantMemory(MemoryEntry memory)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var tokens = Tokenize(text);
+        return tokens.Count(token => CloudOpsHighSignalTokens.Contains(token)) >= 2;
+    }
+
+    private static bool IsCloudOpsRelevantSkill(SkillEntry skill)
+    {
+        var text = string.Join(' ', new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.WhenToUse,
+            skill.Flow,
+            skill.TriggerHintsText
+        });
+        var tokens = Tokenize(text);
+        return tokens.Count(token => CloudOpsSkillTokens.Contains(token)) >= 2;
+    }
+
+    private static bool IsDesktopAppRelevantMemory(MemoryEntry memory)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var tokens = Tokenize(text);
+        var normalizedText = NormalizePhrase(text);
+        return tokens.Count(token => DesktopAppSkillTokens.Contains(token)) >= 2
+               || ContainsAnyPhrase(normalizedText, DesktopAppPhrases);
+    }
+
+    private static bool IsDesktopAppRelevantSkill(SkillEntry skill)
+    {
+        var text = string.Join(' ', new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.WhenToUse,
+            skill.Flow,
+            skill.TriggerHintsText
+        });
+        var tokens = Tokenize(text);
+        var normalizedText = NormalizePhrase(text);
+        return tokens.Count(token => DesktopAppSkillTokens.Contains(token)) >= 2
+               || ContainsAnyPhrase(normalizedText, DesktopAppPhrases);
+    }
+
+    private static bool IsRepositoryArchitectureRelevantMemory(MemoryEntry memory)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var tokens = Tokenize(text);
+        return tokens.Count(token => RepositoryArchitectureTokens.Contains(token)) >= 2;
+    }
+
+    private static bool IsRepositoryArchitectureRelevantSkill(SkillEntry skill)
+    {
+        var text = string.Join(' ', new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.WhenToUse,
+            skill.Flow,
+            skill.TriggerHintsText
+        });
+        var tokens = Tokenize(text);
+        return tokens.Count(token => RepositoryArchitectureTokens.Contains(token)) >= 2;
+    }
+
+    private bool IsCurrentProjectRelevantMemory(MemoryEntry memory)
+    {
+        if (_currentProjectContext is null)
+        {
+            return false;
+        }
+
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var tokens = Tokenize(text);
+        return _currentProjectContext.Tokens.Count(token => tokens.Contains(token)) >= 2;
+    }
+
+    private bool HasCurrentProjectHint(IReadOnlyCollection<string> tokens)
+    {
+        if (_currentProjectContext is null)
+        {
+            return false;
+        }
+
+        return _currentProjectContext.Tokens.Count(token => tokens.Contains(token)) >= 1;
+    }
+
+    private static bool IsCodeRelevantMemory(MemoryEntry memory)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var tokens = Tokenize(text);
+        return tokens.Count(token => CodeMemoryTokens.Contains(token)) >= 2;
     }
 
     private static HashSet<string> Tokenize(string? value, bool keepStopWords = false)
@@ -1761,16 +2230,26 @@ public sealed partial class ContextService
             return [];
         }
 
-        var tokens = WordRegex()
-            .Matches(value.ToLowerInvariant())
-            .Select(static x => x.Value)
-            .Where(static x => x.Length > 2)
-            .Where(token => keepStopWords || !StopWords.Contains(token))
+        var tokens = EnumerateTokens(value, keepStopWords)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return tokens.Count == 0 && !keepStopWords
             ? Tokenize(value, keepStopWords: true)
             : tokens;
+    }
+
+    private static IEnumerable<string> EnumerateTokens(string? value, bool keepStopWords = false)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Array.Empty<string>();
+        }
+
+        return WordRegex()
+            .Matches(value.ToLowerInvariant())
+            .Select(static x => x.Value)
+            .Where(token => token.Length > 2 || PreservedShortTokens.Contains(token))
+            .Where(token => keepStopWords || !StopWords.Contains(token));
     }
 
     private static HashSet<string> ExpandSemanticTokens(IEnumerable<string> tokens)
@@ -1843,6 +2322,10 @@ public sealed partial class ContextService
         var denominator = Math.Max(leftTerms.Count, rightTerms.Count);
         return denominator == 0 ? 0m : (decimal)overlap / denominator;
     }
+
+    private static bool ContainsAnyPhrase(string? normalizedText, IEnumerable<string> phrases)
+        => !string.IsNullOrWhiteSpace(normalizedText)
+           && phrases.Any(phrase => normalizedText.Contains(phrase, StringComparison.Ordinal));
 
     [GeneratedRegex("[a-z0-9]+", RegexOptions.Compiled)]
     private static partial Regex WordRegex();

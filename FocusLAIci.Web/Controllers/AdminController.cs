@@ -16,6 +16,7 @@ public sealed class AdminController : Controller
     private readonly FocusMcpEventBus _mcpEventBus;
     private readonly FocusMcpAuthService _mcpAuthService;
     private readonly FocusDiagnosticsService _diagnosticsService;
+    private readonly ExternalSkillSuggestionService _externalSkillSuggestionService;
 
     public AdminController(
         SiteSettingsService siteSettingsService,
@@ -26,7 +27,8 @@ public sealed class AdminController : Controller
         FocusMcpResourceRegistry mcpResourceRegistry,
         FocusMcpEventBus mcpEventBus,
         FocusMcpAuthService mcpAuthService,
-        FocusDiagnosticsService diagnosticsService)
+        FocusDiagnosticsService diagnosticsService,
+        ExternalSkillSuggestionService externalSkillSuggestionService)
     {
         _siteSettingsService = siteSettingsService;
         _databaseTargetService = databaseTargetService;
@@ -37,6 +39,7 @@ public sealed class AdminController : Controller
         _mcpEventBus = mcpEventBus;
         _mcpAuthService = mcpAuthService;
         _diagnosticsService = diagnosticsService;
+        _externalSkillSuggestionService = externalSkillSuggestionService;
     }
 
     [HttpGet]
@@ -193,13 +196,58 @@ public sealed class AdminController : Controller
             {
                 Input = model.Input,
                 DatabaseInput = input,
+                SkillSourceInput = model.SkillSourceInput,
                 TimeZoneOptions = model.TimeZoneOptions,
                 ApprovedDatabaseRootPaths = model.ApprovedDatabaseRootPaths,
                 ActiveTimeZoneLabel = model.ActiveTimeZoneLabel,
-                DatabaseTarget = model.DatabaseTarget
+                DatabaseTarget = model.DatabaseTarget,
+                ExternalSkillSources = model.ExternalSkillSources
             };
             return View("Settings", rebuilt);
         }
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddSkillSource([Bind(Prefix = "SkillSourceInput")] SkillSourceEditorInput input, CancellationToken cancellationToken)
+    {
+        if (!TryValidateModel(input, nameof(AdminSettingsViewModel.SkillSourceInput)))
+        {
+            var model = await _siteSettingsService.BuildAdminSettingsAsync(cancellationToken);
+            var rebuilt = new AdminSettingsViewModel
+            {
+                Input = model.Input,
+                DatabaseInput = model.DatabaseInput,
+                SkillSourceInput = input,
+                TimeZoneOptions = model.TimeZoneOptions,
+                ApprovedDatabaseRootPaths = model.ApprovedDatabaseRootPaths,
+                ActiveTimeZoneLabel = model.ActiveTimeZoneLabel,
+                DatabaseTarget = model.DatabaseTarget,
+                ExternalSkillSources = model.ExternalSkillSources
+            };
+            return View("Settings", rebuilt);
+        }
+
+        try
+        {
+            await _externalSkillSuggestionService.AddSourceAsync(input, cancellationToken);
+            TempData["SettingsMessage"] = "Skill source added.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            TempData["SettingsMessage"] = ex.Message;
+        }
+
+        return RedirectToAction(nameof(Settings));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RemoveSkillSource(Guid id, CancellationToken cancellationToken)
+    {
+        await _externalSkillSuggestionService.RemoveSourceAsync(id, cancellationToken);
+        TempData["SettingsMessage"] = "Skill source removed.";
+        return RedirectToAction(nameof(Settings));
     }
 
     [HttpPost]

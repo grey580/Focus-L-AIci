@@ -24,6 +24,8 @@ public sealed class DashboardViewModel
     public IReadOnlyCollection<string> MissingContextWarnings { get; init; } = Array.Empty<string>();
     public IReadOnlyCollection<DashboardWarningViewModel> MissingContextWarningItems { get; init; } = Array.Empty<DashboardWarningViewModel>();
     public IReadOnlyCollection<string> SearchExamples { get; init; } = Array.Empty<string>();
+    public string? StatusMessage { get; init; }
+    public string? ErrorMessage { get; init; }
 }
 
 public sealed class DashboardDiagnosticsViewModel
@@ -221,10 +223,12 @@ public sealed class AdminSettingsViewModel
 {
     public AdminSettingsInput Input { get; init; } = new();
     public DatabaseTargetInput DatabaseInput { get; init; } = new();
+    public SkillSourceEditorInput SkillSourceInput { get; init; } = new();
     public IReadOnlyCollection<SelectListItem> TimeZoneOptions { get; init; } = Array.Empty<SelectListItem>();
     public IReadOnlyCollection<string> ApprovedDatabaseRootPaths { get; init; } = Array.Empty<string>();
     public string ActiveTimeZoneLabel { get; init; } = "UTC";
     public FocusDatabaseTargetSnapshot DatabaseTarget { get; init; } = new();
+    public IReadOnlyCollection<SkillSourceCardViewModel> ExternalSkillSources { get; init; } = Array.Empty<SkillSourceCardViewModel>();
 }
 
 public sealed class AdminSettingsInput

@@ -9,16 +9,18 @@ namespace FocusLAIci.Web.Controllers;
 public sealed class HomeController : Controller
 {
     private readonly PalaceService _palaceService;
+    private readonly ExternalSkillSuggestionService _externalSkillSuggestionService;
 
-    public HomeController(PalaceService palaceService)
+    public HomeController(PalaceService palaceService, ExternalSkillSuggestionService externalSkillSuggestionService)
     {
         _palaceService = palaceService;
+        _externalSkillSuggestionService = externalSkillSuggestionService;
     }
 
     [HttpGet]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
-        return View(await _palaceService.GetDashboardAsync(cancellationToken));
+        return View(ApplyMessages(await _palaceService.GetDashboardAsync(cancellationToken)));
     }
 
     [HttpPost]
@@ -27,10 +29,10 @@ public sealed class HomeController : Controller
     {
         if (!ModelState.IsValid)
         {
-            return View(await RebuildDashboardAsync(input, cancellationToken));
+            return View(ApplyMessages(await RebuildDashboardAsync(input, cancellationToken)));
         }
 
-        return View(await _palaceService.GetDashboardAsync(RequestInputPolicy.NormalizeBoundContextBriefInput(input), cancellationToken));
+        return View(ApplyMessages(await _palaceService.GetDashboardAsync(RequestInputPolicy.NormalizeBoundContextBriefInput(input), cancellationToken)));
     }
 
     [HttpPost]
@@ -40,7 +42,7 @@ public sealed class HomeController : Controller
         if (!ModelState.IsValid)
         {
             var dashboard = await _palaceService.GetDashboardAsync(cancellationToken);
-            return View("Index", new DashboardViewModel
+            return View("Index", ApplyMessages(new DashboardViewModel
             {
                 Stats = dashboard.Stats,
                 ContextInput = dashboard.ContextInput,
@@ -59,11 +61,32 @@ public sealed class HomeController : Controller
                 MissingContextWarnings = dashboard.MissingContextWarnings,
                 MissingContextWarningItems = dashboard.MissingContextWarningItems,
                 SearchExamples = dashboard.SearchExamples
-            });
+            }));
         }
 
         var id = await _palaceService.QuickCaptureAsync(input, cancellationToken);
         return RedirectToAction("Memory", "Palace", new { id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ImportExternalSkill(
+        string skillUrl,
+        string sourceName,
+        ContextBriefInput input,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _externalSkillSuggestionService.ImportSuggestionAsync(skillUrl, sourceName, cancellationToken);
+            TempData["StatusMessage"] = "External skill imported and the pack was rebuilt.";
+        }
+        catch (Exception ex)
+        {
+            TempData["ErrorMessage"] = ex.Message;
+        }
+
+        return View("Index", ApplyMessages(await _palaceService.GetDashboardAsync(RequestInputPolicy.NormalizeBoundContextBriefInput(input), cancellationToken)));
     }
 
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
@@ -94,6 +117,34 @@ public sealed class HomeController : Controller
             MissingContextWarnings = dashboard.MissingContextWarnings,
             MissingContextWarningItems = dashboard.MissingContextWarningItems,
             SearchExamples = dashboard.SearchExamples
+        };
+    }
+
+    private DashboardViewModel ApplyMessages(DashboardViewModel model)
+    {
+        return new DashboardViewModel
+        {
+            Stats = model.Stats,
+            ContextInput = model.ContextInput,
+            ContextPack = model.ContextPack,
+            FallbackContext = model.FallbackContext,
+            QuickCaptureInput = model.QuickCaptureInput,
+            ActiveTickets = model.ActiveTickets,
+            RecentActivity = model.RecentActivity,
+            Wings = model.Wings,
+            RecentMemories = model.RecentMemories,
+            PinnedMemories = model.PinnedMemories,
+            ResurfacingMemories = model.ResurfacingMemories,
+            RecommendedAgents = model.RecommendedAgents,
+            FeaturedAgents = model.FeaturedAgents,
+            RecommendedSkills = model.RecommendedSkills,
+            FeaturedSkills = model.FeaturedSkills,
+            CurrentTodos = model.CurrentTodos,
+            MissingContextWarnings = model.MissingContextWarnings,
+            MissingContextWarningItems = model.MissingContextWarningItems,
+            SearchExamples = model.SearchExamples,
+            StatusMessage = TempData["StatusMessage"] as string,
+            ErrorMessage = TempData["ErrorMessage"] as string
         };
     }
 }

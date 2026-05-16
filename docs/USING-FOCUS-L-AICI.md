@@ -86,9 +86,10 @@ When creating a memory:
 ### Before you start work
 
 1. Search for the product, subsystem, or problem you are about to touch.
-2. Open **Inspect** and verify the active database, warnings, recent changes, and workspace export.
-3. Open pinned memories and recent related entries.
-4. Review linked memories if the issue spans multiple areas.
+2. Build a dashboard context pack first so Focus can rank the most relevant memories, todos, tickets, and code graph records.
+3. Open **Inspect** and verify the active database, warnings, recent changes, and workspace export.
+4. Open pinned memories and recent related entries.
+5. Review linked memories if the issue spans multiple areas.
 
 If you are driving an AI assistant, use a direct opener like:
 
@@ -97,6 +98,12 @@ Start with Focus. Read relevant memories, build a context pack, check recent cha
 ```
 
 That prompt reliably pushes the assistant into Focus-first retrieval before implementation.
+
+The current dashboard is shown below:
+
+![Current dashboard](../images/dashboard-current.png)
+
+If the pack still looks thin, watch for the external skill alert. It opens a right-side slideout with suggested skills from the websites configured in **Admin -> Settings**, and importing one rebuilds the current pack immediately.
 
 ### Use Inspect as the trust surface
 
@@ -114,6 +121,30 @@ Recommended pattern:
 2. Use the workspace export block when you need to brief a fresh AI session quickly.
 3. Use the governance queue there for bulk triage when memory hygiene is drifting.
 4. Use the diagnostics URLs on that page when you want application-layer truth without opening SQLite.
+
+### Use pack history for refinement
+
+Focus now archives built packs into SQLite so you can review them later instead of treating each retrieval as throwaway output.
+
+Recommended pattern:
+
+1. build the pack before implementation
+2. note whether it surfaced the right memories, work items, and skills
+3. use the archived pack history later when tuning ranking, skill coverage, and content gaps
+4. use the archived records as the durable base for later review-score and ranking work instead of relying on anecdotal feedback
+
+### Manage external skill websites from Settings
+
+The list of external skill catalog websites now lives in **Admin -> Settings**.
+
+![Admin settings external skill websites](../images/admin-settings-skill-sources.png)
+
+Recommended pattern:
+
+1. add trusted skill catalogs there
+2. keep the list small and high-signal
+3. use the dashboard alert/import flow only when the pack clearly benefits from a missing skill
+4. prefer imported skills that are reusable, focused, and stable enough to keep locally
 
 ### Use memory trust state to fight context rot
 

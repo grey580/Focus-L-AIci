@@ -30,30 +30,32 @@ Focus L-AIci turns that lost context into a searchable, browsable, persistent kn
 ## What it includes
 
 - a structured memory palace built around wings, rooms, memories, tags, and links
-- a dashboard context workspace for task-specific retrieval and export
+- a dashboard context workspace for task-specific retrieval, export, archival, and refinement
 - four built-in scoped agents for context, research, bounded execution, and review
 - todo and ticket tracking for active implementation work
 - a persistent code graph with repository browsing and symbol relationships
 - a **3D palace graph** / visualizer for wings, rooms, memories, and active work
 - inspect and governance surfaces for trust, freshness, and lifecycle review
+- pack-build history in SQLite for later review and ranking
+- external skill-source suggestions with Admin-managed website catalogs and import-from-web flow
 - a local-first **MCP server surface** with tools, resources, sessions, and live event streaming
 - safer MCP memory automation with duplicate detection, merge/canonical flows, filtered context retrieval, bootstrap profiles, governance queues, and scoped API-key access
 
 For the full capability breakdown, recent additions, and API surface, see [docs/FEATURES.md](docs/FEATURES.md).
 
-## Dashboard preview
+## Current app preview
 
-These screenshots were captured from a live local Focus L-AIci instance. Memory content, wing names, and other user-authored details are intentionally blurred.
+These screenshots were captured from the current hosted Focus L-AIci build.
 
-![Focus L-AIci dashboard overview](images/dashboard-overview.png)
+![Focus L-AIci current dashboard](images/dashboard-current.png)
 
-![Focus L-AIci dashboard wings and pinned memories](images/dashboard-wings-pinned.png)
+![Focus L-AIci admin settings with external skill sources](images/admin-settings-skill-sources.png)
 
-![Focus L-AIci dashboard recent memories](images/dashboard-recent-memories.png)
+## What changed recently
 
-## Current UI preview
-
-Recent additions shown below were captured from the current build in dark mode.
+- **Pack refinement loop** - every built context pack can now be archived into SQLite with counts, export text, and review fields so later ranking/tuning work has durable raw material.
+- **External skill sourcing** - Focus can check configured external skill websites, suggest matching skills when a pack has gaps, and import a selected skill back into the local catalog.
+- **Admin-managed skill websites** - the source website list now lives on **Admin -> Settings** instead of being hard-coded.
 
 ![Focus L-AIci dashboard dark mode](images/dashboard-darkmode.png)
 

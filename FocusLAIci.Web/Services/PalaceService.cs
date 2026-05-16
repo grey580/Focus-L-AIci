@@ -47,23 +47,33 @@ public sealed class PalaceService
     private readonly FocusDatabaseTargetService? _databaseTargetService;
     private readonly FocusAgentCatalogService _agentCatalogService;
     private readonly RepoSkillCatalogService? _repoSkillCatalogService;
+    private readonly ExternalSkillSuggestionService? _externalSkillSuggestionService;
+    private readonly PackBuildArchiveService? _packBuildArchiveService;
 
     public PalaceService(FocusMemoryContext dbContext)
-        : this(dbContext, new ContextService(dbContext), NullFocusEventPublisher.Instance, null, null, null)
+        : this(dbContext, new ContextService(dbContext), NullFocusEventPublisher.Instance, null, null, null, null, null)
     {
     }
 
     public PalaceService(FocusMemoryContext dbContext, ContextService contextService)
-        : this(dbContext, contextService, NullFocusEventPublisher.Instance, null, null, null)
+        : this(dbContext, contextService, NullFocusEventPublisher.Instance, null, null, null, null, null)
     {
     }
 
     public PalaceService(FocusMemoryContext dbContext, ContextService contextService, IFocusEventPublisher eventPublisher)
-        : this(dbContext, contextService, eventPublisher, null, null, null)
+        : this(dbContext, contextService, eventPublisher, null, null, null, null, null)
     {
     }
 
-    public PalaceService(FocusMemoryContext dbContext, ContextService contextService, IFocusEventPublisher eventPublisher, FocusDatabaseTargetService? databaseTargetService, FocusAgentCatalogService? agentCatalogService, RepoSkillCatalogService? repoSkillCatalogService = null)
+    public PalaceService(
+        FocusMemoryContext dbContext,
+        ContextService contextService,
+        IFocusEventPublisher eventPublisher,
+        FocusDatabaseTargetService? databaseTargetService,
+        FocusAgentCatalogService? agentCatalogService,
+        RepoSkillCatalogService? repoSkillCatalogService = null,
+        ExternalSkillSuggestionService? externalSkillSuggestionService = null,
+        PackBuildArchiveService? packBuildArchiveService = null)
     {
         _dbContext = dbContext;
         _contextService = contextService;
@@ -71,6 +81,8 @@ public sealed class PalaceService
         _databaseTargetService = databaseTargetService;
         _agentCatalogService = agentCatalogService ?? new FocusAgentCatalogService();
         _repoSkillCatalogService = repoSkillCatalogService;
+        _externalSkillSuggestionService = externalSkillSuggestionService;
+        _packBuildArchiveService = packBuildArchiveService;
     }
 
     public Task<DashboardViewModel> GetDashboardAsync(CancellationToken cancellationToken)
@@ -178,6 +190,38 @@ public sealed class PalaceService
             mappedRecentMemories);
         var resolvedContextInput = ResolveDashboardContextInput(effectiveContextInput, fallbackContext);
         var contextPack = await _contextService.BuildContextPackAsync(resolvedContextInput, cancellationToken);
+        if (contextPack is not null && _externalSkillSuggestionService is not null)
+        {
+            var externalSkillAlert = await _externalSkillSuggestionService.BuildAlertAsync(contextPack, cancellationToken);
+            if (_packBuildArchiveService is not null && contextPack.ArchivedBuildId.HasValue)
+            {
+                await _packBuildArchiveService.UpdateSuggestedExternalSkillCountAsync(
+                    contextPack.ArchivedBuildId.Value,
+                    externalSkillAlert.Suggestions.Count,
+                    cancellationToken);
+            }
+
+            contextPack = new ContextPackViewModel
+            {
+                ArchivedBuildId = contextPack.ArchivedBuildId,
+                Question = contextPack.Question,
+                Summary = contextPack.Summary,
+                GoalLabel = contextPack.GoalLabel,
+                Input = contextPack.Input,
+                SearchTokens = contextPack.SearchTokens,
+                DetectedGapItems = contextPack.DetectedGapItems,
+                TopMatches = contextPack.TopMatches,
+                Memories = contextPack.Memories,
+                Todos = contextPack.Todos,
+                Tickets = contextPack.Tickets,
+                CodeGraphProjects = contextPack.CodeGraphProjects,
+                CodeGraphFiles = contextPack.CodeGraphFiles,
+                CodeGraphNodes = contextPack.CodeGraphNodes,
+                RecommendedSkills = contextPack.RecommendedSkills,
+                ExternalSkillAlert = externalSkillAlert,
+                ExportText = contextPack.ExportText
+            };
+        }
         var recommendedAgents = _agentCatalogService.RecommendAgents(resolvedContextInput.Question, resolvedContextInput.PackGoal, 4);
         var fallbackRecommendedSkills = await RecommendSkillsAsync(resolvedContextInput.Question, resolvedContextInput.WingId, null, 4, cancellationToken);
         var recommendedSkills = MergeSkillCards(contextPack?.RecommendedSkills, fallbackRecommendedSkills, 4);

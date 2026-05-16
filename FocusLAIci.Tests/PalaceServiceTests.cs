@@ -7,6 +7,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 
 namespace FocusLAIci.Tests;
 
@@ -30,6 +33,25 @@ public sealed class PalaceServiceTests
     public void IsNormalizedSlug_RecognizesExpectedSlugShapes(string value, bool expected)
     {
         Assert.Equal(expected, SlugUtility.IsNormalizedSlug(value));
+    }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_ClassifiesDirectoryAdminPowershellQueries()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("I need a powershell script to check that users have emails set in active directory.");
+
+        Assert.True(prediction.IsExternalOperationsQuery);
+        Assert.True(prediction.IsDirectoryAdminQuery);
+        Assert.False(prediction.HasExplicitCodeIntent);
+    }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_ClassifiesCodeQueriesSeparately()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("Update the ContextService code in this repo to improve project file ranking.");
+
+        Assert.True(prediction.HasExplicitCodeIntent);
+        Assert.False(prediction.IsDirectoryAdminQuery);
     }
 
     [Fact]
@@ -1575,6 +1597,391 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task ContextService_DirectoryAdminAttributeQueries_FilterBroadAdAndTicketMemories()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        var activeDirectoryWing = new Wing
+        {
+            Name = "Directory Ops Test",
+            Slug = "directory-ops-attribute-test",
+            Description = "Directory administration notes."
+        };
+        var ticketWing = new Wing
+        {
+            Name = "Ticketing System",
+            Slug = "ticketing-system-test",
+            Description = "Completed tickets and task summaries."
+        };
+        dbContext.Wings.AddRange(activeDirectoryWing, ticketWing);
+
+        dbContext.Memories.AddRange(
+            new MemoryEntry
+            {
+                Title = "Audit AD users missing email attributes",
+                Summary = "Use PowerShell to report users with blank mail, proxyAddresses, or mailbox values.",
+                Content = "Check Active Directory user email attributes and export missing mail values for cleanup.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                Wing = activeDirectoryWing,
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new MemoryEntry
+            {
+                Title = "AD immutable ID migration",
+                Summary = "Active Directory migration guidance for identity mapping.",
+                Content = "Handle immutable ID, mailNickname, and consistency GUID mapping during migration work.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                Wing = activeDirectoryWing,
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new MemoryEntry
+            {
+                Title = "ADMT conditional forwarder repair",
+                Summary = "Forest and DNS fix for cross-domain migration issues.",
+                Content = "Recreate the conditional forwarder and validate forest DNS lookups for ADMT.",
+                Kind = MemoryKind.Incident,
+                SourceKind = SourceKind.DebugSession,
+                Wing = activeDirectoryWing,
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new MemoryEntry
+            {
+                Title = "TKT-0063 - Focus L'Aici MCP update",
+                Summary = "Completed ticket for Copilot platform work.",
+                Content = "Medium completed ticket with subtickets and tracked minutes.",
+                Kind = MemoryKind.Task,
+                SourceKind = SourceKind.ChatSession,
+                Wing = ticketWing,
+                UpdatedUtc = DateTime.UtcNow
+            });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "I need a powershell script to check that users have emails set in the emails section in active directory.",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.Memories);
+        Assert.Equal("Audit AD users missing email attributes", pack.Memories.First().Title);
+        Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("migration", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("forwarder", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("TKT-", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(pack.RecommendedSkills);
+    }
+
+    [Fact]
+    public async Task ContextService_DirectoryAdminProxyAddressPhraseQueries_FilterBroadAdMemories()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        var activeDirectoryWing = new Wing
+        {
+            Name = "Directory Ops Phrase Test",
+            Slug = "directory-ops-phrase-test",
+            Description = "Directory administration notes."
+        };
+        dbContext.Wings.Add(activeDirectoryWing);
+
+        dbContext.Memories.AddRange(
+            new MemoryEntry
+            {
+                Title = "Audit AD users missing email attributes",
+                Summary = "Use PowerShell to report users with blank mail, proxyAddresses, or mailbox values.",
+                Content = "Check Active Directory user email attributes and export missing mail values for cleanup.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                Wing = activeDirectoryWing,
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new MemoryEntry
+            {
+                Title = "AD immutable ID migration",
+                Summary = "Active Directory migration guidance for identity mapping.",
+                Content = "Handle immutable ID, mailNickname, and consistency GUID mapping during migration work.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                Wing = activeDirectoryWing,
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new MemoryEntry
+            {
+                Title = "ADMT conditional forwarder repair",
+                Summary = "Forest and DNS fix for cross-domain migration issues.",
+                Content = "Recreate the conditional forwarder and validate forest DNS lookups for ADMT.",
+                Kind = MemoryKind.Incident,
+                SourceKind = SourceKind.DebugSession,
+                Wing = activeDirectoryWing,
+                UpdatedUtc = DateTime.UtcNow
+            });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "Audit Active Directory users for blank proxy addresses with PowerShell.",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.Memories);
+        Assert.Equal("Audit AD users missing email attributes", pack.Memories.First().Title);
+        Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("migration", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("forwarder", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ContextService_DirectoryAdminAttributeQueries_KeepOnlyAttributeAuditSkills()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        var activeDirectoryWing = new Wing
+        {
+            Name = "Directory Skill Test",
+            Slug = "directory-skill-test",
+            Description = "Directory administration skills."
+        };
+        dbContext.Wings.Add(activeDirectoryWing);
+
+        dbContext.Skills.AddRange(
+            new SkillEntry
+            {
+                Name = "Audit AD mail attributes",
+                Slug = "audit-ad-mail-attributes",
+                Summary = "Use PowerShell to audit mail, proxyAddresses, mailbox, userPrincipalName, and mailNickname values.",
+                Category = SkillCategory.Task,
+                WhenToUse = "Use this when Active Directory user email attributes need review or cleanup.",
+                Flow = "Check mail and proxyAddresses.\nReview userPrincipalName and mailNickname.\nExport missing values.",
+                ExamplesText = "Audit AD users missing email attributes.",
+                TriggerHintsText = "active directory, email, mail, mailbox, proxyAddresses, userPrincipalName, mailNickname, audit, powershell",
+                IsPinned = true,
+                Wing = activeDirectoryWing,
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new SkillEntry
+            {
+                Name = "Repair ADMT forwarders",
+                Slug = "repair-admt-forwarders",
+                Summary = "Fix DNS and forest trust issues during directory migrations.",
+                Category = SkillCategory.Task,
+                WhenToUse = "Use this for ADMT migration and conditional forwarder troubleshooting.",
+                Flow = "Review forest trust.\nRepair DNS forwarders.\nValidate domain resolution.",
+                ExamplesText = "Repair ADMT migration DNS issues.",
+                TriggerHintsText = "admt, dns, forest, forwarder, migration",
+                IsPinned = true,
+                Wing = activeDirectoryWing,
+                UpdatedUtc = DateTime.UtcNow
+            });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "Audit Active Directory users for blank proxy addresses and UPN values with PowerShell.",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.RecommendedSkills);
+        Assert.Equal("Audit AD mail attributes", pack.RecommendedSkills.First().Name);
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Name.Contains("ADMT", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ContextService_LocalSupportQueries_SuppressCodeGraphAndIrrelevantSkills()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        dbContext.Skills.Add(new SkillEntry
+        {
+            Name = "Review web design quality",
+            Slug = "review-web-design-quality-test",
+            Summary = "Review website UI and layout quality.",
+            Category = SkillCategory.Task,
+            WhenToUse = "Use this for web UI review.",
+            Flow = "Inspect layout and CSS.",
+            TriggerHintsText = "website, web, ui, layout, css"
+        });
+        dbContext.CodeGraphProjects.Add(new CodeGraphProject
+        {
+            Name = "Focus L-AIci",
+            RootPath = @"C:\Copilot\Focus L-AIci",
+            Description = "Focus source.",
+            Summary = "Application code.",
+            UpdatedUtc = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "How do I troubleshoot a local Windows PC that is running slow and having network issues?",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.Empty(pack!.RecommendedSkills);
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
+    public async Task ContextService_WebUiQueries_PreferWebSkillsAndSuppressCodeGraphNoise()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        dbContext.Skills.AddRange(
+            new SkillEntry
+            {
+                Name = "Review web design quality",
+                Slug = "review-web-design-quality-test",
+                Summary = "Review website UI layout and spacing quality.",
+                Category = SkillCategory.Task,
+                WhenToUse = "Use this for website layout, homepage, spacing, and CSS issues.",
+                Flow = "Inspect layout.\nReview spacing.\nAdjust CSS.",
+                TriggerHintsText = "website, web, ui, layout, homepage, spacing, css",
+                IsPinned = true
+            },
+            new SkillEntry
+            {
+                Name = "Review endpoint uninstall and recovery flow",
+                Slug = "endpoint-uninstall-flow-test",
+                Summary = "Review endpoint uninstall behavior.",
+                Category = SkillCategory.Product,
+                WhenToUse = "Use this for endpoint uninstall work.",
+                Flow = "Inspect uninstall flow.",
+                TriggerHintsText = "endpoint, uninstall, recovery"
+            });
+        dbContext.CodeGraphProjects.Add(new CodeGraphProject
+        {
+            Name = "Grey Canary",
+            RootPath = @"C:\Copilot\Grey Canary",
+            Description = "Unrelated repo.",
+            Summary = "Endpoint code.",
+            UpdatedUtc = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "Improve the website UI layout and fix spacing issues on the homepage.",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.RecommendedSkills);
+        Assert.Equal("Review web design quality", pack.RecommendedSkills.First().Name);
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Name.Contains("endpoint", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
+    public async Task ContextService_CloudQueries_PreferMicrosoftCloudSkills()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        dbContext.Skills.AddRange(
+            new SkillEntry
+            {
+                Name = "Instrument App Insights telemetry",
+                Slug = "instrument-app-insights-telemetry-test",
+                Summary = "Add Azure Application Insights telemetry and deployment visibility.",
+                Category = SkillCategory.System,
+                WhenToUse = "Use this for Azure deployment, telemetry, identity, and cloud observability work.",
+                Flow = "Review Azure deployment.\nAdd telemetry.\nVerify identity and monitoring.",
+                TriggerHintsText = "azure, cloud, deployment, identity, app insights, telemetry",
+                IsPinned = true
+            },
+            new SkillEntry
+            {
+                Name = "Review web design quality",
+                Slug = "review-web-design-quality-cloud-test",
+                Summary = "Review website UI layout and spacing quality.",
+                Category = SkillCategory.Task,
+                WhenToUse = "Use this for website layout.",
+                Flow = "Inspect UI.",
+                TriggerHintsText = "website, web, ui, layout"
+            });
+        dbContext.CodeGraphProjects.Add(new CodeGraphProject
+        {
+            Name = "Simple SMB Tester",
+            RootPath = @"C:\Copilot\Simple SMB Tester",
+            Description = "Unrelated repo.",
+            Summary = "Desktop utility source code.",
+            UpdatedUtc = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "Help me work on Azure deployment and identity integration.",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.RecommendedSkills);
+        Assert.Equal("Instrument App Insights telemetry", pack.RecommendedSkills.First().Name);
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
+    public async Task ContextService_DesktopAppQueries_PreferDotnetDesktopSkills()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        dbContext.Skills.AddRange(
+            new SkillEntry
+            {
+                Name = "Apply .NET best practices",
+                Slug = "apply-dotnet-best-practices-desktop-test",
+                Summary = "Review .NET and C# desktop code for maintainability and correctness.",
+                Category = SkillCategory.System,
+                WhenToUse = "Use this for Windows Forms, desktop app, .NET, and C# work.",
+                Flow = "Review .NET structure.\nCheck Windows Forms event handling.\nTighten desktop app patterns.",
+                TriggerHintsText = "dotnet, csharp, windows forms, desktop app, winforms",
+                IsPinned = true
+            },
+            new SkillEntry
+            {
+                Name = "Review web design quality",
+                Slug = "review-web-design-quality-desktop-test",
+                Summary = "Review website UI layout.",
+                Category = SkillCategory.Task,
+                WhenToUse = "Use this for website layout.",
+                Flow = "Inspect web UI.",
+                TriggerHintsText = "website, web, ui, layout"
+            });
+        dbContext.CodeGraphProjects.Add(new CodeGraphProject
+        {
+            Name = "Focus L-AIci",
+            RootPath = @"C:\Copilot\Focus L-AIci",
+            Description = "Unrelated repo.",
+            Summary = "Web application code.",
+            UpdatedUtc = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "Help me build and improve a Windows Forms desktop app.",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.RecommendedSkills);
+        Assert.Equal("Apply .NET best practices", pack.RecommendedSkills.First().Name);
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Name.Contains("web design", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
     public async Task QuickCaptureAsync_CreatesMemoryWithDerivedTags()
     {
         await using var harness = await TestHarness.CreateAsync();
@@ -2255,6 +2662,112 @@ public sealed class PalaceServiceTests
         }
     }
 
+    [Fact]
+    public async Task ExternalSkillSuggestionService_BuildAlertAsync_SuggestsMatchingCatalogSkills()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+        dbContext.ExternalSkillSources.Add(new ExternalSkillSource
+        {
+            Name = "Example Skills",
+            CatalogUrl = "https://example.com/catalog",
+            Description = "Catalog",
+            IsEnabled = true
+        });
+        await dbContext.SaveChangesAsync();
+
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["https://example.com/catalog"] = """
+                [Azure deployment skill](https://example.com/skills/azure-deployment-skill.md)
+                [Desktop support skill](https://example.com/skills/desktop-support-skill.md)
+                """
+        }));
+
+        var service = new ExternalSkillSuggestionService(dbContext, httpClient);
+        var alert = await service.BuildAlertAsync(new ContextPackViewModel
+        {
+            Question = "improve azure deployment reliability",
+            SearchTokens = ["azure", "deployment", "reliability"]
+        }, CancellationToken.None);
+
+        Assert.True(alert.HasSuggestions);
+        Assert.Contains(alert.Suggestions, x => x.Name.Contains("Azure", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("external skill", alert.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExternalSkillSuggestionService_ImportSuggestionAsync_PersistsImportedSkill()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["https://raw.githubusercontent.com/example/repo/main/skills/azure-review.md"] = """
+                ---
+                name: Azure deployment review
+                description: Review Azure deployment reliability and rollout safety.
+                ---
+                # Azure deployment review
+
+                ## When to Use
+                Use this when Azure releases or slots are failing.
+
+                ## Workflow
+                Check the deployment slot state.
+                Review App Insights.
+
+                ## Examples
+                Review why the Azure release keeps failing.
+                """
+        }));
+
+        var service = new ExternalSkillSuggestionService(dbContext, httpClient);
+        var skill = await service.ImportSuggestionAsync("https://raw.githubusercontent.com/example/repo/main/skills/azure-review.md", "Example Skills", CancellationToken.None);
+
+        Assert.Equal("azure-deployment-review", skill.Slug);
+        Assert.Equal("Azure deployment review", skill.Name);
+        Assert.Contains("Azure", skill.Summary);
+        Assert.Equal(1, await dbContext.Skills.CountAsync(x => x.Slug == "azure-deployment-review"));
+    }
+
+    [Fact]
+    public async Task PackBuildArchiveService_RecordAsync_PersistsBuildSummary()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+        var archiveService = new PackBuildArchiveService(dbContext);
+
+        var buildId = await archiveService.RecordAsync(new ContextPackViewModel
+        {
+            Question = "review azure deployment",
+            GoalLabel = "Delivery",
+            Summary = "1 memory, 1 skill",
+            Input = new ContextBriefInput
+            {
+                Question = "review azure deployment",
+                ResultsPerSection = 6
+            },
+            SearchTokens = ["azure", "deployment"],
+            RecommendedSkills =
+            [
+                new SkillCardViewModel
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Azure deployment review"
+                }
+            ],
+            ExportText = "context pack export"
+        }, CancellationToken.None);
+
+        var record = await dbContext.PackBuildRecords.SingleAsync(x => x.Id == buildId);
+        Assert.Equal("review azure deployment", record.Question);
+        Assert.Equal("Delivery", record.GoalLabel);
+        Assert.Equal(1, record.RecommendedSkillCount);
+        Assert.Contains("azure", record.SearchTokensJson, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string CreateCodeGraphFixture()
     {
         var root = Path.Combine(Path.GetTempPath(), $"focus-code-graph-{Guid.NewGuid():N}");
@@ -2329,6 +2842,34 @@ public sealed class PalaceServiceTests
 
                 Thread.Sleep(100);
             }
+        }
+    }
+
+    private sealed class StubHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly IReadOnlyDictionary<string, string> _responses;
+
+        public StubHttpMessageHandler(IReadOnlyDictionary<string, string> responses)
+        {
+            _responses = responses;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (!_responses.TryGetValue(request.RequestUri!.ToString(), out var content))
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
+                {
+                    RequestMessage = request
+                });
+            }
+
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(content)
+            };
+            response.Content.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+            return Task.FromResult(response);
         }
     }
 }

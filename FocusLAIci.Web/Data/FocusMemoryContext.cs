@@ -28,6 +28,8 @@ public sealed class FocusMemoryContext : DbContext
     public DbSet<CodeGraphNode> CodeGraphNodes => Set<CodeGraphNode>();
     public DbSet<CodeGraphEdge> CodeGraphEdges => Set<CodeGraphEdge>();
     public DbSet<ContextLinkEntry> ContextLinks => Set<ContextLinkEntry>();
+    public DbSet<PackBuildRecord> PackBuildRecords => Set<PackBuildRecord>();
+    public DbSet<ExternalSkillSource> ExternalSkillSources => Set<ExternalSkillSource>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -206,6 +208,29 @@ public sealed class FocusMemoryContext : DbContext
             entity.HasIndex(x => new { x.SourceKind, x.SourceId });
             entity.HasIndex(x => new { x.TargetKind, x.TargetId });
             entity.HasIndex(x => new { x.SourceKind, x.SourceId, x.TargetKind, x.TargetId }).IsUnique();
+        });
+
+        builder.Entity<PackBuildRecord>(entity =>
+        {
+            entity.HasIndex(x => x.CreatedUtc);
+            entity.HasIndex(x => x.ReviewScore);
+            entity.Property(x => x.Question).HasMaxLength(400);
+            entity.Property(x => x.GoalLabel).HasMaxLength(40);
+            entity.Property(x => x.Summary).HasMaxLength(500);
+            entity.Property(x => x.ExportText).HasColumnType("TEXT");
+            entity.Property(x => x.SearchTokensJson).HasColumnType("TEXT");
+            entity.Property(x => x.SuggestedSkillNamesJson).HasColumnType("TEXT");
+            entity.Property(x => x.ReviewNotes).HasMaxLength(500);
+        });
+
+        builder.Entity<ExternalSkillSource>(entity =>
+        {
+            entity.HasIndex(x => x.Name).IsUnique();
+            entity.HasIndex(x => x.CatalogUrl).IsUnique();
+            entity.Property(x => x.Name).HasMaxLength(160);
+            entity.Property(x => x.CatalogUrl).HasMaxLength(500);
+            entity.Property(x => x.Description).HasMaxLength(260);
+            entity.Property(x => x.LastCheckStatus).HasMaxLength(260);
         });
 
         builder.Entity<CodeGraphProject>(entity =>

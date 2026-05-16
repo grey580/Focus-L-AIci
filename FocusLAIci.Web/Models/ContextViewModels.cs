@@ -44,6 +44,7 @@ public sealed class ContextBriefInput
 
 public sealed class ContextPackViewModel
 {
+    public Guid? ArchivedBuildId { get; init; }
     public string Question { get; init; } = string.Empty;
     public string Summary { get; init; } = string.Empty;
     public string GoalLabel { get; init; } = string.Empty;
@@ -58,6 +59,7 @@ public sealed class ContextPackViewModel
     public IReadOnlyCollection<ContextRecordViewModel> CodeGraphFiles { get; init; } = Array.Empty<ContextRecordViewModel>();
     public IReadOnlyCollection<ContextRecordViewModel> CodeGraphNodes { get; init; } = Array.Empty<ContextRecordViewModel>();
     public IReadOnlyCollection<SkillCardViewModel> RecommendedSkills { get; init; } = Array.Empty<SkillCardViewModel>();
+    public ExternalSkillAlertViewModel ExternalSkillAlert { get; init; } = new();
     public string ExportText { get; init; } = string.Empty;
 }
 
