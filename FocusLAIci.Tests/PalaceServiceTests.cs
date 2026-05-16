@@ -365,6 +365,7 @@ public sealed class PalaceServiceTests
         Assert.Contains(skills, x => x.Slug == "plan-threat-model-analysis");
         Assert.Contains(skills, x => x.Slug == "manage-secret-scanning");
         Assert.Contains(skills, x => x.Slug == "configure-codeql-scanning");
+        Assert.Contains(skills, x => x.Slug == "audit-on-prem-active-directory-user-attributes");
         Assert.Contains(skills, x => x.Slug == "get-exchange-online-mailbox-inventory");
         Assert.All(skills.Where(x =>
             x.Slug is "acquire-codebase-knowledge"
@@ -386,6 +387,7 @@ public sealed class PalaceServiceTests
                 or "run-security-review"
                 or "plan-threat-model-analysis"
                 or "manage-secret-scanning"
+                or "audit-on-prem-active-directory-user-attributes"
                 or "configure-codeql-scanning"
                 or "get-exchange-online-mailbox-inventory"), x => Assert.NotNull(x.ReviewAfterUtc));
     }
@@ -440,6 +442,35 @@ public sealed class PalaceServiceTests
 
         Assert.NotEmpty(recommendations);
         Assert.Equal("get-exchange-online-mailbox-inventory", recommendations.First().Slug);
+    }
+
+    [Fact]
+    public async Task RecommendSkillsAsync_PrefersOnPremActiveDirectoryAttributeAuditSkill()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var scope = harness.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<FocusMemoryContext>();
+        var repoSkillCatalogService = scope.ServiceProvider.GetRequiredService<RepoSkillCatalogService>();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        var service = new PalaceService(
+            dbContext,
+            new ContextService(dbContext),
+            NullFocusEventPublisher.Instance,
+            null,
+            new FocusAgentCatalogService(),
+            repoSkillCatalogService);
+
+        var recommendations = await service.RecommendSkillsAsync(
+            "need a powershell script that can get on prem active directory users who are missing a title",
+            null,
+            null,
+            5,
+            CancellationToken.None);
+
+        Assert.NotEmpty(recommendations);
+        Assert.Equal("audit-on-prem-active-directory-user-attributes", recommendations.First().Slug);
     }
 
     [Fact]

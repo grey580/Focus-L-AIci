@@ -60,7 +60,11 @@ public sealed partial class ContextService
     ];
     private static readonly HashSet<string> DirectoryAdminAttributeTokens =
     [
-        "email", "emails", "mail", "mailbox", "proxyaddresses", "attribute", "attributes", "upn", "userprincipalname", "mailnickname"
+        "email", "emails", "mail", "mailbox", "proxyaddresses", "attribute", "attributes", "upn", "userprincipalname", "mailnickname", "title", "department", "phone", "telephone"
+    ];
+    private static readonly HashSet<string> DirectoryAdminExactAttributeTokens =
+    [
+        "title", "department", "phone", "telephone", "proxyaddresses", "upn", "userprincipalname", "mailnickname"
     ];
     private static readonly string[] DirectoryAdminAttributePhrases =
     [
@@ -1974,9 +1978,11 @@ public sealed partial class ContextService
         var queryHasAttributeIntent = queryTokens.Any(token => DirectoryAdminAttributeTokens.Contains(token))
                                      || ContainsAnyPhrase(normalizedQuery, DirectoryAdminAttributePhrases);
         var queryHasAttributeAuditIntent = queryHasAttributeIntent && queryTokens.Any(token => DirectoryAdminAuditActionTokens.Contains(token));
+        var queryExactAttributeTokens = GetDirectoryAdminExactAttributeFamilies(queryTokens, normalizedQuery);
         var skillHasAttributeSignal = tokens.Any(token => DirectoryAdminAttributeTokens.Contains(token))
                                       || ContainsAnyPhrase(normalizedSkillText, DirectoryAdminAttributePhrases);
         var skillHasAttributeAuditSignal = skillHasAttributeSignal && tokens.Any(token => DirectoryAdminAuditActionTokens.Contains(token));
+        var skillExactAttributeTokens = GetDirectoryAdminExactAttributeFamilies(tokens, normalizedSkillText);
 
         if (queryHasAttributeIntent && !skillHasAttributeSignal)
         {
@@ -1984,6 +1990,11 @@ public sealed partial class ContextService
         }
 
         if (queryHasAttributeAuditIntent && !skillHasAttributeAuditSignal)
+        {
+            return false;
+        }
+
+        if (queryExactAttributeTokens.Count > 0 && !skillExactAttributeTokens.Overlaps(queryExactAttributeTokens))
         {
             return false;
         }
@@ -2236,6 +2247,46 @@ public sealed partial class ContextService
         return tokens.Count == 0 && !keepStopWords
             ? Tokenize(value, keepStopWords: true)
             : tokens;
+    }
+
+    private static HashSet<string> GetDirectoryAdminExactAttributeFamilies(IReadOnlyCollection<string> tokens, string normalizedText)
+    {
+        var families = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (tokens.Any(token => token.Equals("title", StringComparison.OrdinalIgnoreCase)))
+        {
+            families.Add("title");
+        }
+
+        if (tokens.Any(token => token.Equals("department", StringComparison.OrdinalIgnoreCase)))
+        {
+            families.Add("department");
+        }
+
+        if (tokens.Any(token => token.Equals("phone", StringComparison.OrdinalIgnoreCase) || token.Equals("telephone", StringComparison.OrdinalIgnoreCase)))
+        {
+            families.Add("phone");
+        }
+
+        if (tokens.Any(token => token.Equals("proxyaddresses", StringComparison.OrdinalIgnoreCase))
+            || normalizedText.Contains("proxy addresses", StringComparison.Ordinal))
+        {
+            families.Add("proxyaddresses");
+        }
+
+        if (tokens.Any(token => token.Equals("upn", StringComparison.OrdinalIgnoreCase) || token.Equals("userprincipalname", StringComparison.OrdinalIgnoreCase))
+            || normalizedText.Contains("user principal name", StringComparison.Ordinal))
+        {
+            families.Add("upn");
+        }
+
+        if (tokens.Any(token => token.Equals("mailnickname", StringComparison.OrdinalIgnoreCase))
+            || normalizedText.Contains("mail nickname", StringComparison.Ordinal))
+        {
+            families.Add("mailnickname");
+        }
+
+        return families;
     }
 
     private static IEnumerable<string> EnumerateTokens(string? value, bool keepStopWords = false)

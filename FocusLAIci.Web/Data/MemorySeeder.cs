@@ -751,6 +751,27 @@ public static class MemorySeeder
             true,
             "microsoft"),
         new(
+            "Audit on-prem Active Directory user attributes",
+            "audit-on-prem-active-directory-user-attributes",
+            "Use Active Directory PowerShell to find on-prem users with missing or blank attributes such as title, department, mail, or phone values.",
+            SkillCategory.Task,
+            "Use this when you need a PowerShell script or report for on-prem Active Directory users who are missing profile attributes.",
+            """
+            Confirm you are querying on-prem Active Directory with the ActiveDirectory module and not Exchange Online or Graph.
+            Use Get-ADUser with the exact properties you need, such as Title, Department, Mail, or OfficePhone.
+            Filter for blank or missing attribute values after selecting the relevant users.
+            Return only the fields needed for follow-up cleanup, such as SamAccountName, DisplayName, and the missing attribute columns.
+            Export to CSV when the results need to be reviewed or corrected by someone else.
+            """,
+            """
+            Create a PowerShell script to find on-prem Active Directory users missing a title.
+            Export Active Directory users missing Department or Mail to CSV.
+            Report which AD users have blank profile attributes that should be populated.
+            """,
+            "active directory, on prem, on-prem, powershell, get-aduser, users, missing title, missing department, missing mail, blank attributes",
+            true,
+            "microsoft"),
+        new(
             "Get Exchange Online mailbox inventory",
             "get-exchange-online-mailbox-inventory",
             "Use Exchange Online PowerShell to list mailboxes and their mailbox types with `Get-EXOMailbox` and `RecipientTypeDetails`.",
