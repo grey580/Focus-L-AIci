@@ -183,10 +183,12 @@ public sealed partial class ContextService
         var repositoryArchitectureQuery = intentPrediction.IsRepositoryArchitectureQuery;
         var currentProjectCodeQuery = explicitCodeQuery && HasCurrentProjectHint(tokens);
         var localSupportQuery = IsLocalSupportQuery(tokens);
+        var fileComparisonQuery = HasFileComparisonIntent(tokens, normalizedQuestionPhrase);
         var webUiQuery = IsWebUiQuery(tokens);
         var cloudOpsQuery = IsCloudOpsQuery(tokens);
         var desktopAppQuery = IsDesktopAppQuery(tokens, normalizedQuestionPhrase);
         var suppressCodeGraph = (externalAdminQuery && !explicitCodeQuery)
+                                || fileComparisonQuery
                                 || genericAutomationQuery
                                 || localSupportQuery
                                 || (cloudOpsQuery && !explicitCodeQuery)
@@ -385,6 +387,7 @@ public sealed partial class ContextService
             .Where(x => x.Match.Score > 0)
             .Where(x => !directoryAdminQuery || explicitCodeQuery || IsDirectoryAdminRelevantMemory(x.Memory, tokens, normalizedQuestionPhrase))
             .Where(x => !directoryAdminQuery || explicitCodeQuery || x.Match.Score >= 20m)
+            .Where(x => !fileComparisonQuery || IsFileComparisonRelevantMemory(x.Memory))
             .Where(x => !genericAutomationQuery || IsGenericAutomationRelevantMemory(x.Memory))
             .Where(x => !localSupportQuery || IsLocalSupportRelevantMemory(x.Memory))
             .Where(x => !webUiQuery || currentProjectCodeQuery || IsWebUiRelevantMemory(x.Memory))
@@ -2032,6 +2035,24 @@ public sealed partial class ContextService
         var productTokens = new[] { "grey", "canary", "focus", "sophos", "dstc" };
         return tokens.Count(token => GenericAutomationHighSignalTokens.Contains(token)) >= 2
                && productTokens.Count(token => tokens.Contains(token)) == 0;
+    }
+
+    private static bool IsFileComparisonRelevantMemory(MemoryEntry memory)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var normalizedText = NormalizePhrase(text);
+        var tokens = Tokenize(text);
+        return HasFileComparisonIntent(tokens, normalizedText)
+               || (tokens.Any(token => token is "powershell" or "script")
+                   && tokens.Any(token => token is "hash" or "hashes" or "compare" or "diff" or "difference" or "differences"));
     }
 
     private static bool IsGenericAutomationRelevantSkill(SkillEntry skill, IReadOnlyCollection<string> queryTokens, string normalizedQuery)

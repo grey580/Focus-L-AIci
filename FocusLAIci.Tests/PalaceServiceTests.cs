@@ -1907,6 +1907,34 @@ public sealed class PalaceServiceTests
             Summary = "Application code.",
             UpdatedUtc = DateTime.UtcNow
         });
+        dbContext.Memories.AddRange(
+            new MemoryEntry
+            {
+                Title = "Compare folder hashes with PowerShell",
+                Summary = "Use Get-FileHash and relative paths to compare two directory trees.",
+                Content = "Build a PowerShell diff that shows left-only, right-only, and changed files.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new MemoryEntry
+            {
+                Title = "Local executable and application locations",
+                Summary = "Verified workstation paths for PowerShell, git, and dotnet.",
+                Content = "Reference locations for local task runners on this machine.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new MemoryEntry
+            {
+                Title = "ADMT cross-forest migration conditional forwarder fix",
+                Summary = "Forest and DNS repair guidance for a directory migration issue.",
+                Content = "Recreate the conditional forwarder and validate domain resolution for ADMT.",
+                Kind = MemoryKind.Incident,
+                SourceKind = SourceKind.DebugSession,
+                UpdatedUtc = DateTime.UtcNow
+            });
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var service = new ContextService(dbContext);
@@ -1949,6 +1977,9 @@ public sealed class PalaceServiceTests
         Assert.Equal("compare-folder-contents-with-powershell", pack.RecommendedSkills.First().Slug);
         Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "get-exchange-online-mailbox-inventory");
         Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "audit-on-prem-active-directory-user-attributes");
+        Assert.True(pack.Memories.Count == 0 || pack.Memories.First().Title == "Compare folder hashes with PowerShell");
+        Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("Local executable", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("ADMT", StringComparison.OrdinalIgnoreCase));
         Assert.Empty(pack.CodeGraphProjects);
         Assert.Empty(pack.CodeGraphFiles);
         Assert.Empty(pack.CodeGraphNodes);
