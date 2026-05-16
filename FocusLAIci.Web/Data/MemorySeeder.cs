@@ -751,6 +751,27 @@ public static class MemorySeeder
             true,
             "microsoft"),
         new(
+            "Get Exchange Online mailbox inventory",
+            "get-exchange-online-mailbox-inventory",
+            "Use Exchange Online PowerShell to list mailboxes and their mailbox types with `Get-EXOMailbox` and `RecipientTypeDetails`.",
+            SkillCategory.Task,
+            "Use this when you need a PowerShell script to enumerate Exchange Online mailboxes, export mailbox types, or quickly answer what mailbox kinds exist in a tenant.",
+            """
+            Confirm the ExchangeOnlineManagement module is available and connect with Connect-ExchangeOnline.
+            Use Get-EXOMailbox -ResultSize Unlimited to enumerate mailboxes instead of paging manually.
+            Select the output fields you actually need, especially DisplayName, PrimarySmtpAddress, and RecipientTypeDetails.
+            Export to CSV when the result should be shared or reviewed outside the shell.
+            Disconnect cleanly after the query finishes.
+            """,
+            """
+            Create a PowerShell script to get all mailboxes and their types from Exchange Online.
+            Export Exchange Online mailboxes with RecipientTypeDetails to CSV.
+            Use Get-EXOMailbox to inventory shared, user, and room mailboxes.
+            """,
+            "exchange online, exchange online powershell, exo, powershell, get-exomailbox, mailboxes, mailbox types, recipienttypedetails, exchangeonlinemanagement",
+            true,
+            "microsoft"),
+        new(
             "Review endpoint uninstall and recovery flow",
             "review-endpoint-uninstall-and-recovery-flow",
             "Follow the Grey Canary endpoint removal workflow carefully so uninstall, recovery, and final cleanup stay aligned with prior decisions.",

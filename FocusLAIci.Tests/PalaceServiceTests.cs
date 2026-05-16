@@ -365,6 +365,7 @@ public sealed class PalaceServiceTests
         Assert.Contains(skills, x => x.Slug == "plan-threat-model-analysis");
         Assert.Contains(skills, x => x.Slug == "manage-secret-scanning");
         Assert.Contains(skills, x => x.Slug == "configure-codeql-scanning");
+        Assert.Contains(skills, x => x.Slug == "get-exchange-online-mailbox-inventory");
         Assert.All(skills.Where(x =>
             x.Slug is "acquire-codebase-knowledge"
                 or "generate-architecture-blueprint"
@@ -385,7 +386,8 @@ public sealed class PalaceServiceTests
                 or "run-security-review"
                 or "plan-threat-model-analysis"
                 or "manage-secret-scanning"
-                or "configure-codeql-scanning"), x => Assert.NotNull(x.ReviewAfterUtc));
+                or "configure-codeql-scanning"
+                or "get-exchange-online-mailbox-inventory"), x => Assert.NotNull(x.ReviewAfterUtc));
     }
 
     [Fact]
@@ -409,6 +411,35 @@ public sealed class PalaceServiceTests
         Assert.Equal(4, bootstrap.FeaturedAgents.Count);
         Assert.Contains(bootstrap.RecommendedAgents, x => x.Slug == "context-agent");
         Assert.Contains("Scoped agents:", workspace.ExportText);
+    }
+
+    [Fact]
+    public async Task RecommendSkillsAsync_PrefersExchangeOnlineMailboxInventorySkill()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var scope = harness.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<FocusMemoryContext>();
+        var repoSkillCatalogService = scope.ServiceProvider.GetRequiredService<RepoSkillCatalogService>();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        var service = new PalaceService(
+            dbContext,
+            new ContextService(dbContext),
+            NullFocusEventPublisher.Instance,
+            null,
+            new FocusAgentCatalogService(),
+            repoSkillCatalogService);
+
+        var recommendations = await service.RecommendSkillsAsync(
+            "need to create a powershell script to get all mailboxes and their types from exchange online",
+            null,
+            null,
+            5,
+            CancellationToken.None);
+
+        Assert.NotEmpty(recommendations);
+        Assert.Equal("get-exchange-online-mailbox-inventory", recommendations.First().Slug);
     }
 
     [Fact]
