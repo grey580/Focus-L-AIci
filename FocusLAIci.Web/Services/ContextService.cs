@@ -17,7 +17,7 @@ public sealed partial class ContextService
         "they", "this", "those", "through", "use", "using", "very", "want", "what", "when", "where", "which",
         "with", "would", "your"
     ];
-    private static readonly HashSet<string> PreservedShortTokens = ["ad"];
+    private static readonly HashSet<string> PreservedShortTokens = ["ad", "pc"];
     private static readonly Dictionary<string, string[]> SemanticAliases = new(StringComparer.OrdinalIgnoreCase)
     {
         ["bug"] = ["issue", "failure", "incident"],
@@ -97,11 +97,13 @@ public sealed partial class ContextService
     ];
     private static readonly HashSet<string> LocalSupportTokens =
     [
-        "windows", "pc", "network", "wifi", "slow", "performance", "troubleshoot", "troubleshooting", "latency", "local"
+        "windows", "pc", "network", "wifi", "slow", "performance", "troubleshoot", "troubleshooting", "latency", "local",
+        "wmi", "cim", "winmgmt", "rpc", "computer", "computers", "winrm"
     ];
     private static readonly HashSet<string> LocalSupportHighSignalTokens =
     [
-        "network", "wifi", "slow", "performance", "troubleshoot", "troubleshooting", "latency"
+        "network", "wifi", "slow", "performance", "troubleshoot", "troubleshooting", "latency",
+        "wmi", "cim", "winmgmt", "rpc", "computer", "computers", "winrm"
     ];
     private static readonly HashSet<string> WebUiTokens =
     [
@@ -205,7 +207,9 @@ public sealed partial class ContextService
             explicitCodeQuery = false;
         }
 
-        var genericAutomationQuery = intentPrediction.IsGenericAutomationQuery && !directoryAdminQuery && !explicitCodeQuery;
+        var localSupportQuery = IsLocalSupportQuery(tokens);
+        var wmiDiagnosticQuery = HasWmiDiagnosticIntent(tokens, normalizedQuestionPhrase);
+        var genericAutomationQuery = intentPrediction.IsGenericAutomationQuery && !directoryAdminQuery && !explicitCodeQuery && !localSupportQuery;
         var currentProjectCodeQuery = explicitCodeQuery && currentProjectHint;
         var projectHistoryQuery = intentPrediction.IsProjectHistoryQuery && !directoryAdminQuery && !genericAutomationQuery && !fileComparisonQuery;
         if (projectHistoryQuery)
@@ -213,7 +217,6 @@ public sealed partial class ContextService
             preferDurableMemoryLead = true;
         }
 
-        var localSupportQuery = IsLocalSupportQuery(tokens);
         var webUiQuery = IsWebUiQuery(tokens);
         var cloudOpsQuery = IsCloudOpsQuery(tokens);
         var desktopAppQuery = IsDesktopAppQuery(tokens, normalizedQuestionPhrase);
@@ -430,6 +433,7 @@ public sealed partial class ContextService
             .Where(x => !directoryAdminQuery || explicitCodeQuery || x.Match.Score >= 20m)
             .Where(x => !fileComparisonQuery || IsFileComparisonRelevantMemory(x.Memory))
             .Where(x => !projectHistoryQuery || projectHistoryFocusTokens.Count == 0 || IsProjectHistoryRelevantMemory(x.Memory, projectHistoryFocusTokens))
+            .Where(x => !wmiDiagnosticQuery || IsWmiDiagnosticRelevantMemory(x.Memory))
             .Where(x => !genericAutomationQuery || IsGenericAutomationRelevantMemory(x.Memory))
             .Where(x => !localSupportQuery || IsLocalSupportRelevantMemory(x.Memory))
             .Where(x => !webUiQuery || currentProjectCodeQuery || IsWebUiRelevantMemory(x.Memory))
@@ -736,15 +740,23 @@ public sealed partial class ContextService
         {
             recommendedSkillMatches = Array.Empty<SkillRecommendationMatch>();
         }
+        else if (wmiDiagnosticQuery)
+        {
+            recommendedSkillMatches = recommendedSkillMatches
+                .Where(match => IsWmiDiagnosticRelevantSkill(match.Skill))
+                .ToArray();
+        }
+        else if (localSupportQuery)
+        {
+            recommendedSkillMatches = recommendedSkillMatches
+                .Where(match => IsLocalSupportRelevantSkill(match.Skill))
+                .ToArray();
+        }
         else if (genericAutomationQuery)
         {
             recommendedSkillMatches = recommendedSkillMatches
                 .Where(match => IsGenericAutomationRelevantSkill(match.Skill, tokens, normalizedQuestionPhrase))
                 .ToArray();
-        }
-        else if (localSupportQuery)
-        {
-            recommendedSkillMatches = Array.Empty<SkillRecommendationMatch>();
         }
         else if (webUiQuery)
         {
@@ -2119,6 +2131,49 @@ public sealed partial class ContextService
         });
         var tokens = Tokenize(text);
         return focusTokens.Count > 0 && focusTokens.Count(token => tokens.Contains(token)) >= 2;
+    }
+
+    private static bool HasWmiDiagnosticIntent(IReadOnlyCollection<string> tokens, string normalizedQuery)
+        => (tokens.Any(token => token is "wmi" or "cim" or "winmgmt" or "winrm")
+            || normalizedQuery.Contains("get ciminstance", StringComparison.Ordinal)
+            || normalizedQuery.Contains("get wmiobject", StringComparison.Ordinal))
+           && tokens.Any(token => token is "pc" or "computer" or "computers" or "windows" or "local");
+
+    private static bool IsWmiDiagnosticRelevantMemory(MemoryEntry memory)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var normalizedText = NormalizePhrase(text);
+        var tokens = Tokenize(text);
+        return (tokens.Any(token => token is "wmi" or "cim" or "winmgmt" or "winrm")
+                || normalizedText.Contains("get ciminstance", StringComparison.Ordinal)
+                || normalizedText.Contains("get wmiobject", StringComparison.Ordinal))
+               && tokens.Any(token => token is "windows" or "pc" or "computer" or "computers");
+    }
+
+    private static bool IsWmiDiagnosticRelevantSkill(SkillEntry skill)
+    {
+        var text = string.Join(' ', new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.WhenToUse,
+            skill.Flow,
+            skill.TriggerHintsText
+        });
+        var normalizedText = NormalizePhrase(text);
+        var tokens = Tokenize(text);
+        return (tokens.Any(token => token is "wmi" or "cim" or "winmgmt" or "winrm")
+                || normalizedText.Contains("get ciminstance", StringComparison.Ordinal)
+                || normalizedText.Contains("get wmiobject", StringComparison.Ordinal))
+               && tokens.Any(token => token is "windows" or "pc" or "computer" or "computers");
     }
 
     private static bool IsGenericAutomationRelevantSkill(SkillEntry skill, IReadOnlyCollection<string> queryTokens, string normalizedQuery)

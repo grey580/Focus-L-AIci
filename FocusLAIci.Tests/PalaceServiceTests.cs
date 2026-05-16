@@ -367,6 +367,7 @@ public sealed class PalaceServiceTests
         Assert.Contains(skills, x => x.Slug == "configure-codeql-scanning");
         Assert.Contains(skills, x => x.Slug == "audit-on-prem-active-directory-user-attributes");
         Assert.Contains(skills, x => x.Slug == "compare-folder-contents-with-powershell");
+        Assert.Contains(skills, x => x.Slug == "check-wmi-health-on-a-windows-pc");
         Assert.Contains(skills, x => x.Slug == "get-exchange-online-mailbox-inventory");
         Assert.All(skills.Where(x =>
             x.Slug is "acquire-codebase-knowledge"
@@ -390,6 +391,7 @@ public sealed class PalaceServiceTests
                 or "manage-secret-scanning"
                 or "audit-on-prem-active-directory-user-attributes"
                 or "compare-folder-contents-with-powershell"
+                or "check-wmi-health-on-a-windows-pc"
                 or "configure-codeql-scanning"
                 or "get-exchange-online-mailbox-inventory"), x => Assert.NotNull(x.ReviewAfterUtc));
     }
@@ -502,6 +504,37 @@ public sealed class PalaceServiceTests
 
         Assert.NotEmpty(recommendations);
         Assert.Equal("compare-folder-contents-with-powershell", recommendations.First().Slug);
+        Assert.DoesNotContain(recommendations, x => x.Slug == "get-exchange-online-mailbox-inventory");
+        Assert.DoesNotContain(recommendations, x => x.Slug == "audit-on-prem-active-directory-user-attributes");
+    }
+
+    [Fact]
+    public async Task RecommendSkillsAsync_PrefersWindowsWmiHealthSkill()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var scope = harness.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<FocusMemoryContext>();
+        var repoSkillCatalogService = scope.ServiceProvider.GetRequiredService<RepoSkillCatalogService>();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        var service = new PalaceService(
+            dbContext,
+            new ContextService(dbContext),
+            NullFocusEventPublisher.Instance,
+            null,
+            new FocusAgentCatalogService(),
+            repoSkillCatalogService);
+
+        var recommendations = await service.RecommendSkillsAsync(
+            "create a powershell script that can check and see if wmi is working on a pc",
+            null,
+            null,
+            5,
+            CancellationToken.None);
+
+        Assert.NotEmpty(recommendations);
+        Assert.Equal("check-wmi-health-on-a-windows-pc", recommendations.First().Slug);
         Assert.DoesNotContain(recommendations, x => x.Slug == "get-exchange-online-mailbox-inventory");
         Assert.DoesNotContain(recommendations, x => x.Slug == "audit-on-prem-active-directory-user-attributes");
     }
@@ -2040,6 +2073,30 @@ public sealed class PalaceServiceTests
         Assert.Equal("Built the Sophos XGS desktop monitor in C:\\Copilot\\Sophos-XGS with encrypted credential storage, XML API polling, KPI dashboard, raw-tag explorer, desktop alerts, and dark mode support. Published output lives in the publish folder.", pack.Memories.First().Title);
         Assert.Single(pack.CodeGraphProjects);
         Assert.Equal("Sophos XGS Monitor", pack.CodeGraphProjects.First().Title);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
+    public async Task ContextService_WmiDiagnosticQueries_PreferLocalSupportSkillAndSuppressDirectorySkills()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "create a powershell script that can check and see if wmi is working on a pc",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.RecommendedSkills);
+        Assert.Equal("check-wmi-health-on-a-windows-pc", pack.RecommendedSkills.First().Slug);
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "get-exchange-online-mailbox-inventory");
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "audit-on-prem-active-directory-user-attributes");
+        Assert.Empty(pack.Memories);
+        Assert.Empty(pack.CodeGraphProjects);
         Assert.Empty(pack.CodeGraphFiles);
         Assert.Empty(pack.CodeGraphNodes);
     }

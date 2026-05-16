@@ -793,6 +793,27 @@ public static class MemorySeeder
             true,
             null),
         new(
+            "Check WMI health on a Windows PC",
+            "check-wmi-health-on-a-windows-pc",
+            "Use PowerShell and CIM/WMI queries to confirm that WMI is responding on a Windows PC and surface the most common local failures cleanly.",
+            SkillCategory.Task,
+            "Use this when you need a PowerShell script to verify whether WMI is working on a Windows PC or remote computer.",
+            """
+            Start with a simple CIM or WMI query such as Win32_OperatingSystem or Win32_ComputerSystem to prove the provider responds.
+            Catch connection or RPC failures explicitly so you can tell the difference between WMI, firewall, credential, and remoting issues.
+            Check the winmgmt service state when the basic query fails locally.
+            Return a short health result that includes success, the class queried, and the error if WMI is not healthy.
+            Prefer Get-CimInstance first, then fall back to Get-WmiObject only when you specifically need older compatibility behavior.
+            """,
+            """
+            Create a PowerShell script that checks whether WMI is working on a PC.
+            Verify that a remote Windows computer responds to a basic CIM or WMI query.
+            Test winmgmt health and return a clear WMI status result.
+            """,
+            "powershell, wmi, cim, winmgmt, windows pc, remote computer, get-ciminstance, get-wmiobject, rpc, winrm",
+            true,
+            null),
+        new(
             "Get Exchange Online mailbox inventory",
             "get-exchange-online-mailbox-inventory",
             "Use Exchange Online PowerShell to list mailboxes and their mailbox types with `Get-EXOMailbox` and `RecipientTypeDetails`.",
