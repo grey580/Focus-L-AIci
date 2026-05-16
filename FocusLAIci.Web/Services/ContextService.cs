@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using FocusLAIci.Web.Data;
 using FocusLAIci.Web.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 
 namespace FocusLAIci.Web.Services;
 
@@ -38,10 +39,12 @@ public sealed partial class ContextService
     };
 
     private readonly FocusMemoryContext _dbContext;
+    private readonly CurrentProjectContext? _currentProjectContext;
 
-    public ContextService(FocusMemoryContext dbContext)
+    public ContextService(FocusMemoryContext dbContext, IHostEnvironment? hostEnvironment = null)
     {
         _dbContext = dbContext;
+        _currentProjectContext = ResolveCurrentProjectContext(hostEnvironment?.ContentRootPath);
     }
 
     public async Task<ContextPackViewModel?> BuildContextPackAsync(string? question, CancellationToken cancellationToken)
@@ -213,6 +216,9 @@ public sealed partial class ContextService
             .AsNoTracking()
             .Include(x => x.Wing)
             .ToListAsync(cancellationToken);
+        var projectPreferences = projects.ToDictionary(
+            project => project.Id,
+            project => BuildProjectPreference(project, tokens, normalizedQuestion));
 
         var memoryResults = memories
             .Select(memory =>
@@ -360,6 +366,8 @@ public sealed partial class ContextService
                 score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.CodeGraphProject), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.CodeGraphProject));
                 score = ApplyBoost(score, effectiveInput.PreferRecentChanges && recentProjectIds.Contains(project.Id) ? 1.5m : 0m, "Recent change");
                 score = ApplyBoost(score, preferDurableMemoryLead ? 0.5m : 0m, "Project context");
+                score = ApplyBoost(score, projectPreferences[project.Id].ProjectQueryBoost, projectPreferences[project.Id].ProjectQueryBoostLabel);
+                score = ApplyBoost(score, projectPreferences[project.Id].RepoAffinityBoost, projectPreferences[project.Id].RepoAffinityBoostLabel);
 
                 return new { Project = project, Match = score };
             })
@@ -399,6 +407,12 @@ public sealed partial class ContextService
                 score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.CodeGraphFile), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.CodeGraphFile));
                 score = ApplyBoost(score, effectiveInput.PreferRecentChanges && recentFileIds.Contains(file.Id) ? 1.5m : 0m, "Recent change");
                 score = ApplyBoost(score, preferDurableMemoryLead ? 0.25m : 0m, "Supporting file context");
+                if (projectPreferences.TryGetValue(file.ProjectId, out var projectPreference))
+                {
+                    score = ApplyBoost(score, projectPreference.ProjectQueryBoost, projectPreference.ProjectQueryBoostLabel);
+                    score = ApplyBoost(score, projectPreference.RepoAffinityBoost, projectPreference.RepoAffinityBoostLabel);
+                }
+
                 return new { File = file, Match = score };
             })
             .Where(x => x.Match.Score > 0)
@@ -438,6 +452,11 @@ public sealed partial class ContextService
                 score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.CodeGraphNode), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.CodeGraphNode));
                 score = ApplyBoost(score, effectiveInput.PreferRecentChanges && recentNodeIds.Contains(node.Id) ? 1.5m : 0m, "Recent change");
                 score = ApplyBoost(score, preferDurableMemoryLead ? 0.25m : 0m, "Supporting symbol context");
+                if (projectPreferences.TryGetValue(node.ProjectId, out var projectPreference))
+                {
+                    score = ApplyBoost(score, projectPreference.ProjectQueryBoost, projectPreference.ProjectQueryBoostLabel);
+                    score = ApplyBoost(score, projectPreference.RepoAffinityBoost, projectPreference.RepoAffinityBoostLabel);
+                }
 
                 return new { Node = node, Match = score };
             })
@@ -1476,6 +1495,99 @@ public sealed partial class ContextService
             : string.Empty;
     }
 
+    private ProjectPreference BuildProjectPreference(CodeGraphProject project, IReadOnlyCollection<string> tokens, string normalizedQuestion)
+    {
+        var projectQueryBoost = BuildProjectQueryBoost(project, tokens, normalizedQuestion);
+        var repoAffinityBoost = BuildProjectRepoAffinityBoost(project, tokens, projectQueryBoost > 0m);
+        return new ProjectPreference(
+            projectQueryBoost,
+            projectQueryBoost > 0m ? "Explicit project match" : string.Empty,
+            repoAffinityBoost,
+            repoAffinityBoost > 0m ? "Current project repo" : repoAffinityBoost < 0m ? "Outside current project" : string.Empty);
+    }
+
+    private static decimal BuildProjectQueryBoost(CodeGraphProject project, IReadOnlyCollection<string> tokens, string normalizedQuestion)
+    {
+        var projectTokens = Tokenize($"{project.Name} {Path.GetFileName(project.RootPath)}");
+        var directMatches = tokens.Intersect(projectTokens, StringComparer.OrdinalIgnoreCase).Count();
+        if (directMatches >= 2)
+        {
+            return 5m;
+        }
+
+        var normalizedProjectText = NormalizePhrase($"{project.Name} {project.RootPath}");
+        if (!string.IsNullOrWhiteSpace(normalizedQuestion)
+            && (normalizedProjectText.Contains(normalizedQuestion, StringComparison.Ordinal)
+                || ScorePhraseSimilarity(normalizedQuestion, normalizedProjectText) >= 0.84m))
+        {
+            return 5m;
+        }
+
+        return directMatches == 1 ? 2.5m : 0m;
+    }
+
+    private decimal BuildProjectRepoAffinityBoost(CodeGraphProject project, IReadOnlyCollection<string> tokens, bool explicitProjectMatch)
+    {
+        if (_currentProjectContext is null)
+        {
+            return 0m;
+        }
+
+        var currentProjectHint = tokens.Intersect(_currentProjectContext.Tokens, StringComparer.OrdinalIgnoreCase).Any();
+        if (IsWithinCurrentProject(project.RootPath))
+        {
+            return explicitProjectMatch || currentProjectHint ? 5m : 3m;
+        }
+
+        return currentProjectHint && !explicitProjectMatch ? -4m : 0m;
+    }
+
+    private bool IsWithinCurrentProject(string? candidatePath)
+    {
+        if (_currentProjectContext is null || string.IsNullOrWhiteSpace(candidatePath))
+        {
+            return false;
+        }
+
+        var normalizedCandidate = NormalizePath(candidatePath);
+        return normalizedCandidate.StartsWith(_currentProjectContext.RootPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static CurrentProjectContext? ResolveCurrentProjectContext(string? contentRootPath)
+    {
+        if (string.IsNullOrWhiteSpace(contentRootPath))
+        {
+            return null;
+        }
+
+        var repositoryRoot = FindRepositoryRoot(contentRootPath) ?? Path.GetFullPath(contentRootPath);
+        var tokenSource = string.Join(' ', new[]
+        {
+            Path.GetFileName(repositoryRoot),
+            Path.GetFileName(Path.GetFullPath(contentRootPath))
+        }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        return new CurrentProjectContext(NormalizePath(repositoryRoot), Tokenize(tokenSource));
+    }
+
+    private static string? FindRepositoryRoot(string path)
+    {
+        var current = new DirectoryInfo(Path.GetFullPath(path));
+        while (current is not null)
+        {
+            if (Directory.Exists(Path.Combine(current.FullName, ".git")))
+            {
+                return current.FullName;
+            }
+
+            current = current.Parent;
+        }
+
+        return null;
+    }
+
+    private static string NormalizePath(string path)
+        => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+
     private static HashSet<string> Tokenize(string? value, bool keepStopWords = false)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -1570,6 +1682,8 @@ public sealed partial class ContextService
     private static partial Regex WordRegex();
 
     private sealed record WeightedField(string? Text, string Key, string Label, decimal PerTokenWeight, string ExactReason, string PartialReason);
+    private sealed record CurrentProjectContext(string RootPath, IReadOnlyCollection<string> Tokens);
+    private sealed record ProjectPreference(decimal ProjectQueryBoost, string ProjectQueryBoostLabel, decimal RepoAffinityBoost, string RepoAffinityBoostLabel);
     private sealed record ContextScoreOutcome(
         decimal Score,
         decimal SemanticScore,

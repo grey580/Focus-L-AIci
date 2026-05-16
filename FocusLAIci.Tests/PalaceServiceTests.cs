@@ -1452,6 +1452,56 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task ContextService_PrefersCurrentProjectForCodeGraphMatches()
+    {
+        var repoRoot = Path.Combine(Path.GetTempPath(), $"focus-current-repo-{Guid.NewGuid():N}");
+        var contentRoot = Path.Combine(repoRoot, "FocusLAIci.Web");
+        Directory.CreateDirectory(Path.Combine(repoRoot, ".git"));
+        Directory.CreateDirectory(contentRoot);
+
+        try
+        {
+            await using var harness = await TestHarness.CreateAsync(contentRoot);
+            await using var scope = harness.Services.CreateAsyncScope();
+            var contextService = scope.ServiceProvider.GetRequiredService<ContextService>();
+            var dbContext = scope.ServiceProvider.GetRequiredService<FocusMemoryContext>();
+
+            var currentProject = new CodeGraphProject
+            {
+                Name = "Focus L-AIci",
+                RootPath = repoRoot,
+                Description = "Current Focus repo.",
+                Summary = "Current project summary.",
+                UpdatedUtc = DateTime.UtcNow
+            };
+            var unrelatedProject = new CodeGraphProject
+            {
+                Name = "Simple SMB Tester",
+                RootPath = @"C:\Copilot\Simple SMB Tester",
+                Description = "Unrelated repo with broad dashboard wording.",
+                Summary = "Dashboard utilities and other code.",
+                UpdatedUtc = DateTime.UtcNow
+            };
+
+            dbContext.CodeGraphProjects.AddRange(currentProject, unrelatedProject);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+
+            var pack = await contextService.BuildContextPackAsync("focus dashboard width", CancellationToken.None);
+
+            Assert.NotNull(pack);
+            Assert.Equal(currentProject.Name, pack!.CodeGraphProjects.First().Title);
+            Assert.DoesNotContain(pack.CodeGraphProjects, x => x.Title == unrelatedProject.Name && x.Score >= pack.CodeGraphProjects.First().Score);
+        }
+        finally
+        {
+            if (Directory.Exists(repoRoot))
+            {
+                Directory.Delete(repoRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task QuickCaptureAsync_CreatesMemoryWithDerivedTags()
     {
         await using var harness = await TestHarness.CreateAsync();
