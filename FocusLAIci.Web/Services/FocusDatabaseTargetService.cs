@@ -24,7 +24,7 @@ public sealed class FocusDatabaseTargetService
         _configuration = configuration;
         _environment = environment;
         _pathPolicy = pathPolicy;
-        _overrideFilePath = Path.Combine(_environment.ContentRootPath, "focus-palace.database-target.json");
+        _overrideFilePath = ResolveOverrideFilePath(_environment.ContentRootPath);
     }
 
     public IReadOnlyCollection<string> ApprovedDatabaseRoots => _pathPolicy.ApprovedDatabaseRoots;
@@ -197,6 +197,27 @@ public sealed class FocusDatabaseTargetService
 
         var format = suffixIndex == 0 ? "0" : "0.##";
         return $"{size.ToString(format, System.Globalization.CultureInfo.InvariantCulture)} {suffixes[suffixIndex]}";
+    }
+
+    private static string ResolveOverrideFilePath(string contentRootPath)
+    {
+        var contentRootOverridePath = Path.Combine(contentRootPath, "focus-palace.database-target.json");
+        if (File.Exists(contentRootOverridePath))
+        {
+            return contentRootOverridePath;
+        }
+
+        var parentDirectory = Directory.GetParent(contentRootPath);
+        if (parentDirectory is not null)
+        {
+            var parentOverridePath = Path.Combine(parentDirectory.FullName, "focus-palace.database-target.json");
+            if (File.Exists(parentOverridePath))
+            {
+                return parentOverridePath;
+            }
+        }
+
+        return contentRootOverridePath;
     }
 
     private sealed class DatabaseTargetOverride

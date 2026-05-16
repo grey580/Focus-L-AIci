@@ -1,8 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="focusFaviconGradient" x1="10" y1="10" x2="54" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7dd3fc" />
+      <stop offset="0.55" stop-color="#3b82f6" />
+      <stop offset="1" stop-color="#0f172a" />
+    </linearGradient>
+  </defs>
   <rect width="64" height="64" rx="14" fill="#081120" />
-  <circle cx="32" cy="32" r="18" fill="none" stroke="#3b82f6" stroke-width="5" />
-  <circle cx="32" cy="32" r="10" fill="none" stroke="#dbeafe" stroke-width="4" />
+  <path d="M14 18h8l5 5m20-5h5v5m0 18v5h-5m-28 0h-5v-8l5-5" fill="none" stroke="#93c5fd" stroke-linecap="round" stroke-linejoin="round" stroke-width="3" opacity="0.95" />
+  <circle cx="32" cy="32" r="19" fill="none" stroke="url(#focusFaviconGradient)" stroke-width="5" />
+  <circle cx="32" cy="32" r="10.5" fill="none" stroke="#dbeafe" stroke-width="4" />
   <circle cx="32" cy="32" r="4" fill="#dbeafe" />
-  <path d="M32 10v7M32 47v7M10 32h7M47 32h7" stroke="#38bdf8" stroke-linecap="round" stroke-width="3" />
+  <path d="M32 13v8M32 43v8M13 32h8M43 32h8" stroke="#38bdf8" stroke-linecap="round" stroke-width="3" />
+  <path d="M45 19l6-6m-38 38 6-6m26 0 6 6m-38-38 6 6" fill="none" stroke="#1d4ed8" stroke-linecap="round" stroke-width="2.25" opacity="0.8" />
   <circle cx="50" cy="14" r="2.5" fill="#7dd3fc" />
 </svg>

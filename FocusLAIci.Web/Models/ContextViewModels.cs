@@ -12,6 +12,22 @@ public sealed class ContextBriefInput
     [Display(Name = "Include completed todos and tickets")]
     public bool IncludeCompletedWork { get; set; }
 
+    [Display(Name = "Wing")]
+    public Guid? WingId { get; set; }
+
+    [Display(Name = "Room")]
+    public Guid? RoomId { get; set; }
+
+    [Display(Name = "Memory kind")]
+    public MemoryKind? Kind { get; set; }
+
+    [StringLength(120)]
+    [Display(Name = "Tag")]
+    public string Tag { get; set; } = string.Empty;
+
+    [Display(Name = "Include retired memories")]
+    public bool IncludeRetired { get; set; }
+
     [Display(Name = "Include ticket notes, activity, and time logs")]
     public bool ExpandHistory { get; set; } = true;
 
@@ -21,6 +37,9 @@ public sealed class ContextBriefInput
 
     [Display(Name = "Pack goal")]
     public ContextPackGoal PackGoal { get; set; } = ContextPackGoal.General;
+
+    [Display(Name = "Prefer recent changes")]
+    public bool PreferRecentChanges { get; set; } = true;
 }
 
 public sealed class ContextPackViewModel
@@ -38,6 +57,7 @@ public sealed class ContextPackViewModel
     public IReadOnlyCollection<ContextRecordViewModel> CodeGraphProjects { get; init; } = Array.Empty<ContextRecordViewModel>();
     public IReadOnlyCollection<ContextRecordViewModel> CodeGraphFiles { get; init; } = Array.Empty<ContextRecordViewModel>();
     public IReadOnlyCollection<ContextRecordViewModel> CodeGraphNodes { get; init; } = Array.Empty<ContextRecordViewModel>();
+    public IReadOnlyCollection<SkillCardViewModel> RecommendedSkills { get; init; } = Array.Empty<SkillCardViewModel>();
     public string ExportText { get; init; } = string.Empty;
 }
 

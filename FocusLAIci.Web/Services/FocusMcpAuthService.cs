@@ -1,5 +1,6 @@
 using System.Net;
 using System.Collections.Concurrent;
+using FocusLAIci.Web.Models;
 
 namespace FocusLAIci.Web.Services;
 
@@ -11,46 +12,77 @@ public sealed class FocusMcpAuthService(IConfiguration configuration)
     {
         return GetConfiguredKeys().Count == 0
             ? "Loopback clients are allowed without an API key. Non-loopback clients are denied."
-            : "Loopback clients are allowed without an API key. Non-loopback clients must supply a configured MCP API key.";
+            : "Loopback clients are allowed without an API key. Non-loopback clients must supply a configured MCP API key. Keys can be labeled and limited to read-only access.";
     }
 
-    public bool TryAuthorize(HttpContext httpContext, out string authMode, out string errorMessage)
+    public bool TryAuthorize(HttpContext httpContext, out FocusMcpAuthorizationResult result)
     {
-        authMode = "loopback";
-        errorMessage = string.Empty;
-
         var remoteIp = httpContext.Connection.RemoteIpAddress;
         var remoteAddress = remoteIp?.ToString() ?? "unknown";
         if (!IsWithinRateLimit(remoteAddress))
         {
-            errorMessage = "Rate limit exceeded for this MCP client.";
-            authMode = "rate-limited";
+            result = new FocusMcpAuthorizationResult
+            {
+                IsAuthorized = false,
+                ErrorMessage = "Rate limit exceeded for this MCP client.",
+                AuthMode = "rate-limited"
+            };
             return false;
         }
 
         if (remoteIp is not null && IPAddress.IsLoopback(remoteIp))
         {
+            result = new FocusMcpAuthorizationResult
+            {
+                IsAuthorized = true,
+                AuthMode = "loopback",
+                Label = "loopback",
+                CanWrite = true
+            };
             return true;
         }
 
         var configuredKeys = GetConfiguredKeys();
         if (configuredKeys.Count == 0)
         {
-            errorMessage = "Focus MCP only allows loopback connections unless API keys are configured.";
-            authMode = "denied";
+            result = new FocusMcpAuthorizationResult
+            {
+                IsAuthorized = false,
+                ErrorMessage = "Focus MCP only allows loopback connections unless API keys are configured.",
+                AuthMode = "denied"
+            };
             return false;
         }
 
         var suppliedKey = ReadSuppliedKey(httpContext);
-        if (string.IsNullOrWhiteSpace(suppliedKey) || !configuredKeys.Contains(suppliedKey.Trim()))
+        var keyMatch = configuredKeys.FirstOrDefault(x => string.Equals(x.Value, suppliedKey?.Trim(), StringComparison.Ordinal));
+        if (keyMatch is null)
         {
-            errorMessage = "A valid Focus MCP API key is required.";
-            authMode = "denied";
+            result = new FocusMcpAuthorizationResult
+            {
+                IsAuthorized = false,
+                ErrorMessage = "A valid Focus MCP API key is required.",
+                AuthMode = "denied"
+            };
             return false;
         }
 
-        authMode = "api-key";
+        result = new FocusMcpAuthorizationResult
+        {
+            IsAuthorized = true,
+            AuthMode = keyMatch.CanWrite ? "api-key" : "api-key-readonly",
+            Label = keyMatch.Label,
+            CanWrite = keyMatch.CanWrite
+        };
         return true;
+    }
+
+    public bool TryAuthorize(HttpContext httpContext, out string authMode, out string errorMessage)
+    {
+        var success = TryAuthorize(httpContext, out var result);
+        authMode = result.AuthMode;
+        errorMessage = result.ErrorMessage;
+        return success;
     }
 
     private bool IsWithinRateLimit(string remoteAddress)
@@ -75,9 +107,32 @@ public sealed class FocusMcpAuthService(IConfiguration configuration)
         }
     }
 
-    private HashSet<string> GetConfiguredKeys()
+    private IReadOnlyCollection<ConfiguredApiKey> GetConfiguredKeys()
     {
         var sectionKeys = configuration.GetSection("FocusPalace:Mcp:ApiKeys").Get<string[]>() ?? Array.Empty<string>();
+        var keyedDefinitions = configuration
+            .GetSection("FocusPalace:Mcp:ApiKeyDefinitions")
+            .GetChildren()
+            .Select(section =>
+            {
+                var value = section["Value"]?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return null;
+                }
+
+                var scopes = section.GetSection("Scopes").Get<string[]>() ?? Array.Empty<string>();
+                var canWrite = section.GetValue<bool?>("CanWrite")
+                    ?? !scopes.Any()
+                    || scopes.Any(scope => string.Equals(scope, "write", StringComparison.OrdinalIgnoreCase) || string.Equals(scope, "read-write", StringComparison.OrdinalIgnoreCase));
+
+                return new ConfiguredApiKey(
+                    value,
+                    section["Label"]?.Trim() ?? "api-key",
+                    canWrite);
+            })
+            .Where(x => x is not null)
+            .Cast<ConfiguredApiKey>();
         var inlineKeys = (configuration["FocusPalace:Mcp:ApiKeysCsv"] ?? string.Empty)
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -85,7 +140,11 @@ public sealed class FocusMcpAuthService(IConfiguration configuration)
             .Concat(inlineKeys)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x.Trim())
-            .ToHashSet(StringComparer.Ordinal);
+            .Select(x => new ConfiguredApiKey(x, "api-key", true))
+            .Concat(keyedDefinitions)
+            .GroupBy(x => x.Value, StringComparer.Ordinal)
+            .Select(x => x.First())
+            .ToArray();
     }
 
     private static string ReadSuppliedKey(HttpContext httpContext)
@@ -104,4 +163,6 @@ public sealed class FocusMcpAuthService(IConfiguration configuration)
 
         return string.Empty;
     }
+
+    private sealed record ConfiguredApiKey(string Value, string Label, bool CanWrite);
 }

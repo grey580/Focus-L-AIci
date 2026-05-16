@@ -1,0 +1,160 @@
+@model FocusLAIci.Web.Models.SkillBrowseViewModel
+@{
+    ViewData["Title"] = "Skills";
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Operational runbooks</p>
+        <h1>Skills</h1>
+        <p class="page-copy">Reusable task, system, product, and tooling workflows that make Focus more actionable for future sessions.</p>
+    </div>
+    <a class="btn btn-primary" asp-action="NewSkill">Add Skill</a>
+</section>
+
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-lg-5">
+                <label class="form-label">Search text</label>
+                <input class="form-control" name="query" value="@Model.Query" placeholder="mcp usability, css, microsoft, governance..." />
+            </div>
+            <div class="col-lg-3">
+                <label class="form-label">Category</label>
+                <select class="form-select" name="category">
+                    <option value="">All categories</option>
+                    @foreach (var category in Enum.GetValues<SkillCategory>())
+                    {
+                        if (Model.Category == category)
+                        {
+                            <option value="@category" selected="selected">@category</option>
+                        }
+                        else
+                        {
+                            <option value="@category">@category</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="col-lg-4">
+                <label class="form-label">Wing</label>
+                <select class="form-select" name="wingId">
+                    <option value="">All wings</option>
+                    @foreach (var option in Model.WingOptions)
+                    {
+                        if (option.Value == (Model.WingId?.ToString() ?? string.Empty))
+                        {
+                            <option value="@option.Value" selected="selected">@option.Text</option>
+                        }
+                        else
+                        {
+                            <option value="@option.Value">@option.Text</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="col-lg-3">
+                <div class="form-check mt-4 pt-2">
+                    @if (Model.PinnedOnly)
+                    {
+                        <input class="form-check-input" type="checkbox" name="pinnedOnly" value="true" checked="checked" />
+                    }
+                    else
+                    {
+                        <input class="form-check-input" type="checkbox" name="pinnedOnly" value="true" />
+                    }
+                    <label class="form-check-label">Pinned only</label>
+                </div>
+            </div>
+            <div class="col-lg-3">
+                <div class="form-check mt-4 pt-2">
+                    @if (Model.NeedsReviewOnly)
+                    {
+                        <input class="form-check-input" type="checkbox" name="needsReviewOnly" value="true" checked="checked" />
+                    }
+                    else
+                    {
+                        <input class="form-check-input" type="checkbox" name="needsReviewOnly" value="true" />
+                    }
+                    <label class="form-check-label">Needs review only</label>
+                </div>
+            </div>
+            <div class="col-12">
+                <button class="btn btn-primary" type="submit">Search Skills</button>
+                <a class="btn btn-outline-secondary" asp-action="Index">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="section-heading">
+    <h2>Results</h2>
+    <span>@Model.Skills.Count skills</span>
+</div>
+
+@if (Model.Skills.Count == 0)
+{
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+            <div class="empty-state">
+                <h3>No matching skills</h3>
+                <p>Try broader wording or add a new skill for a workflow you want Focus to remember explicitly.</p>
+                <a class="btn btn-primary" asp-action="NewSkill">Add Skill</a>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var skill in Model.Skills)
+        {
+            <div class="col-lg-6">
+                <article class="card h-100 shadow-sm border-0">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between gap-2 align-items-start mb-2">
+                            <div>
+                                <div class="memory-meta">@skill.CategoryLabel@(string.IsNullOrWhiteSpace(skill.WingName) ? string.Empty : $" • {skill.WingName}")</div>
+                                <h3 class="memory-title">
+                                    <a asp-action="Skill" asp-route-slug="@skill.Slug">@skill.Name</a>
+                                </h3>
+                            </div>
+                            <div class="d-flex gap-2 flex-wrap justify-content-end">
+                                @if (skill.IsReadOnly)
+                                {
+                                    <span class="badge text-bg-info">Repo skill</span>
+                                }
+                                @if (skill.IsPinned)
+                                {
+                                    <span class="badge text-bg-warning">Pinned</span>
+                                }
+                            </div>
+                        </div>
+                        <p class="memory-summary">@skill.Summary</p>
+                        <div class="memory-meta mb-2">@skill.UseCount uses@(skill.LastUsedUtc.HasValue ? $" • last used {skill.LastUsedUtc.Value:yyyy-MM-dd}" : string.Empty)</div>
+                        @if (skill.IsReadOnly)
+                        {
+                            <div class="memory-meta mb-2">@skill.SourceLabel • @skill.SourcePath</div>
+                        }
+                        @if (skill.NeedsReview)
+                        {
+                            <div class="alert alert-warning py-2 px-3 small mb-2">@skill.ReviewLabel</div>
+                        }
+                        @if (skill.TriggerHints.Count > 0)
+                        {
+                            <div class="tag-row">
+                                @foreach (var hint in skill.TriggerHints.Take(6))
+                                {
+                                    <span class="tag-pill">@hint</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <div class="card-footer bg-transparent border-0 pt-0 d-flex justify-content-end">
+                        <a class="btn btn-sm btn-outline-primary" asp-action="Skill" asp-route-slug="@skill.Slug">Open Skill</a>
+                    </div>
+                </article>
+            </div>
+        }
+    </div>
+}

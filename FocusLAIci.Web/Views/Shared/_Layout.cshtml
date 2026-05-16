@@ -14,7 +14,6 @@
     <link rel="alternate icon" href="~/favicon.ico" />
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/FocusLAIci.Web.styles.css" asp-append-version="true" />
 </head>
 <body data-theme="light">
     @{
@@ -22,6 +21,8 @@
         var currentAction = ViewContext.RouteData.Values["action"]?.ToString();
         var dashboardActive = currentController == "Home" ? "active" : string.Empty;
         var exploreActive = currentController == "Palace" && (currentAction == "Explore" || currentAction == "Wing" || currentAction == "Memory") ? "active" : string.Empty;
+        var agentsActive = currentController == "Agents" ? "active" : string.Empty;
+        var skillsActive = currentController == "Skills" ? "active" : string.Empty;
         var visualizerActive = currentController == "Palace" && currentAction == "Visualizer" ? "active" : string.Empty;
         var codeGraphActive = currentController == "CodeGraph" ? "active" : string.Empty;
         var todosActive = currentController == "Todos" ? "active" : string.Empty;
@@ -32,7 +33,7 @@
     }
     <header>
         <nav class="navbar navbar-expand-lg navbar-dark palace-nav shadow-sm mb-4">
-            <div class="container">
+            <div class="focus-shell">
                 <a class="navbar-brand focus-brand" asp-area="" asp-controller="Home" asp-action="Index" aria-label="@siteSettings.DisplayName">
                     <img src="~/branding/focus-mark.svg" alt="" class="focus-brand-mark" />
                     <span class="focus-brand-title">@siteSettings.DisplayName</span>
@@ -50,6 +51,12 @@
                             <a class="nav-link @exploreActive" asp-area="" asp-controller="Palace" asp-action="Explore">Explore</a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link @agentsActive" asp-area="" asp-controller="Agents" asp-action="Index">Agents</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link @skillsActive" asp-area="" asp-controller="Skills" asp-action="Index">Skills</a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link @visualizerActive" asp-area="" asp-controller="Palace" asp-action="Visualizer">Visualizer</a>
                         </li>
                         <li class="nav-item">
@@ -61,14 +68,20 @@
                         <li class="nav-item">
                             <a class="nav-link @ticketsActive" asp-area="" asp-controller="Tickets" asp-action="Index">Tickets</a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link @inspectActive" asp-area="" asp-controller="Admin" asp-action="Inspect">Inspect</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link @mcpActive" asp-area="" asp-controller="Admin" asp-action="McpConsole">MCP</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link @settingsActive" asp-area="" asp-controller="Admin" asp-action="Settings">Settings</a>
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle @(visualizerActive + " " + codeGraphActive + " " + inspectActive + " " + mcpActive + " " + settingsActive).Trim()"
+                               href="#"
+                               id="focusMoreNav"
+                               role="button"
+                               data-bs-toggle="dropdown"
+                               aria-expanded="false">More</a>
+                            <ul class="dropdown-menu dropdown-menu-dark">
+                                <li><a class="dropdown-item @visualizerActive" asp-area="" asp-controller="Palace" asp-action="Visualizer">Visualizer</a></li>
+                                <li><a class="dropdown-item @codeGraphActive" asp-area="" asp-controller="CodeGraph" asp-action="Index">Code Graph</a></li>
+                                <li><a class="dropdown-item @inspectActive" asp-area="" asp-controller="Admin" asp-action="Inspect">Inspect</a></li>
+                                <li><a class="dropdown-item @mcpActive" asp-area="" asp-controller="Admin" asp-action="McpConsole">MCP</a></li>
+                                <li><a class="dropdown-item @settingsActive" asp-area="" asp-controller="Admin" asp-action="Settings">Settings</a></li>
+                            </ul>
                         </li>
                     </ul>
                     <div class="nav-header-actions ms-lg-3">
@@ -90,20 +103,26 @@
                             </span>
                             <span class="visually-hidden">Toggle theme</span>
                         </button>
-                        <a class="btn btn-sm btn-primary" asp-area="" asp-controller="Palace" asp-action="NewMemory">Add Memory</a>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Create</button>
+                            <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark">
+                                <li><a class="dropdown-item" asp-area="" asp-controller="Palace" asp-action="NewMemory">Add Memory</a></li>
+                                <li><a class="dropdown-item" asp-area="" asp-controller="Skills" asp-action="NewSkill">Add Skill</a></li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </div>
         </nav>
     </header>
-    <div class="container pb-5">
+    <div class="@(ViewData["PageShellClass"] as string ?? "focus-shell pb-5")">
         <main role="main" class="pb-3">
             @RenderBody()
         </main>
     </div>
 
     <footer class="footer text-muted">
-        <div class="container">
+        <div class="focus-shell">
             <span class="focus-footer-brand">
                 <img src="~/branding/focus-mark.svg" alt="" class="focus-footer-mark" />
                 <span>@siteSettings.DisplayName • local-first development memory in C#</span>

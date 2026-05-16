@@ -15,9 +15,15 @@ public static class RequestInputPolicy
         {
             Question = input.Question.Trim(),
             IncludeCompletedWork = input.IncludeCompletedWork,
+            WingId = input.WingId,
+            RoomId = input.RoomId,
+            Kind = input.Kind,
+            Tag = input.Tag?.Trim() ?? string.Empty,
+            IncludeRetired = input.IncludeRetired,
             ExpandHistory = input.ExpandHistory,
             ResultsPerSection = Math.Clamp(input.ResultsPerSection, MinResultsPerSection, MaxResultsPerSection),
-            PackGoal = Enum.IsDefined(input.PackGoal) ? input.PackGoal : ContextPackGoal.General
+            PackGoal = Enum.IsDefined(input.PackGoal) ? input.PackGoal : ContextPackGoal.General,
+            PreferRecentChanges = input.PreferRecentChanges
         };
     }
 

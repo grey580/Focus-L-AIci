@@ -309,35 +309,61 @@ public sealed class PalaceServiceTests
         await using var harness = await TestHarness.CreateAsync();
         await using var scope = harness.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<FocusMemoryContext>();
+        var repoSkillCatalogService = scope.ServiceProvider.GetRequiredService<RepoSkillCatalogService>();
 
         await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
 
-        var slugs = await dbContext.Skills
-            .AsNoTracking()
-            .Select(x => new { x.Slug, x.ReviewAfterUtc })
-            .ToListAsync();
+        var service = new PalaceService(
+            dbContext,
+            new ContextService(dbContext),
+            NullFocusEventPublisher.Instance,
+            null,
+            new FocusAgentCatalogService(),
+            repoSkillCatalogService);
 
-        Assert.Contains(slugs, x => x.Slug == "acquire-codebase-knowledge");
-        Assert.Contains(slugs, x => x.Slug == "generate-architecture-blueprint");
-        Assert.Contains(slugs, x => x.Slug == "design-agent-governance");
-        Assert.Contains(slugs, x => x.Slug == "check-agent-owasp-compliance");
-        Assert.Contains(slugs, x => x.Slug == "orchestrate-ai-delivery-team");
-        Assert.Contains(slugs, x => x.Slug == "instrument-app-insights-telemetry");
-        Assert.Contains(slugs, x => x.Slug == "apply-dotnet-best-practices");
-        Assert.Contains(slugs, x => x.Slug == "review-dotnet-design-patterns");
-        Assert.Contains(slugs, x => x.Slug == "plan-dotnet-upgrade");
-        Assert.Contains(slugs, x => x.Slug == "review-csharp-async-workflows");
-        Assert.Contains(slugs, x => x.Slug == "review-ef-core-data-access");
-        Assert.Contains(slugs, x => x.Slug == "work-as-web-coder");
-        Assert.Contains(slugs, x => x.Slug == "review-web-design-quality");
-        Assert.Contains(slugs, x => x.Slug == "test-web-application-flows");
-        Assert.Contains(slugs, x => x.Slug == "review-sql-code-safety");
-        Assert.Contains(slugs, x => x.Slug == "optimize-sql-performance");
-        Assert.Contains(slugs, x => x.Slug == "run-security-review");
-        Assert.Contains(slugs, x => x.Slug == "plan-threat-model-analysis");
-        Assert.Contains(slugs, x => x.Slug == "manage-secret-scanning");
-        Assert.Contains(slugs, x => x.Slug == "configure-codeql-scanning");
-        Assert.All(slugs, x => Assert.NotNull(x.ReviewAfterUtc));
+        var skills = await service.GetSkillSummariesAsync(null, null, CancellationToken.None);
+
+        Assert.Contains(skills, x => x.Slug == "acquire-codebase-knowledge");
+        Assert.Contains(skills, x => x.Slug == "generate-architecture-blueprint");
+        Assert.Contains(skills, x => x.Slug == "design-agent-governance");
+        Assert.Contains(skills, x => x.Slug == "check-agent-owasp-compliance");
+        Assert.Contains(skills, x => x.Slug == "orchestrate-ai-delivery-team");
+        Assert.Contains(skills, x => x.Slug == "instrument-app-insights-telemetry");
+        Assert.Contains(skills, x => x.Slug == "apply-dotnet-best-practices");
+        Assert.Contains(skills, x => x.Slug == "review-dotnet-design-patterns");
+        Assert.Contains(skills, x => x.Slug == "plan-dotnet-upgrade");
+        Assert.Contains(skills, x => x.Slug == "review-csharp-async-workflows");
+        Assert.Contains(skills, x => x.Slug == "review-ef-core-data-access");
+        Assert.Contains(skills, x => x.Slug == "work-as-web-coder");
+        Assert.Contains(skills, x => x.Slug == "review-web-design-quality");
+        Assert.Contains(skills, x => x.Slug == "test-web-application-flows");
+        Assert.Contains(skills, x => x.Slug == "review-sql-code-safety");
+        Assert.Contains(skills, x => x.Slug == "optimize-sql-performance");
+        Assert.Contains(skills, x => x.Slug == "run-security-review");
+        Assert.Contains(skills, x => x.Slug == "plan-threat-model-analysis");
+        Assert.Contains(skills, x => x.Slug == "manage-secret-scanning");
+        Assert.Contains(skills, x => x.Slug == "configure-codeql-scanning");
+        Assert.All(skills.Where(x =>
+            x.Slug is "acquire-codebase-knowledge"
+                or "generate-architecture-blueprint"
+                or "design-agent-governance"
+                or "check-agent-owasp-compliance"
+                or "orchestrate-ai-delivery-team"
+                or "instrument-app-insights-telemetry"
+                or "apply-dotnet-best-practices"
+                or "review-dotnet-design-patterns"
+                or "plan-dotnet-upgrade"
+                or "review-csharp-async-workflows"
+                or "review-ef-core-data-access"
+                or "work-as-web-coder"
+                or "review-web-design-quality"
+                or "test-web-application-flows"
+                or "review-sql-code-safety"
+                or "optimize-sql-performance"
+                or "run-security-review"
+                or "plan-threat-model-analysis"
+                or "manage-secret-scanning"
+                or "configure-codeql-scanning"), x => Assert.NotNull(x.ReviewAfterUtc));
     }
 
     [Fact]
@@ -1928,12 +1954,13 @@ public sealed class PalaceServiceTests
 
         public ServiceProvider Services { get; }
 
-        public static async Task<TestHarness> CreateAsync()
+        public static async Task<TestHarness> CreateAsync(string? contentRootPath = null)
         {
             var connection = new SqliteConnection("Data Source=:memory:");
             await connection.OpenAsync();
 
             var serviceCollection = new ServiceCollection();
+            var resolvedContentRootPath = contentRootPath ?? AppContext.BaseDirectory;
             var configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
@@ -1943,10 +1970,15 @@ public sealed class PalaceServiceTests
             serviceCollection.AddSingleton<IConfiguration>(configuration);
             serviceCollection.AddSingleton<IHostEnvironment>(new TestHostEnvironment
             {
-                ContentRootPath = AppContext.BaseDirectory
+                ContentRootPath = resolvedContentRootPath,
+                ContentRootFileProvider = new PhysicalFileProvider(resolvedContentRootPath)
             });
             serviceCollection.AddSingleton<FocusDatabaseTargetService>();
+            serviceCollection.AddSingleton<FocusAgentCatalogService>();
+            serviceCollection.AddSingleton<RepoSkillCatalogService>();
             serviceCollection.AddDbContext<FocusMemoryContext>(options => options.UseSqlite(connection));
+            serviceCollection.AddScoped<IFocusEventPublisher>(_ => NullFocusEventPublisher.Instance);
+            serviceCollection.AddScoped<ContextService>();
             serviceCollection.AddScoped<PalaceService>();
             serviceCollection.AddScoped<TicketingService>();
             serviceCollection.AddScoped<SiteSettingsService>();
@@ -1982,6 +2014,122 @@ public sealed class PalaceServiceTests
         public string ApplicationName { get; set; } = "FocusLAIci.Tests";
         public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
         public IFileProvider ContentRootFileProvider { get; set; } = new PhysicalFileProvider(AppContext.BaseDirectory);
+    }
+
+    [Fact]
+    public async Task RepoSkills_AreSurfacedAcrossCatalogDetailAndRecommendations()
+    {
+        var contentRoot = Path.Combine(Path.GetTempPath(), $"focus-repo-skills-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(contentRoot, ".agents", "skills", "repo-ui-review"));
+        File.WriteAllText(
+            Path.Combine(contentRoot, ".agents", "skills", "repo-ui-review", "SKILL.md"),
+            """
+            ---
+            name: repo-ui-review
+            description: Review website UI and layout regressions. Triggers on requests like "review the UI" and "fix broken layout".
+            ---
+
+            # Repo UI Review
+
+            ## When to use
+
+            - UI looks broken
+            - Layout regressed after a change
+
+            ## Workflow
+
+            1. Open the affected page.
+            2. Compare layout and spacing.
+            3. Apply the minimal source fix.
+
+            ## Examples
+
+            - Review the UI for layout regressions.
+            """);
+
+        try
+        {
+            await using var harness = await TestHarness.CreateAsync(contentRoot);
+            await using var scope = harness.Services.CreateAsyncScope();
+            var service = scope.ServiceProvider.GetRequiredService<PalaceService>();
+
+            var catalog = await service.GetSkillCatalogAsync("layout", null, null, false, false, CancellationToken.None);
+            var detail = await service.GetSkillAsync("repo-ui-review", CancellationToken.None);
+            var recommendations = await service.RecommendSkillsAsync("review the UI layout", null, null, 3, CancellationToken.None);
+
+            Assert.Contains(catalog.Skills, x => x.Slug == "repo-ui-review" && x.IsReadOnly);
+            Assert.NotNull(detail);
+            Assert.True(detail!.Skill.IsReadOnly);
+            Assert.Equal("Project skill", detail.Skill.SourceLabel);
+            Assert.Contains(".agents", detail.Skill.SourcePath, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("Open the affected page.", detail.FlowSteps);
+            Assert.Contains(recommendations, x => x.Slug == "repo-ui-review");
+        }
+        finally
+        {
+            if (Directory.Exists(contentRoot))
+            {
+                Directory.Delete(contentRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DashboardStats_SkillCountUsesMergedVisibleSkillTotal()
+    {
+        var contentRoot = Path.Combine(Path.GetTempPath(), $"focus-repo-skill-stats-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(contentRoot, ".agents", "skills", "repo-skill-one"));
+        File.WriteAllText(
+            Path.Combine(contentRoot, ".agents", "skills", "repo-skill-one", "SKILL.md"),
+            """
+            ---
+            name: repo-skill-one
+            description: First repo skill.
+            ---
+
+            # Repo Skill One
+            """);
+        Directory.CreateDirectory(Path.Combine(contentRoot, ".agents", "skills", "repo-skill-two"));
+        File.WriteAllText(
+            Path.Combine(contentRoot, ".agents", "skills", "repo-skill-two", "SKILL.md"),
+            """
+            ---
+            name: repo-skill-two
+            description: Second repo skill.
+            ---
+
+            # Repo Skill Two
+            """);
+
+        try
+        {
+            await using var harness = await TestHarness.CreateAsync(contentRoot);
+            await using var scope = harness.Services.CreateAsyncScope();
+            var service = scope.ServiceProvider.GetRequiredService<PalaceService>();
+
+            await service.SaveSkillAsync(new SkillEditorInput
+            {
+                Name = "Stored skill",
+                Summary = "Database-backed skill.",
+                Category = SkillCategory.Task,
+                WhenToUse = "Use when needed.",
+                Flow = "Do the thing.",
+                ExamplesText = "Use the stored skill.",
+                TriggerHintsText = "stored",
+                IsPinned = true
+            }, CancellationToken.None);
+
+            var dashboard = await service.GetDashboardAsync(CancellationToken.None);
+
+            Assert.Equal(3, dashboard.Stats.SkillCount);
+        }
+        finally
+        {
+            if (Directory.Exists(contentRoot))
+            {
+                Directory.Delete(contentRoot, recursive: true);
+            }
+        }
     }
 
     private static string CreateCodeGraphFixture()

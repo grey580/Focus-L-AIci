@@ -1,0 +1,202 @@
+@model FocusLAIci.Web.Models.SkillDetailViewModel
+@{
+    ViewData["Title"] = Model.Skill.Name;
+}
+
+<nav aria-label="breadcrumb" class="breadcrumb-bar">
+    <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a asp-controller="Home" asp-action="Index">Dashboard</a></li>
+        <li class="breadcrumb-item"><a asp-action="Index">Skills</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@Model.Skill.Name</li>
+    </ol>
+</nav>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">@Model.Skill.CategoryLabel skill</p>
+        <h1>@Model.Skill.Name</h1>
+        <p class="page-copy">@Model.Skill.Summary</p>
+        @if (!string.IsNullOrWhiteSpace(Model.Skill.WingName))
+        {
+            <div class="memory-meta">Related wing: @Model.Skill.WingName</div>
+        }
+        <div class="memory-meta mt-2">@Model.Skill.UseCount uses@(Model.Skill.LastUsedUtc.HasValue ? $" • last used {Model.Skill.LastUsedUtc.Value:yyyy-MM-dd}" : string.Empty)</div>
+    </div>
+    @if (!Model.Skill.IsReadOnly)
+    {
+        <a class="btn btn-primary" asp-action="EditSkill" asp-route-id="@Model.Skill.Id">Edit Skill</a>
+    }
+</section>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>When to use</h2>
+                </div>
+                @if (Model.WhenToUsePoints.Count == 0)
+                {
+                    <p class="mb-0 text-secondary">No usage guidance captured yet.</p>
+                }
+                else
+                {
+                    <ul class="mb-0">
+                        @foreach (var point in Model.WhenToUsePoints)
+                        {
+                            <li>@point</li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Flow</h2>
+                </div>
+                @if (Model.FlowSteps.Count == 0)
+                {
+                    <p class="mb-0 text-secondary">No flow captured yet.</p>
+                }
+                else
+                {
+                    <ol class="mb-0">
+                        @foreach (var step in Model.FlowSteps)
+                        {
+                            <li>@step</li>
+                        }
+                    </ol>
+                }
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Examples</h2>
+                </div>
+                @if (Model.ExamplePrompts.Count == 0)
+                {
+                    <p class="mb-0 text-secondary">No example prompts captured yet.</p>
+                }
+                else
+                {
+                    <ul class="mb-0">
+                        @foreach (var example in Model.ExamplePrompts)
+                        {
+                            <li><code>@example</code></li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Governance</h2>
+                </div>
+                <ul class="api-list mb-4">
+                    <li><strong>Review:</strong> @Model.Skill.ReviewLabel</li>
+                    <li><strong>Last reviewed:</strong> @(Model.Skill.LastReviewedUtc?.ToString("yyyy-MM-dd") ?? "Not captured yet")</li>
+                    <li><strong>Pinned:</strong> @(Model.Skill.IsPinned ? "Yes" : "No")</li>
+                    @if (Model.Skill.IsReadOnly)
+                    {
+                        <li><strong>Source:</strong> @Model.Skill.SourceLabel</li>
+                        <li><strong>Path:</strong> <code>@Model.Skill.SourcePath</code></li>
+                    }
+                </ul>
+                <div class="section-heading">
+                    <h2>Trigger hints</h2>
+                </div>
+                @if (Model.Skill.TriggerHints.Count == 0)
+                {
+                    <p class="text-secondary mb-0">No trigger hints yet.</p>
+                }
+                else
+                {
+                    <div class="tag-row">
+                        @foreach (var hint in Model.Skill.TriggerHints)
+                        {
+                            <span class="tag-pill">@hint</span>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.SuggestedQuestion))
+{
+    <div class="card shadow-sm border-0 mt-4">
+        <div class="card-body">
+            <div class="section-heading">
+                <h2>Use this skill as context</h2>
+            </div>
+            <p class="text-secondary">Suggested task framing: <code>@Model.SuggestedQuestion</code></p>
+            <a class="btn btn-outline-primary"
+               asp-controller="Admin"
+               asp-action="Inspect"
+               asp-route-Question="@Model.SuggestedQuestion"
+               asp-route-IncludeCompletedWork="true"
+               asp-route-ExpandHistory="true"
+               asp-route-ResultsPerSection="4">Open Inspect with this skill</a>
+        </div>
+    </div>
+}
+
+@if (Model.RelatedContext is not null)
+{
+    <div class="row g-4 mt-1">
+        @{
+            var relatedSections = new[]
+            {
+                new { Title = "Related memories", Items = Model.RelatedContext.Memories },
+                new { Title = "Related tickets", Items = Model.RelatedContext.Tickets },
+                new { Title = "Related code graph projects", Items = Model.RelatedContext.CodeGraphProjects },
+                new { Title = "Related code files", Items = Model.RelatedContext.CodeGraphFiles }
+            };
+        }
+        @foreach (var relatedSection in relatedSections)
+        {
+            <div class="col-lg-6">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-body">
+                        <div class="section-heading">
+                            <h2 class="h5">@relatedSection.Title</h2>
+                            <span class="text-secondary small">@relatedSection.Items.Count links</span>
+                        </div>
+                        @if (relatedSection.Items.Count == 0)
+                        {
+                            <p class="text-secondary mb-0">No related context was found yet.</p>
+                        }
+                        else
+                        {
+                            <div class="code-graph-side-list">
+                                @foreach (var item in relatedSection.Items.Take(4))
+                                {
+                                    <a class="code-graph-side-item" href="@item.Url">
+                                        <strong>@item.Title</strong>
+                                        @if (!string.IsNullOrWhiteSpace(item.Subtitle))
+                                        {
+                                            <span>@item.Subtitle</span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(item.Preview))
+                                        {
+                                            <small>@item.Preview</small>
+                                        }
+                                    </a>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}

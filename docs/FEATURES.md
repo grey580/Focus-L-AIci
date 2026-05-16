@@ -134,8 +134,11 @@ The MCP layer includes:
 - `GET /api/mcp/manifest` for tool/resource discovery
 - `POST /api/mcp/message` for session initialization, tool invocation, resource reads, and resource subscription updates
 - `GET /api/mcp/events/{sessionId}` for server-sent event delivery of Focus changes
-- Focus-native tools for memories, todos, tickets, workspace, recent changes, and code graph retrieval
-- Focus-native resources such as `focus://workspace`, `focus://recent-changes`, `focus://tickets/board`, `focus://todos/board`, `focus://memories/{id}`, `focus://todos/{id}`, and `focus://tickets/{id}`
+- Focus-native tools for memories, todos, tickets, workspace, recent changes, code graph retrieval, wing/room discovery, duplicate review, merge/canonical memory handling, and memory governance
+- string-friendly MCP mutations so enum-backed inputs like `kind`, `sourceKind`, and status fields accept readable enum names as well as numeric values
+- write-safe memory saves with dry-run duplicate detection and confirmation gates before automation commits new knowledge
+- bootstrap profiles and parameterized resources such as `focus://workspace/bootstrap/operator`, `focus://workspace/bootstrap/incident-response`, `focus://rooms/{wingSlug}`, and `focus://wings/{slug}`
+- Focus-native resources such as `focus://workspace`, `focus://workspace/bootstrap`, `focus://wings`, `focus://rooms`, `focus://memories/governance`, `focus://recent-changes`, `focus://tickets/board`, `focus://todos/board`, `focus://memories/{id}`, `focus://todos/{id}`, and `focus://tickets/{id}`
 - an in-app **MCP Console** under the Admin area for testing raw envelopes and observing live event flow
 
 The event pipeline publishes updates when memories, todos, tickets, notes, and time logs change so subscribed clients can stay synchronized with the live Focus state.
@@ -144,8 +147,15 @@ The practical MCP workflow is:
 
 1. call `initialize`
 2. inspect the manifest or use `complete` to discover tools/resources
-3. read `focus://recent-changes`, `focus://workspace`, or task-specific resources first
+3. read `focus://workspace/bootstrap`, `focus://recent-changes`, `focus://workspace`, or task-specific resources first
 4. subscribe only to the resources the task actually needs
 5. invoke mutating tools when Focus should become the system of record for the result
+
+Recent MCP additions make Focus more automation-safe and more agent-friendly:
+
+- `focus.memory.duplicates`, `focus.memory.merge`, and `focus.memory.resolve-canonical` help clients avoid duplicate sprawl and follow supersession chains cleanly
+- `focus.memory.governance-queue` exposes review/archive/restore backlog state directly through MCP
+- `focus.context.inspect` now supports tighter memory scoping and recent-change biasing for more surgical retrieval
+- labeled API keys can now be configured as read-only so non-loopback MCP clients do not automatically get write access
 
 For brand-new projects, Focus becomes more valuable as soon as a small set of foundation memories exists: repo path, startup command, database location, architecture notes, and major decisions.

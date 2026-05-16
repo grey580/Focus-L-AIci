@@ -1,0 +1,71 @@
+@model FocusLAIci.Web.Models.AgentBrowseViewModel
+@{
+    ViewData["Title"] = "Agents";
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Scoped automation</p>
+        <h1>Agents</h1>
+        <p class="page-copy">Four built-in Focus agents cover context gathering, research, bounded execution, and review without turning Focus into an unbounded autonomous swarm.</p>
+    </div>
+</section>
+
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-lg-8">
+                <label class="form-label">Search text</label>
+                <input class="form-control" name="query" value="@Model.Query" placeholder="context, research, review, execution..." />
+            </div>
+            <div class="col-lg-4 d-flex align-items-end">
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" type="submit">Search Agents</button>
+                    <a class="btn btn-outline-secondary" asp-action="Index">Reset</a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="section-heading">
+    <h2>Results</h2>
+    <span>@Model.Agents.Count agents</span>
+</div>
+
+<div class="row g-3">
+    @foreach (var agent in Model.Agents)
+    {
+        <div class="col-lg-6">
+            <article class="card h-100 shadow-sm border-0">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between gap-2 align-items-start mb-2">
+                        <div>
+                            <div class="memory-meta">@agent.ScopeLabel</div>
+                            <h3 class="memory-title">
+                                <a asp-action="Agent" asp-route-slug="@agent.Slug">@agent.Name</a>
+                            </h3>
+                        </div>
+                        <span class="badge @(agent.SupportsWriteActions ? "text-bg-primary" : "text-bg-secondary")">
+                            @(agent.SupportsWriteActions ? "Write-limited" : "Read-only")
+                        </span>
+                    </div>
+                    <p class="memory-summary">@agent.Summary</p>
+                    <div class="text-secondary small mb-2">@agent.Mission</div>
+                    @if (agent.BestFor.Count > 0)
+                    {
+                        <div class="tag-row">
+                            @foreach (var item in agent.BestFor.Take(4))
+                            {
+                                <span class="tag-pill">@item</span>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="card-footer bg-transparent border-0 pt-0 d-flex justify-content-end">
+                    <a class="btn btn-sm btn-outline-primary" asp-action="Agent" asp-route-slug="@agent.Slug">Open Agent</a>
+                </div>
+            </article>
+        </div>
+    }
+</div>

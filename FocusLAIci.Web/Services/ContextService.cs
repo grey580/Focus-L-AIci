@@ -56,6 +56,7 @@ public sealed partial class ContextService
         var normalizedQuestion = effectiveInput.Question?.Trim() ?? string.Empty;
         var tokens = Tokenize(normalizedQuestion);
         var semanticTokens = ExpandSemanticTokens(tokens);
+        var preferDurableMemoryLead = ShouldPreferDurableMemoryLead(normalizedQuestion, effectiveInput);
         if (tokens.Count == 0)
         {
             return null;
@@ -65,12 +66,41 @@ public sealed partial class ContextService
 
         var memories = await _dbContext.Memories
             .AsNoTracking()
-            .Where(x => x.LifecycleState == MemoryLifecycleState.Active)
             .Include(x => x.Wing)
             .Include(x => x.Room)
             .Include(x => x.MemoryTags)
                 .ThenInclude(x => x.Tag)
             .ToListAsync(cancellationToken);
+
+        if (!effectiveInput.IncludeRetired)
+        {
+            memories = memories.Where(x => x.LifecycleState == MemoryLifecycleState.Active).ToList();
+        }
+
+        if (effectiveInput.WingId.HasValue)
+        {
+            memories = memories.Where(x => x.WingId == effectiveInput.WingId.Value).ToList();
+        }
+
+        if (effectiveInput.RoomId.HasValue)
+        {
+            memories = memories.Where(x => x.RoomId == effectiveInput.RoomId.Value).ToList();
+        }
+
+        if (effectiveInput.Kind.HasValue)
+        {
+            memories = memories.Where(x => x.Kind == effectiveInput.Kind.Value).ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(effectiveInput.Tag))
+        {
+            var tagSlug = SlugUtility.CreateSlug(effectiveInput.Tag);
+            var tagMatchedMemories = memories.Where(x => x.MemoryTags.Any(tag => tag.Tag!.Slug == tagSlug)).ToList();
+            if (tagMatchedMemories.Count > 0)
+            {
+                memories = tagMatchedMemories;
+            }
+        }
 
         var todosQuery = _dbContext.Todos
             .AsNoTracking()
@@ -155,6 +185,35 @@ public sealed partial class ContextService
             .Include(x => x.File)
             .ToListAsync(cancellationToken);
 
+        var recentMemoryIds = memories
+            .OrderByDescending(x => x.UpdatedUtc)
+            .Take(12)
+            .Select(x => x.Id)
+            .ToHashSet();
+        var recentTicketIds = tickets
+            .OrderByDescending(x => x.UpdatedUtc)
+            .Take(12)
+            .Select(x => x.Id)
+            .ToHashSet();
+        var recentProjectIds = projects
+            .OrderByDescending(x => x.LastScannedUtc ?? x.UpdatedUtc)
+            .Take(8)
+            .Select(x => x.Id)
+            .ToHashSet();
+        var recentFileIds = files
+            .OrderByDescending(x => x.ScannedUtc)
+            .Take(12)
+            .Select(x => x.Id)
+            .ToHashSet();
+        var recentNodeIds = nodes
+            .Where(x => x.FileId.HasValue && recentFileIds.Contains(x.FileId.Value))
+            .Select(x => x.Id)
+            .ToHashSet();
+        var skills = await _dbContext.Skills
+            .AsNoTracking()
+            .Include(x => x.Wing)
+            .ToListAsync(cancellationToken);
+
         var memoryResults = memories
             .Select(memory =>
             {
@@ -174,6 +233,9 @@ public sealed partial class ContextService
                 score = ApplyBoost(score, Math.Max(memory.Importance - 3, 0), "High importance");
                 score = ApplyBoost(score, trust.RetrievalAdjustment, trust.RetrievalAdjustmentLabel);
                 score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.Memory, memory.SourceKind, memory.Kind), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.Memory));
+                score = ApplyBoost(score, BuildScopedMemoryBoost(memory, effectiveInput), BuildScopedMemoryBoostLabel(effectiveInput));
+                score = ApplyBoost(score, effectiveInput.PreferRecentChanges && recentMemoryIds.Contains(memory.Id) ? 2m : 0m, "Recent change");
+                score = ApplyBoost(score, preferDurableMemoryLead ? DurableMemoryQuestionBoost(memory) : 0m, "Durable memory lead");
 
                 return new { Memory = memory, Match = score, Trust = trust };
             })
@@ -212,6 +274,7 @@ public sealed partial class ContextService
 
                 score = ApplyBoost(score, todo.Status == TodoStatus.InProgress ? 4m : todo.Status == TodoStatus.Pending ? 2m : 0m, todo.Status == TodoStatus.InProgress ? "In-progress work" : "Pending work");
                 score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.Todo), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.Todo));
+                score = ApplyBoost(score, effectiveInput.PreferRecentChanges && todo.UpdatedUtc >= DateTime.UtcNow.AddDays(-7) ? 1.5m : 0m, "Recent change");
 
                 return new { Todo = todo, Match = score };
             })
@@ -256,6 +319,7 @@ public sealed partial class ContextService
                 score = ApplyBoost(score, ticket.Status == TicketStatus.InProgress ? 5m : ticket.Status == TicketStatus.New ? 3m : 0m, ticket.Status == TicketStatus.InProgress ? "In-progress ticket" : "New ticket");
                 score = ApplyBoost(score, ticket.Priority == TicketPriority.Critical ? 2m : ticket.Priority == TicketPriority.High ? 1m : 0m, ticket.Priority == TicketPriority.Critical ? "Critical priority" : "High priority");
                 score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.Ticket), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.Ticket));
+                score = ApplyBoost(score, effectiveInput.PreferRecentChanges && recentTicketIds.Contains(ticket.Id) ? 2m : 0m, "Recent change");
 
                 return new { Ticket = ticket, Match = score };
             })
@@ -294,6 +358,8 @@ public sealed partial class ContextService
 
                 score = ApplyBoost(score, Math.Min(project.RelationshipCount / 50m, 3m), "High relationship count");
                 score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.CodeGraphProject), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.CodeGraphProject));
+                score = ApplyBoost(score, effectiveInput.PreferRecentChanges && recentProjectIds.Contains(project.Id) ? 1.5m : 0m, "Recent change");
+                score = ApplyBoost(score, preferDurableMemoryLead ? 0.5m : 0m, "Project context");
 
                 return new { Project = project, Match = score };
             })
@@ -331,6 +397,8 @@ public sealed partial class ContextService
                     new WeightedField(file.Project?.Name, "project", "Project", 8m, "Project name matches your request closely.", "Project name overlaps the request."));
 
                 score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.CodeGraphFile), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.CodeGraphFile));
+                score = ApplyBoost(score, effectiveInput.PreferRecentChanges && recentFileIds.Contains(file.Id) ? 1.5m : 0m, "Recent change");
+                score = ApplyBoost(score, preferDurableMemoryLead ? 0.25m : 0m, "Supporting file context");
                 return new { File = file, Match = score };
             })
             .Where(x => x.Match.Score > 0)
@@ -368,6 +436,8 @@ public sealed partial class ContextService
 
                 score = ApplyBoost(score, Math.Min(nodeDegrees.GetValueOrDefault(node.Id) / 4m, 3m), "High graph connectivity");
                 score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.CodeGraphNode), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.CodeGraphNode));
+                score = ApplyBoost(score, effectiveInput.PreferRecentChanges && recentNodeIds.Contains(node.Id) ? 1.5m : 0m, "Recent change");
+                score = ApplyBoost(score, preferDurableMemoryLead ? 0.25m : 0m, "Supporting symbol context");
 
                 return new { Node = node, Match = score };
             })
@@ -411,15 +481,22 @@ public sealed partial class ContextService
 
         await TouchMemoryReferencesAsync(memoryResults.Select(x => x.Id).ToArray(), cancellationToken);
 
-        var topMatches = memoryResults
-            .Concat(todoResults)
-            .Concat(ticketResults)
-            .Concat(projectResults)
-            .Concat(fileResults)
-            .Concat(nodeResults)
-            .OrderByDescending(x => x.Score)
-            .ThenBy(x => x.Title)
-            .Take(Math.Max(6, resultsPerSection))
+        var topMatches = BuildTopMatches(
+            memoryResults,
+            todoResults,
+            ticketResults,
+            projectResults,
+            fileResults,
+            nodeResults,
+            resultsPerSection,
+            preferDurableMemoryLead);
+        var recommendedSkills = SkillRecommendationEngine.Recommend(
+                skills,
+                normalizedQuestion,
+                effectiveInput.WingId,
+                null,
+                Math.Clamp(resultsPerSection, 3, 6))
+            .Select(MapRecommendedSkill)
             .ToArray();
 
         return new ContextPackViewModel
@@ -431,9 +508,15 @@ public sealed partial class ContextService
             {
                 Question = normalizedQuestion,
                 IncludeCompletedWork = effectiveInput.IncludeCompletedWork,
+                WingId = effectiveInput.WingId,
+                RoomId = effectiveInput.RoomId,
+                Kind = effectiveInput.Kind,
+                Tag = effectiveInput.Tag,
+                IncludeRetired = effectiveInput.IncludeRetired,
                 ExpandHistory = effectiveInput.ExpandHistory,
                 ResultsPerSection = resultsPerSection,
-                PackGoal = effectiveInput.PackGoal
+                PackGoal = effectiveInput.PackGoal,
+                PreferRecentChanges = effectiveInput.PreferRecentChanges
             },
             SearchTokens = tokens.OrderBy(x => x).ToArray(),
             TopMatches = topMatches,
@@ -443,7 +526,8 @@ public sealed partial class ContextService
             CodeGraphProjects = projectResults,
             CodeGraphFiles = fileResults,
             CodeGraphNodes = nodeResults,
-            ExportText = BuildExportText(normalizedQuestion, effectiveInput.PackGoal, memoryResults, todoResults, ticketResults, projectResults, fileResults, nodeResults)
+            RecommendedSkills = recommendedSkills,
+            ExportText = BuildExportText(normalizedQuestion, effectiveInput.PackGoal, recommendedSkills, memoryResults, todoResults, ticketResults, projectResults, fileResults, nodeResults)
         };
     }
 
@@ -750,9 +834,52 @@ public sealed partial class ContextService
         return $"Found {memories.Count} memories, {todos.Count} todos, {tickets.Count} tickets, {projects.Count} code graph projects, {files.Count} code files, and {nodes.Count} matching code symbols.";
     }
 
+    private static IReadOnlyCollection<ContextRecordViewModel> BuildTopMatches(
+        IReadOnlyCollection<ContextRecordViewModel> memoryResults,
+        IReadOnlyCollection<ContextRecordViewModel> todoResults,
+        IReadOnlyCollection<ContextRecordViewModel> ticketResults,
+        IReadOnlyCollection<ContextRecordViewModel> projectResults,
+        IReadOnlyCollection<ContextRecordViewModel> fileResults,
+        IReadOnlyCollection<ContextRecordViewModel> nodeResults,
+        int resultsPerSection,
+        bool preferDurableMemoryLead)
+    {
+        var ordered = memoryResults
+            .Concat(todoResults)
+            .Concat(ticketResults)
+            .Concat(projectResults)
+            .Concat(fileResults)
+            .Concat(nodeResults)
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => x.Title)
+            .ToArray();
+
+        var takeCount = Math.Max(6, resultsPerSection);
+        if (!preferDurableMemoryLead || memoryResults.Count == 0)
+        {
+            return ordered.Take(takeCount).ToArray();
+        }
+
+        var bestMemory = memoryResults
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => x.Title)
+            .First();
+        var bestOverall = ordered.FirstOrDefault();
+        if (bestOverall is null || bestOverall.Id == bestMemory.Id || bestMemory.Score + 6m < bestOverall.Score)
+        {
+            return ordered.Take(takeCount).ToArray();
+        }
+
+        return new[] { bestMemory }
+            .Concat(ordered.Where(x => x.Id != bestMemory.Id))
+            .Take(takeCount)
+            .ToArray();
+    }
+
     private static string BuildExportText(
         string question,
         ContextPackGoal goal,
+        IReadOnlyCollection<SkillCardViewModel> recommendedSkills,
         IReadOnlyCollection<ContextRecordViewModel> memories,
         IReadOnlyCollection<ContextRecordViewModel> todos,
         IReadOnlyCollection<ContextRecordViewModel> tickets,
@@ -774,6 +901,35 @@ public sealed partial class ContextService
             .AppendLine($"Context pack: {question}")
             .AppendLine($"Goal: {GetPackGoalLabel(goal)}")
             .AppendLine();
+
+        builder.AppendLine("Recommended skills");
+        builder.AppendLine("------------------");
+        if (recommendedSkills.Count == 0)
+        {
+            builder.AppendLine("- No recommended skills");
+        }
+        else
+        {
+            foreach (var skill in recommendedSkills)
+            {
+                builder.Append("- ").Append(skill.Name);
+                if (!string.IsNullOrWhiteSpace(skill.RecommendationReason))
+                {
+                    builder.Append(" | ").Append(skill.RecommendationReason);
+                }
+
+                if (skill.NeedsReview)
+                {
+                    builder.Append(" | ").Append(skill.ReviewLabel);
+                }
+
+                builder.AppendLine();
+                builder.AppendLine($"  {skill.Summary}");
+                builder.AppendLine($"  /Skills/Skill/{skill.Slug}");
+            }
+        }
+
+        builder.AppendLine();
 
         foreach (var (title, items) in sections)
         {
@@ -822,6 +978,45 @@ public sealed partial class ContextService
         }
 
         return builder.ToString().TrimEnd();
+    }
+
+    private static SkillCardViewModel MapRecommendedSkill(SkillRecommendationMatch match)
+    {
+        var now = DateTime.UtcNow;
+        return new SkillCardViewModel
+        {
+            Id = match.Skill.Id,
+            WingId = match.Skill.WingId,
+            Name = match.Skill.Name,
+            Slug = match.Skill.Slug,
+            Summary = match.Skill.Summary,
+            Category = match.Skill.Category,
+            CategoryLabel = match.Skill.Category.ToString(),
+            WingName = match.Skill.Wing?.Name ?? string.Empty,
+            TriggerHintsText = match.Skill.TriggerHintsText,
+            TriggerHints = SplitSkillText(match.Skill.TriggerHintsText),
+            IsPinned = match.Skill.IsPinned,
+            UseCount = match.Skill.UseCount,
+            LastUsedUtc = match.Skill.LastUsedUtc,
+            LastReviewedUtc = match.Skill.LastReviewedUtc,
+            ReviewAfterUtc = match.Skill.ReviewAfterUtc,
+            NeedsReview = SkillRecommendationEngine.NeedsReview(match.Skill, now),
+            ReviewLabel = SkillRecommendationEngine.GetReviewLabel(match.Skill, now),
+            RecommendationReason = match.Reason,
+            RecommendationScore = match.Score,
+            RecommendationScoreLabel = match.Score <= 0m ? string.Empty : match.Score.ToString("0.#"),
+            UpdatedUtc = match.Skill.UpdatedUtc
+        };
+    }
+
+    private static IReadOnlyCollection<string> SplitSkillText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Array.Empty<string>();
+        }
+
+        return value.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
     private static ContextRecordViewModel[] ApplyLinkBoost(IEnumerable<ContextRecordViewModel> items, ISet<ContextRecordKey> linkedKeys)
@@ -1194,6 +1389,92 @@ public sealed partial class ContextService
 
     private static string GoalBoostLabel(ContextPackGoal goal, ContextRecordKind kind)
         => goal == ContextPackGoal.General ? string.Empty : $"{GetPackGoalLabel(goal)} focus";
+
+    private static bool ShouldPreferDurableMemoryLead(string normalizedQuestion, ContextBriefInput input)
+    {
+        if (input.PackGoal is ContextPackGoal.Architecture or ContextPackGoal.Research)
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedQuestion))
+        {
+            return false;
+        }
+
+        var question = normalizedQuestion.ToLowerInvariant();
+        return question.StartsWith("how ", StringComparison.Ordinal)
+               || question.StartsWith("why ", StringComparison.Ordinal)
+               || question.Contains(" use ", StringComparison.Ordinal)
+               || question.Contains(" integrate", StringComparison.Ordinal)
+               || question.Contains(" oauth", StringComparison.Ordinal)
+               || question.Contains(" entra", StringComparison.Ordinal)
+               || question.Contains(" architecture", StringComparison.Ordinal)
+               || question.Contains(" flow", StringComparison.Ordinal);
+    }
+
+    private static decimal DurableMemoryQuestionBoost(MemoryEntry memory)
+    {
+        decimal boost = 0m;
+        if (memory.VerificationStatus == MemoryVerificationStatus.Verified)
+        {
+            boost += 2m;
+        }
+
+        if (memory.IsPinned)
+        {
+            boost += 1m;
+        }
+
+        if (memory.SourceKind is SourceKind.Architecture or SourceKind.Research or SourceKind.ManualNote)
+        {
+            boost += 2.5m;
+        }
+
+        if (memory.Kind is MemoryKind.Decision or MemoryKind.Reference or MemoryKind.Insight)
+        {
+            boost += 1.5m;
+        }
+
+        return boost;
+    }
+
+    private static decimal BuildScopedMemoryBoost(MemoryEntry memory, ContextBriefInput input)
+    {
+        decimal boost = 0m;
+        if (input.WingId.HasValue && memory.WingId == input.WingId.Value)
+        {
+            boost += 2m;
+        }
+
+        if (input.RoomId.HasValue && memory.RoomId == input.RoomId.Value)
+        {
+            boost += 2m;
+        }
+
+        if (input.Kind.HasValue && memory.Kind == input.Kind.Value)
+        {
+            boost += 1.5m;
+        }
+
+        if (!string.IsNullOrWhiteSpace(input.Tag))
+        {
+            var tagSlug = SlugUtility.CreateSlug(input.Tag);
+            if (memory.MemoryTags.Any(x => x.Tag!.Slug == tagSlug))
+            {
+                boost += 1.5m;
+            }
+        }
+
+        return boost;
+    }
+
+    private static string BuildScopedMemoryBoostLabel(ContextBriefInput input)
+    {
+        return input.WingId.HasValue || input.RoomId.HasValue || input.Kind.HasValue || !string.IsNullOrWhiteSpace(input.Tag)
+            ? "Scoped filter"
+            : string.Empty;
+    }
 
     private static HashSet<string> Tokenize(string? value, bool keepStopWords = false)
     {

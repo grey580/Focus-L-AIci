@@ -42,6 +42,7 @@ builder.Services.AddScoped<TicketingService>();
 builder.Services.AddScoped<SiteSettingsService>();
 builder.Services.AddScoped<CodeGraphService>();
 builder.Services.AddScoped<ContextService>();
+builder.Services.AddSingleton<RepoSkillCatalogService>();
 builder.Services.AddSingleton<FocusAgentCatalogService>();
 builder.Services.AddSingleton<FocusMcpSessionService>();
 builder.Services.AddSingleton<FocusMcpEventBus>();

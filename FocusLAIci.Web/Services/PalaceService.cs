@@ -46,29 +46,31 @@ public sealed class PalaceService
     private readonly IFocusEventPublisher _eventPublisher;
     private readonly FocusDatabaseTargetService? _databaseTargetService;
     private readonly FocusAgentCatalogService _agentCatalogService;
+    private readonly RepoSkillCatalogService? _repoSkillCatalogService;
 
     public PalaceService(FocusMemoryContext dbContext)
-        : this(dbContext, new ContextService(dbContext), NullFocusEventPublisher.Instance, null, null)
+        : this(dbContext, new ContextService(dbContext), NullFocusEventPublisher.Instance, null, null, null)
     {
     }
 
     public PalaceService(FocusMemoryContext dbContext, ContextService contextService)
-        : this(dbContext, contextService, NullFocusEventPublisher.Instance, null, null)
+        : this(dbContext, contextService, NullFocusEventPublisher.Instance, null, null, null)
     {
     }
 
     public PalaceService(FocusMemoryContext dbContext, ContextService contextService, IFocusEventPublisher eventPublisher)
-        : this(dbContext, contextService, eventPublisher, null, null)
+        : this(dbContext, contextService, eventPublisher, null, null, null)
     {
     }
 
-    public PalaceService(FocusMemoryContext dbContext, ContextService contextService, IFocusEventPublisher eventPublisher, FocusDatabaseTargetService? databaseTargetService, FocusAgentCatalogService? agentCatalogService)
+    public PalaceService(FocusMemoryContext dbContext, ContextService contextService, IFocusEventPublisher eventPublisher, FocusDatabaseTargetService? databaseTargetService, FocusAgentCatalogService? agentCatalogService, RepoSkillCatalogService? repoSkillCatalogService = null)
     {
         _dbContext = dbContext;
         _contextService = contextService;
         _eventPublisher = eventPublisher;
         _databaseTargetService = databaseTargetService;
         _agentCatalogService = agentCatalogService ?? new FocusAgentCatalogService();
+        _repoSkillCatalogService = repoSkillCatalogService;
     }
 
     public Task<DashboardViewModel> GetDashboardAsync(CancellationToken cancellationToken)
@@ -105,6 +107,7 @@ public sealed class PalaceService
             .AsNoTracking()
             .Include(x => x.SubTickets)
             .Include(x => x.TimeLogs)
+            .AsSplitQuery()
             .Where(x => x.ParentTicketId == null && x.Status != TicketStatus.Completed)
             .OrderBy(x => x.Status == TicketStatus.InProgress ? 0 : x.Status == TicketStatus.New ? 1 : 2)
             .ThenByDescending(x => x.UpdatedUtc)
@@ -155,12 +158,7 @@ public sealed class PalaceService
             .ToListAsync(cancellationToken);
 
         var wings = await BuildWingSummariesAsync(cancellationToken);
-        var featuredSkills = await BuildSkillQuery()
-            .OrderByDescending(x => x.IsPinned)
-            .ThenBy(x => x.Category)
-            .ThenBy(x => x.Name)
-            .Take(6)
-            .ToListAsync(cancellationToken);
+        var featuredSkills = await GetFeaturedSkillsAsync(6, cancellationToken);
         var mappedCurrentTodos = currentTodos.Select(MapTodo).ToArray();
         var mappedActiveTickets = activeTickets.Select(MapDashboardTicketSummary).ToArray();
         var mappedRecentMemories = memories.Select(MapCard).ToArray();
@@ -181,9 +179,8 @@ public sealed class PalaceService
         var resolvedContextInput = ResolveDashboardContextInput(effectiveContextInput, fallbackContext);
         var contextPack = await _contextService.BuildContextPackAsync(resolvedContextInput, cancellationToken);
         var recommendedAgents = _agentCatalogService.RecommendAgents(resolvedContextInput.Question, resolvedContextInput.PackGoal, 4);
-        var recommendedSkills = contextPack?.RecommendedSkills.Count > 0
-            ? contextPack.RecommendedSkills
-            : await RecommendSkillsAsync(resolvedContextInput.Question, resolvedContextInput.WingId, null, 4, cancellationToken);
+        var fallbackRecommendedSkills = await RecommendSkillsAsync(resolvedContextInput.Question, resolvedContextInput.WingId, null, 4, cancellationToken);
+        var recommendedSkills = MergeSkillCards(contextPack?.RecommendedSkills, fallbackRecommendedSkills, 4);
         var warningItems = BuildDashboardWarnings(
             effectiveContextInput,
             resolvedContextInput,
@@ -212,7 +209,7 @@ public sealed class PalaceService
             RecommendedAgents = recommendedAgents,
             FeaturedAgents = _agentCatalogService.GetFeaturedAgents(),
             RecommendedSkills = recommendedSkills,
-            FeaturedSkills = featuredSkills.Select(skill => MapSkillCard(skill)).ToArray(),
+            FeaturedSkills = featuredSkills,
             CurrentTodos = mappedCurrentTodos,
             MissingContextWarnings = warningItems.Select(x => x.Message).ToArray(),
             MissingContextWarningItems = warningItems,
@@ -368,6 +365,7 @@ public sealed class PalaceService
             .AsNoTracking()
             .Include(x => x.SubTickets)
             .Include(x => x.TimeLogs)
+            .AsSplitQuery()
             .Where(x => x.ParentTicketId == null && x.Status != TicketStatus.Completed)
             .OrderBy(x => x.Status == TicketStatus.InProgress ? 0 : x.Status == TicketStatus.New ? 1 : 2)
             .ThenByDescending(x => x.UpdatedUtc)
@@ -421,12 +419,7 @@ public sealed class PalaceService
     {
         var workspace = await GetWorkspaceExportAsync(cancellationToken);
         var wings = (await BuildWingSummariesAsync(cancellationToken)).Take(10).ToArray();
-        var featuredSkills = await BuildSkillQuery()
-            .OrderByDescending(x => x.IsPinned)
-            .ThenBy(x => x.Category)
-            .ThenBy(x => x.Name)
-            .Take(6)
-            .ToListAsync(cancellationToken);
+        var featuredSkills = await GetFeaturedSkillsAsync(6, cancellationToken);
         var normalizedProfile = NormalizeBootstrapProfile(profile);
 
         var suggestedTaskPrompt = normalizedProfile switch
@@ -505,7 +498,7 @@ public sealed class PalaceService
             RecommendedAgents = recommendedAgents,
             FeaturedAgents = _agentCatalogService.GetFeaturedAgents(),
             RecommendedSkills = recommendedSkills,
-            FeaturedSkills = featuredSkills.Select(skill => MapSkillCard(skill)).ToArray(),
+            FeaturedSkills = featuredSkills,
             Wings = wings,
             Workspace = workspace
         };
@@ -832,14 +825,7 @@ public sealed class PalaceService
         bool needsReviewOnly,
         CancellationToken cancellationToken)
     {
-        var skills = await BuildSkillQuery(query, category, wingId, pinnedOnly, needsReviewOnly)
-            .OrderByDescending(x => x.IsPinned)
-            .ThenByDescending(x => x.UseCount)
-            .ThenBy(x => x.ReviewAfterUtc == null ? 1 : 0)
-            .ThenBy(x => x.ReviewAfterUtc)
-            .ThenBy(x => x.Category)
-            .ThenBy(x => x.Name)
-            .ToListAsync(cancellationToken);
+        var skills = await GetMergedSkillsAsync(query, category, wingId, pinnedOnly, needsReviewOnly, cancellationToken);
 
         return new SkillBrowseViewModel
         {
@@ -849,7 +835,15 @@ public sealed class PalaceService
             PinnedOnly = pinnedOnly,
             NeedsReviewOnly = needsReviewOnly,
             WingOptions = await BuildWingOptionsAsync(cancellationToken),
-            Skills = skills.Select(skill => MapSkillCard(skill)).ToArray()
+            Skills = skills
+                .OrderByDescending(x => x.Skill.IsPinned)
+                .ThenByDescending(x => x.Skill.UseCount)
+                .ThenBy(x => x.Skill.ReviewAfterUtc == null ? 1 : 0)
+                .ThenBy(x => x.Skill.ReviewAfterUtc)
+                .ThenBy(x => x.Skill.Category)
+                .ThenBy(x => x.Skill.Name)
+                .Select(MapSkillCard)
+                .ToArray()
         };
     }
 
@@ -866,7 +860,24 @@ public sealed class PalaceService
         var skill = await skillQuery.FirstOrDefaultAsync(x => x.Slug == slug, cancellationToken);
         if (skill is null)
         {
-            return null;
+            var repoSkill = await GetRepoSkillAsync(slug, cancellationToken);
+            if (repoSkill is null)
+            {
+                return null;
+            }
+
+            var repoContext = await _contextService.BuildContextPackAsync(new ContextBriefInput
+            {
+                Question = SkillRecommendationEngine.BuildSuggestedQuestion(repoSkill.Skill),
+                WingId = repoSkill.Skill.WingId,
+                IncludeCompletedWork = true,
+                ExpandHistory = true,
+                ResultsPerSection = 3,
+                PackGoal = MapSkillPackGoal(repoSkill.Skill.Category),
+                PreferRecentChanges = true
+            }, cancellationToken);
+
+            return MapSkillDetail(repoSkill.Skill, repoContext, isReadOnly: true, sourceLabel: repoSkill.SourceLabel, sourcePath: repoSkill.SourcePath);
         }
 
         if (trackUsage)
@@ -983,6 +994,15 @@ public sealed class PalaceService
         return skill.Id;
     }
 
+    public async Task DeleteSkillAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var skill = await _dbContext.Skills.FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
+            ?? throw new InvalidOperationException("That skill no longer exists.");
+
+        _dbContext.Skills.Remove(skill);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<SkillCardViewModel>> GetSkillSummariesAsync(
         string? query,
         SkillCategory? category,
@@ -991,14 +1011,14 @@ public sealed class PalaceService
         bool pinnedOnly = false,
         bool needsReviewOnly = false)
     {
-        var skills = await BuildSkillQuery(query, category, wingId, pinnedOnly, needsReviewOnly)
-            .OrderByDescending(x => x.IsPinned)
-            .ThenByDescending(x => x.UseCount)
-            .ThenBy(x => x.Category)
-            .ThenBy(x => x.Name)
-            .ToListAsync(cancellationToken);
-
-        return skills.Select(skill => MapSkillCard(skill)).ToArray();
+        var skills = await GetMergedSkillsAsync(query, category, wingId, pinnedOnly, needsReviewOnly, cancellationToken);
+        return skills
+            .OrderByDescending(x => x.Skill.IsPinned)
+            .ThenByDescending(x => x.Skill.UseCount)
+            .ThenBy(x => x.Skill.Category)
+            .ThenBy(x => x.Skill.Name)
+            .Select(MapSkillCard)
+            .ToArray();
     }
 
     public async Task<IReadOnlyCollection<SkillCardViewModel>> RecommendSkillsAsync(
@@ -1008,13 +1028,20 @@ public sealed class PalaceService
         int limit,
         CancellationToken cancellationToken)
     {
-        var skills = await _dbContext.Skills
+        var dbSkills = await _dbContext.Skills
             .AsNoTracking()
             .Include(x => x.Wing)
             .ToListAsync(cancellationToken);
+        var skillRecords = dbSkills.Select(x => new ResolvedSkillRecord(x))
+            .Concat((await GetRepoSkillsAsync(cancellationToken)).Where(x => dbSkills.All(dbSkill => !string.Equals(dbSkill.Slug, x.Skill.Slug, StringComparison.OrdinalIgnoreCase))))
+            .ToArray();
 
-        return SkillRecommendationEngine.Recommend(skills, question, wingId, category, limit)
-            .Select(x => MapSkillCard(x.Skill, x.Reason, x.Score))
+        return SkillRecommendationEngine.Recommend(skillRecords.Select(x => x.Skill), question, wingId, category, limit)
+            .Select(match =>
+            {
+                var record = skillRecords.First(x => string.Equals(x.Skill.Slug, match.Skill.Slug, StringComparison.OrdinalIgnoreCase));
+                return MapSkillCard(record.Skill, match.Reason, match.Score, record.IsReadOnly, record.SourceLabel, record.SourcePath);
+            })
             .ToArray();
     }
 
@@ -1935,12 +1962,13 @@ public sealed class PalaceService
 
     private async Task<PalaceStatsViewModel> BuildStatsAsync(CancellationToken cancellationToken)
     {
+        var visibleSkillCount = (await GetMergedSkillsAsync(null, null, null, false, false, cancellationToken)).Count;
         return new PalaceStatsViewModel
         {
             WingCount = await _dbContext.Wings.CountAsync(cancellationToken),
             RoomCount = await _dbContext.Rooms.CountAsync(cancellationToken),
             MemoryCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Active, cancellationToken),
-            SkillCount = await _dbContext.Skills.CountAsync(cancellationToken),
+            SkillCount = visibleSkillCount,
             PinnedCount = await _dbContext.Memories.CountAsync(x => x.LifecycleState == MemoryLifecycleState.Active && x.IsPinned, cancellationToken),
             TagCount = await _dbContext.Tags.CountAsync(cancellationToken),
             OpenTodoCount = await _dbContext.Todos.CountAsync(x => x.Status != TodoStatus.Done, cancellationToken),
@@ -2141,6 +2169,180 @@ public sealed class PalaceService
         }
 
         return skills;
+    }
+
+    private async Task<IReadOnlyCollection<ResolvedSkillRecord>> GetMergedSkillsAsync(
+        string? query,
+        SkillCategory? category,
+        Guid? wingId,
+        bool pinnedOnly,
+        bool needsReviewOnly,
+        CancellationToken cancellationToken)
+    {
+        var dbSkills = await BuildSkillQuery(query, category, wingId, pinnedOnly, needsReviewOnly)
+            .ToListAsync(cancellationToken);
+        var merged = dbSkills
+            .Select(skill => new ResolvedSkillRecord(skill))
+            .ToDictionary(x => x.Skill.Slug, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var repoSkill in await GetRepoSkillsAsync(cancellationToken))
+        {
+            if (merged.ContainsKey(repoSkill.Skill.Slug) || !MatchesSkillFilters(repoSkill.Skill, query, category, wingId, pinnedOnly, needsReviewOnly))
+            {
+                continue;
+            }
+
+            merged[repoSkill.Skill.Slug] = repoSkill;
+        }
+
+        return merged.Values.ToArray();
+    }
+
+    private async Task<IReadOnlyCollection<ResolvedSkillRecord>> GetRepoSkillsAsync(CancellationToken cancellationToken)
+    {
+        if (_repoSkillCatalogService is null)
+        {
+            return Array.Empty<ResolvedSkillRecord>();
+        }
+
+        var wingLookup = await _dbContext.Wings
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.Slug, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+        return _repoSkillCatalogService.GetAllSkills()
+            .Select(skill => CreateRepoSkillRecord(skill, wingLookup))
+            .ToArray();
+    }
+
+    private async Task<ResolvedSkillRecord?> GetRepoSkillAsync(string slug, CancellationToken cancellationToken)
+    {
+        if (_repoSkillCatalogService is null)
+        {
+            return null;
+        }
+
+        var repoSkill = _repoSkillCatalogService.GetSkill(slug);
+        if (repoSkill is null)
+        {
+            return null;
+        }
+
+        var wingLookup = await _dbContext.Wings
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.Slug, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+        return CreateRepoSkillRecord(repoSkill, wingLookup);
+    }
+
+    private static ResolvedSkillRecord CreateRepoSkillRecord(RepoSkillDocument repoSkill, IReadOnlyDictionary<string, Wing> wingLookup)
+    {
+        var skill = CloneSkill(repoSkill.Skill);
+        if (!string.IsNullOrWhiteSpace(repoSkill.WingSlug) && wingLookup.TryGetValue(repoSkill.WingSlug, out var wing))
+        {
+            skill.WingId = wing.Id;
+            skill.Wing = wing;
+        }
+
+        return new ResolvedSkillRecord(skill, true, repoSkill.SourceLabel, repoSkill.SourcePath);
+    }
+
+    private static SkillEntry CloneSkill(SkillEntry skill)
+    {
+        return new SkillEntry
+        {
+            Id = skill.Id,
+            WingId = skill.WingId,
+            Name = skill.Name,
+            Slug = skill.Slug,
+            Summary = skill.Summary,
+            Category = skill.Category,
+            WhenToUse = skill.WhenToUse,
+            Flow = skill.Flow,
+            ExamplesText = skill.ExamplesText,
+            TriggerHintsText = skill.TriggerHintsText,
+            IsPinned = skill.IsPinned,
+            UseCount = skill.UseCount,
+            LastUsedUtc = skill.LastUsedUtc,
+            LastReviewedUtc = skill.LastReviewedUtc,
+            ReviewAfterUtc = skill.ReviewAfterUtc,
+            CreatedUtc = skill.CreatedUtc,
+            UpdatedUtc = skill.UpdatedUtc,
+            Wing = skill.Wing
+        };
+    }
+
+    private async Task<IReadOnlyCollection<SkillCardViewModel>> GetFeaturedSkillsAsync(int limit, CancellationToken cancellationToken)
+    {
+        var skills = await GetMergedSkillsAsync(null, null, null, false, false, cancellationToken);
+        return skills
+            .OrderByDescending(x => x.Skill.IsPinned)
+            .ThenBy(x => x.Skill.Category)
+            .ThenBy(x => x.Skill.Name)
+            .Take(limit)
+            .Select(MapSkillCard)
+            .ToArray();
+    }
+
+    private static IReadOnlyCollection<SkillCardViewModel> MergeSkillCards(
+        IReadOnlyCollection<SkillCardViewModel>? primary,
+        IReadOnlyCollection<SkillCardViewModel>? secondary,
+        int limit)
+    {
+        var merged = new Dictionary<string, SkillCardViewModel>(StringComparer.OrdinalIgnoreCase);
+        foreach (var skill in primary ?? Array.Empty<SkillCardViewModel>())
+        {
+            merged.TryAdd(skill.Slug, skill);
+        }
+
+        foreach (var skill in secondary ?? Array.Empty<SkillCardViewModel>())
+        {
+            merged.TryAdd(skill.Slug, skill);
+        }
+
+        return merged.Values.Take(limit).ToArray();
+    }
+
+    private static bool MatchesSkillFilters(
+        SkillEntry skill,
+        string? query,
+        SkillCategory? category,
+        Guid? wingId,
+        bool pinnedOnly,
+        bool needsReviewOnly)
+    {
+        if (category.HasValue && skill.Category != category.Value)
+        {
+            return false;
+        }
+
+        if (wingId.HasValue && skill.WingId != wingId.Value)
+        {
+            return false;
+        }
+
+        if (pinnedOnly && !skill.IsPinned)
+        {
+            return false;
+        }
+
+        var now = DateTime.UtcNow;
+        if (needsReviewOnly && !(skill.ReviewAfterUtc != null && skill.ReviewAfterUtc <= now))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return true;
+        }
+
+        var normalized = query.Trim();
+        return skill.Name.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+               skill.Summary.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+               skill.WhenToUse.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+               skill.Flow.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+               skill.TriggerHintsText.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+               (skill.Wing?.Name?.Contains(normalized, StringComparison.OrdinalIgnoreCase) ?? false);
     }
 
     private async Task<IReadOnlyCollection<WingSummaryViewModel>> BuildWingSummariesAsync(CancellationToken cancellationToken)
@@ -3095,7 +3297,16 @@ public sealed class PalaceService
         return left.Value <= right.Value ? left : right;
     }
 
-    private static SkillCardViewModel MapSkillCard(SkillEntry skill, string recommendationReason = "", decimal recommendationScore = 0m)
+    private static SkillCardViewModel MapSkillCard(ResolvedSkillRecord skill)
+        => MapSkillCard(skill.Skill, isReadOnly: skill.IsReadOnly, sourceLabel: skill.SourceLabel, sourcePath: skill.SourcePath);
+
+    private static SkillCardViewModel MapSkillCard(
+        SkillEntry skill,
+        string recommendationReason = "",
+        decimal recommendationScore = 0m,
+        bool isReadOnly = false,
+        string sourceLabel = "",
+        string sourcePath = "")
     {
         var now = DateTime.UtcNow;
         return new SkillCardViewModel
@@ -3120,15 +3331,23 @@ public sealed class PalaceService
             RecommendationReason = recommendationReason,
             RecommendationScore = recommendationScore,
             RecommendationScoreLabel = recommendationScore <= 0m ? string.Empty : recommendationScore.ToString("0.#"),
-            UpdatedUtc = skill.UpdatedUtc
+            UpdatedUtc = skill.UpdatedUtc,
+            IsReadOnly = isReadOnly,
+            SourceLabel = sourceLabel,
+            SourcePath = sourcePath
         };
     }
 
-    private static SkillDetailViewModel MapSkillDetail(SkillEntry skill, ContextPackViewModel? relatedContext)
+    private static SkillDetailViewModel MapSkillDetail(
+        SkillEntry skill,
+        ContextPackViewModel? relatedContext,
+        bool isReadOnly = false,
+        string sourceLabel = "",
+        string sourcePath = "")
     {
         return new SkillDetailViewModel
         {
-            Skill = MapSkillCard(skill),
+            Skill = MapSkillCard(skill, isReadOnly: isReadOnly, sourceLabel: sourceLabel, sourcePath: sourcePath),
             WhenToUse = skill.WhenToUse,
             Flow = skill.Flow,
             ExamplesText = skill.ExamplesText,
@@ -3164,6 +3383,12 @@ public sealed class PalaceService
         return value.Replace("\r", string.Empty, StringComparison.Ordinal)
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
+
+    private sealed record ResolvedSkillRecord(
+        SkillEntry Skill,
+        bool IsReadOnly = false,
+        string SourceLabel = "",
+        string SourcePath = "");
 
     private static MemoryCardViewModel MapCard(MemoryEntry memory)
     {

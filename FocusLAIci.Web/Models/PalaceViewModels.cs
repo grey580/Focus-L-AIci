@@ -779,6 +779,9 @@ public sealed class SkillCardViewModel
     public decimal RecommendationScore { get; init; }
     public string RecommendationScoreLabel { get; init; } = string.Empty;
     public DateTime UpdatedUtc { get; init; }
+    public bool IsReadOnly { get; init; }
+    public string SourceLabel { get; init; } = string.Empty;
+    public string SourcePath { get; init; } = string.Empty;
 }
 
 public sealed class SkillDetailViewModel

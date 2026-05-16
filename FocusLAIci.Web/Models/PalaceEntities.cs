@@ -71,6 +71,39 @@ public sealed class Tag
     public ICollection<MemoryEntryTag> MemoryTags { get; set; } = new List<MemoryEntryTag>();
 }
 
+public sealed class SkillEntry
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid? WingId { get; set; }
+
+    [MaxLength(160)]
+    public string Name { get; set; } = string.Empty;
+
+    [MaxLength(180)]
+    public string Slug { get; set; } = string.Empty;
+
+    [MaxLength(500)]
+    public string Summary { get; set; } = string.Empty;
+
+    public SkillCategory Category { get; set; } = SkillCategory.Task;
+
+    public string WhenToUse { get; set; } = string.Empty;
+    public string Flow { get; set; } = string.Empty;
+    public string ExamplesText { get; set; } = string.Empty;
+
+    [MaxLength(500)]
+    public string TriggerHintsText { get; set; } = string.Empty;
+
+    public bool IsPinned { get; set; } = true;
+    public int UseCount { get; set; }
+    public DateTime? LastUsedUtc { get; set; }
+    public DateTime? LastReviewedUtc { get; set; }
+    public DateTime? ReviewAfterUtc { get; set; }
+    public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
+    public Wing? Wing { get; set; }
+}
+
 public sealed class TodoEntry
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -344,4 +377,12 @@ public enum ContextRecordKind
     CodeGraphProject = 4,
     CodeGraphNode = 5,
     CodeGraphFile = 6
+}
+
+public enum SkillCategory
+{
+    Task = 1,
+    System = 2,
+    Product = 3,
+    Tooling = 4
 }

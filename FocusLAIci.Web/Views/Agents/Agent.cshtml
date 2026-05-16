@@ -1,0 +1,90 @@
+@model FocusLAIci.Web.Models.AgentDetailViewModel
+@{
+    ViewData["Title"] = Model.Agent.Name;
+}
+
+<nav aria-label="breadcrumb" class="breadcrumb-bar">
+    <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a asp-controller="Home" asp-action="Index">Dashboard</a></li>
+        <li class="breadcrumb-item"><a asp-action="Index">Agents</a></li>
+        <li class="breadcrumb-item active" aria-current="page">@Model.Agent.Name</li>
+    </ol>
+</nav>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">@Model.Agent.ScopeLabel</p>
+        <h1>@Model.Agent.Name</h1>
+        <p class="page-copy">@Model.Agent.Summary</p>
+        <div class="memory-meta mt-2">@Model.Agent.Mission</div>
+    </div>
+    <span class="badge @(Model.Agent.SupportsWriteActions ? "text-bg-primary" : "text-bg-secondary")">
+        @(Model.Agent.SupportsWriteActions ? "Write-limited" : "Read-only")
+    </span>
+</section>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Best for</h2>
+                </div>
+                <ul class="mb-0">
+                    @foreach (var item in Model.Agent.BestFor)
+                    {
+                        <li>@item</li>
+                    }
+                </ul>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Expected inputs</h2>
+                </div>
+                <ul class="mb-0">
+                    @foreach (var item in Model.Inputs)
+                    {
+                        <li>@item</li>
+                    }
+                </ul>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Expected outputs</h2>
+                </div>
+                <ul class="mb-0">
+                    @foreach (var item in Model.Outputs)
+                    {
+                        <li>@item</li>
+                    }
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="section-heading">
+                    <h2>Guardrails</h2>
+                </div>
+                <ul class="mb-4">
+                    @foreach (var item in Model.Agent.Guardrails)
+                    {
+                        <li>@item</li>
+                    }
+                </ul>
+                <div class="section-heading">
+                    <h2>Suggested prompt</h2>
+                </div>
+                <p class="text-secondary small mb-0"><code>@Model.SuggestedPrompt</code></p>
+            </div>
+        </div>
+    </div>
+</div>

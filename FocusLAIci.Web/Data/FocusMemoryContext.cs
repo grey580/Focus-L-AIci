@@ -14,6 +14,7 @@ public sealed class FocusMemoryContext : DbContext
     public DbSet<SiteSettings> SiteSettings => Set<SiteSettings>();
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<Tag> Tags => Set<Tag>();
+    public DbSet<SkillEntry> Skills => Set<SkillEntry>();
     public DbSet<TodoEntry> Todos => Set<TodoEntry>();
     public DbSet<TicketEntry> Tickets => Set<TicketEntry>();
     public DbSet<TicketNoteEntry> TicketNotes => Set<TicketNoteEntry>();
@@ -64,6 +65,25 @@ public sealed class FocusMemoryContext : DbContext
             entity.HasIndex(x => x.Slug).IsUnique();
             entity.Property(x => x.Name).HasMaxLength(80);
             entity.Property(x => x.Slug).HasMaxLength(120);
+        });
+
+        builder.Entity<SkillEntry>(entity =>
+        {
+            entity.HasIndex(x => x.Slug).IsUnique();
+            entity.HasIndex(x => x.Category);
+            entity.HasIndex(x => x.LastUsedUtc);
+            entity.HasIndex(x => x.ReviewAfterUtc);
+            entity.Property(x => x.Name).HasMaxLength(160);
+            entity.Property(x => x.Slug).HasMaxLength(180);
+            entity.Property(x => x.Summary).HasMaxLength(500);
+            entity.Property(x => x.TriggerHintsText).HasMaxLength(500);
+            entity.Property(x => x.WhenToUse).HasColumnType("TEXT");
+            entity.Property(x => x.Flow).HasColumnType("TEXT");
+            entity.Property(x => x.ExamplesText).HasColumnType("TEXT");
+            entity.HasOne(x => x.Wing)
+                .WithMany()
+                .HasForeignKey(x => x.WingId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<TodoEntry>(entity =>

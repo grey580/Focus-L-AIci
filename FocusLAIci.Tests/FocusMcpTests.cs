@@ -546,6 +546,72 @@ public sealed class FocusMcpTests
         Assert.Equal("unauthorized", envelope.Error?.Code);
     }
 
+    [Fact]
+    public async Task SkillMutationTools_CreateUpdateDeleteEditableSkills()
+    {
+        await using var harness = await McpHarness.CreateAsync();
+        await using var scope = harness.Services.CreateAsyncScope();
+        var registry = scope.ServiceProvider.GetRequiredService<FocusMcpToolRegistry>();
+
+        var created = JsonSerializer.SerializeToElement(await registry.InvokeAsync(
+            "focus.skill.create",
+            JsonDocument.Parse(
+                """
+                {
+                  "name": "MCP Skill CRUD",
+                  "summary": "Exercise skill create update delete support.",
+                  "category": "Tooling",
+                  "whenToUse": "Use when verifying the editable skill catalog.",
+                  "flow": "Create the skill.\nUpdate the skill.\nDelete the skill.",
+                  "examplesText": "Create a skill\nUpdate a skill",
+                  "triggerHintsText": "skill crud, editable skill"
+                }
+                """).RootElement,
+            CancellationToken.None));
+
+        var skillId = created.GetProperty("id").GetGuid();
+        Assert.True(created.GetProperty("created").GetBoolean());
+        Assert.Equal("mcp-skill-crud", created.GetProperty("slug").GetString());
+
+        var updated = JsonSerializer.SerializeToElement(await registry.InvokeAsync(
+            "focus.skill.update",
+            JsonDocument.Parse(
+                $$"""
+                {
+                  "id": "{{skillId}}",
+                  "name": "MCP Skill CRUD Updated",
+                  "summary": "Exercise skill create update delete support after update.",
+                  "category": "System",
+                  "whenToUse": "Use when verifying the editable skill catalog after changes.",
+                  "flow": "Read the skill.\nConfirm the update.\nClean it up.",
+                  "examplesText": "Update a skill",
+                  "triggerHintsText": "skill update"
+                }
+                """).RootElement,
+            CancellationToken.None));
+
+        var skillDetails = JsonSerializer.SerializeToElement(await registry.InvokeAsync(
+            "focus.skill.get",
+            JsonDocument.Parse("""{"slug":"mcp-skill-crud-updated"}""").RootElement,
+            CancellationToken.None));
+        var deleted = JsonSerializer.SerializeToElement(await registry.InvokeAsync(
+            "focus.skill.delete",
+            JsonDocument.Parse($$"""{"id":"{{skillId}}"}""").RootElement,
+            CancellationToken.None));
+        var skillList = JsonSerializer.SerializeToElement(await registry.InvokeAsync(
+            "focus.skill.list",
+            JsonDocument.Parse("""{"query":"crud"}""").RootElement,
+            CancellationToken.None));
+
+        Assert.True(updated.GetProperty("updated").GetBoolean());
+        Assert.Equal(skillId, updated.GetProperty("id").GetGuid());
+        Assert.Equal("mcp-skill-crud-updated", updated.GetProperty("slug").GetString());
+        Assert.Equal("MCP Skill CRUD Updated", skillDetails.GetProperty("skill").GetProperty("Skill").GetProperty("Name").GetString());
+        Assert.False(skillDetails.GetProperty("skill").GetProperty("Skill").GetProperty("IsReadOnly").GetBoolean());
+        Assert.True(deleted.GetProperty("deleted").GetBoolean());
+        Assert.DoesNotContain(skillList.GetProperty("skills").EnumerateArray(), x => x.GetProperty("Id").GetGuid() == skillId);
+    }
+
     private static FocusLAIci.Web.Controllers.Api.McpController CreateController(IServiceProvider services, IPAddress remoteAddress, string? bearerToken = null)
     {
         var controller = new FocusLAIci.Web.Controllers.Api.McpController(
@@ -580,7 +646,7 @@ public sealed class FocusMcpTests
 
         public ServiceProvider Services { get; }
 
-        public static async Task<McpHarness> CreateAsync(IReadOnlyDictionary<string, string?>? extraConfiguration = null)
+        public static async Task<McpHarness> CreateAsync(IReadOnlyDictionary<string, string?>? extraConfiguration = null, string? contentRootPath = null)
         {
             var connection = new SqliteConnection("Data Source=:memory:");
             await connection.OpenAsync();
@@ -601,11 +667,13 @@ public sealed class FocusMcpTests
             var configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(settings)
                 .Build();
+            var resolvedContentRootPath = contentRootPath ?? AppContext.BaseDirectory;
 
             services.AddSingleton<IConfiguration>(configuration);
             services.AddSingleton<IHostEnvironment>(new TestHostEnvironment
             {
-                ContentRootPath = AppContext.BaseDirectory
+                ContentRootPath = resolvedContentRootPath,
+                ContentRootFileProvider = new PhysicalFileProvider(resolvedContentRootPath)
             });
             services.AddLogging();
             services.AddSingleton<FocusMcpAuthService>();
@@ -614,6 +682,7 @@ public sealed class FocusMcpTests
             services.AddSingleton<FocusMcpEventBus>();
             services.AddSingleton<FocusAgentCatalogService>();
             services.AddSingleton<FocusDiagnosticsService>();
+            services.AddSingleton<RepoSkillCatalogService>();
             services.AddDbContext<FocusMemoryContext>(options => options.UseSqlite(connection));
             services.AddScoped<IFocusEventPublisher>(_ => NullFocusEventPublisher.Instance);
             services.AddScoped<ContextService>();
@@ -645,5 +714,57 @@ public sealed class FocusMcpTests
         public string ApplicationName { get; set; } = "FocusLAIci.Tests";
         public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
         public IFileProvider ContentRootFileProvider { get; set; } = new PhysicalFileProvider(AppContext.BaseDirectory);
+    }
+
+    [Fact]
+    public async Task RepoSkills_AppearInMcpSkillDirectoryAndDetail()
+    {
+        var contentRoot = Path.Combine(Path.GetTempPath(), $"focus-mcp-repo-skills-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(contentRoot, ".agents", "skills", "repo-browser-check"));
+        File.WriteAllText(
+            Path.Combine(contentRoot, ".agents", "skills", "repo-browser-check", "SKILL.md"),
+            """
+            ---
+            name: repo-browser-check
+            description: Inspect browser state and console issues. Triggers on requests like "check the browser" and "inspect console errors".
+            ---
+
+            # Repo Browser Check
+
+            ## Workflow
+
+            1. Open the browser target.
+            2. Inspect errors and rendering state.
+            """);
+
+        try
+        {
+            await using var harness = await McpHarness.CreateAsync(contentRootPath: contentRoot);
+            await using var scope = harness.Services.CreateAsyncScope();
+            var registry = scope.ServiceProvider.GetRequiredService<FocusMcpToolRegistry>();
+            var resources = scope.ServiceProvider.GetRequiredService<FocusMcpResourceRegistry>();
+
+            var skillListResult = JsonSerializer.SerializeToElement(await registry.InvokeAsync(
+                "focus.skill.list",
+                JsonDocument.Parse("""{"query":"browser"}""").RootElement,
+                CancellationToken.None));
+            var skillGetResult = JsonSerializer.SerializeToElement(await registry.InvokeAsync(
+                "focus.skill.get",
+                JsonDocument.Parse("""{"slug":"repo-browser-check"}""").RootElement,
+                CancellationToken.None));
+            var skillDirectory = JsonSerializer.SerializeToElement((await resources.GetResourceAsync("focus://skills", "loopback", CancellationToken.None)).Data);
+
+            Assert.Contains(skillListResult.GetProperty("skills").EnumerateArray(), x => x.GetProperty("Slug").GetString() == "repo-browser-check");
+            Assert.Equal("Repo Browser Check", skillGetResult.GetProperty("skill").GetProperty("Skill").GetProperty("Name").GetString());
+            Assert.True(skillGetResult.GetProperty("skill").GetProperty("Skill").GetProperty("IsReadOnly").GetBoolean());
+            Assert.Contains(skillDirectory.GetProperty("skills").EnumerateArray(), x => x.GetProperty("Slug").GetString() == "repo-browser-check");
+        }
+        finally
+        {
+            if (Directory.Exists(contentRoot))
+            {
+                Directory.Delete(contentRoot, recursive: true);
+            }
+        }
     }
 }

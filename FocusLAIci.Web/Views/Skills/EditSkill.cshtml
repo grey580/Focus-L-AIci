@@ -1,0 +1,93 @@
+@using FocusLAIci.Web.Models
+@model SkillEditorViewModel
+@{
+    ViewData["Title"] = Model.Heading;
+}
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow text-dark">Operational skill</p>
+        <h1>@Model.Heading</h1>
+        <p class="page-copy">Capture a reusable runbook so future sessions can follow the workflow directly instead of reconstructing it from scattered memories.</p>
+    </div>
+</section>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body">
+        <form method="post">
+            @Html.AntiForgeryToken()
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+            <div class="row g-3">
+                <div class="col-md-8">
+                    <label asp-for="Input.Name" class="form-label"></label>
+                    <input asp-for="Input.Name" class="form-control" placeholder="Investigate static asset failures" />
+                    <span asp-validation-for="Input.Name" class="text-danger"></span>
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="Input.Category" class="form-label"></label>
+                    <select asp-for="Input.Category" class="form-select" asp-items="Html.GetEnumSelectList<SkillCategory>()"></select>
+                    <span asp-validation-for="Input.Category" class="text-danger"></span>
+                </div>
+                <div class="col-12">
+                    <label asp-for="Input.Summary" class="form-label"></label>
+                    <textarea asp-for="Input.Summary" rows="2" class="form-control" placeholder="Short explanation of what this skill is for"></textarea>
+                    <span asp-validation-for="Input.Summary" class="text-danger"></span>
+                </div>
+                <div class="col-12">
+                    <label asp-for="Input.WhenToUse" class="form-label"></label>
+                    <textarea asp-for="Input.WhenToUse" rows="5" class="form-control memory-editor" placeholder="One trigger or condition per line"></textarea>
+                    <div class="form-text">Use one line per usage cue.</div>
+                    <span asp-validation-for="Input.WhenToUse" class="text-danger"></span>
+                </div>
+                <div class="col-12">
+                    <label asp-for="Input.Flow" class="form-label"></label>
+                    <textarea asp-for="Input.Flow" rows="8" class="form-control memory-editor" placeholder="One step per line"></textarea>
+                    <div class="form-text">Use one line per step so Focus can render this as a clean workflow.</div>
+                    <span asp-validation-for="Input.Flow" class="text-danger"></span>
+                </div>
+                <div class="col-12">
+                    <label asp-for="Input.ExamplesText" class="form-label"></label>
+                    <textarea asp-for="Input.ExamplesText" rows="5" class="form-control memory-editor" placeholder="One example prompt or scenario per line"></textarea>
+                    <span asp-validation-for="Input.ExamplesText" class="text-danger"></span>
+                </div>
+                <div class="col-md-8">
+                    <label asp-for="Input.TriggerHintsText" class="form-label"></label>
+                    <input asp-for="Input.TriggerHintsText" class="form-control" placeholder="css, mime, bootstrap, site.css" />
+                    <div class="form-text">Comma-separated short hints that make the skill easy to discover.</div>
+                    <span asp-validation-for="Input.TriggerHintsText" class="text-danger"></span>
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="Input.WingId" class="form-label"></label>
+                    <select asp-for="Input.WingId" class="form-select">
+                        <option value="">No related wing</option>
+                        @foreach (var option in Model.WingOptions)
+                        {
+                            if (option.Value == Model.Input.WingId?.ToString())
+                            {
+                                <option value="@option.Value" selected="selected">@option.Text</option>
+                            }
+                            else
+                            {
+                                <option value="@option.Value">@option.Text</option>
+                            }
+                        }
+                    </select>
+                </div>
+                <div class="col-12">
+                    <div class="form-check">
+                        <input asp-for="Input.IsPinned" class="form-check-input" />
+                        <label asp-for="Input.IsPinned" class="form-check-label"></label>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary submit-button">@Model.SubmitLabel</button>
+                    <a class="btn btn-outline-secondary" asp-action="Index">Cancel</a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

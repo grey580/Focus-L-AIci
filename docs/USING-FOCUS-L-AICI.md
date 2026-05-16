@@ -213,16 +213,21 @@ If your AI client or automation runner can keep a session open, prefer the MCP s
 Recommended pattern:
 
 1. initialize a session first
-2. read `focus://workspace` or `focus://recent-changes` to prime the model
+2. read `focus://workspace/bootstrap` or `focus://recent-changes` to prime the model
 3. subscribe only to the resources the task actually needs
 4. invoke mutating tools only when you want Focus to become the source of truth for the outcome
 
 Today, the strongest new-project flow is usually:
 
 1. `focus.memory.search` for the project or subsystem name
-2. context-pack retrieval for the specific task
+2. context-pack retrieval for the specific task, now with optional wing / room / kind / tag filters and recent-change bias
 3. `focus://recent-changes` or ticket/todo reads if active work exists
-4. code graph reads when repository structure matters
+4. `focus.wing.list` / `focus.room.list` when you need the right destination for a new memory
+5. code graph reads when repository structure matters
+
+The MCP layer now also includes direct governance tools for verify, mark-review, archive, restore, supersede, tag updates, governance queue reads, duplicate lookup, canonical memory resolution, and merge flows, so clients can manage trust and lifecycle without falling back to the REST-only flow.
+
+For safer automation, `focus.memory.save` also supports dry-run duplicate detection and duplicate-confirmation gates before it writes a new memory.
 
 That feels stronger than depending on the workspace resource alone, especially when a project already has a few good seed memories.
 
