@@ -2728,6 +2728,40 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task ExternalSkillSuggestionService_BuildAlertAsync_ShowsGuidanceWhenExchangeSkillSourcesDoNotMatchYet()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+        dbContext.ExternalSkillSources.Add(new ExternalSkillSource
+        {
+            Name = "Example Skills",
+            CatalogUrl = "https://example.com/catalog",
+            Description = "Catalog",
+            IsEnabled = true
+        });
+        await dbContext.SaveChangesAsync();
+
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["https://example.com/catalog"] = """
+                [Azure deployment skill](https://example.com/skills/azure-deployment-skill.md)
+                [Desktop support skill](https://example.com/skills/desktop-support-skill.md)
+                """
+        }));
+
+        var service = new ExternalSkillSuggestionService(dbContext, httpClient);
+        var alert = await service.BuildAlertAsync(new ContextPackViewModel
+        {
+            Question = "need to create a powershell script to get all mailboxes and their types from exchange online",
+            SearchTokens = ["powershell", "mailboxes", "exchange", "online"]
+        }, CancellationToken.None);
+
+        Assert.True(alert.HasAlert);
+        Assert.False(alert.HasSuggestions);
+        Assert.Contains("Exchange Online PowerShell", alert.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ExternalSkillSuggestionService_ImportSuggestionAsync_PersistsImportedSkill()
     {
         await using var harness = await TestHarness.CreateAsync();

@@ -70,8 +70,10 @@ public sealed class ExternalSkillSuggestionViewModel
 
 public sealed class ExternalSkillAlertViewModel
 {
+    public bool HasAlert => !string.IsNullOrWhiteSpace(Message);
     public bool HasSuggestions => Suggestions.Count > 0;
     public string Message { get; init; } = string.Empty;
+    public string SettingsUrl { get; init; } = "/Admin/Settings";
     public IReadOnlyCollection<ExternalSkillSuggestionViewModel> Suggestions { get; init; } = Array.Empty<ExternalSkillSuggestionViewModel>();
 }
 

@@ -7,6 +7,31 @@ namespace FocusLAIci.Web.Services;
 
 public sealed partial class ExternalSkillSuggestionService
 {
+    private static readonly HashSet<string> ExchangeOnlineTokens =
+    [
+        "exchange", "online", "powershell", "exo", "mailbox", "mailboxes", "getexomailbox", "recipienttypedetails"
+    ];
+
+    private static readonly HashSet<string> DirectoryAdminTokens =
+    [
+        "ad", "ldap", "entra", "graph", "mail", "email", "exchange", "mailbox", "mailboxes", "office365", "o365", "m365"
+    ];
+
+    private static readonly HashSet<string> WebUiTokens =
+    [
+        "website", "web", "ui", "layout", "css", "frontend", "react", "tailwind"
+    ];
+
+    private static readonly HashSet<string> AzureTokens =
+    [
+        "azure", "cloud", "tenant", "subscription", "entra", "appinsights", "deployment"
+    ];
+
+    private static readonly HashSet<string> DesktopTokens =
+    [
+        "winforms", "windowsforms", "desktop", "forms"
+    ];
+
     private readonly FocusMemoryContext _dbContext;
     private readonly HttpClient _httpClient;
 
@@ -69,15 +94,32 @@ public sealed partial class ExternalSkillSuggestionService
 
     public async Task<ExternalSkillAlertViewModel> BuildAlertAsync(ContextPackViewModel pack, CancellationToken cancellationToken)
     {
+        var enabledSourceCount = await _dbContext.ExternalSkillSources.CountAsync(x => x.IsEnabled, cancellationToken);
         var suggestions = await SuggestSkillsAsync(pack.Question, pack.SearchTokens, 6, cancellationToken);
-        return new ExternalSkillAlertViewModel
+        var opportunityLabel = GetOpportunityLabel(pack.Question, pack.SearchTokens);
+
+        if (suggestions.Count > 0)
         {
-            Message = suggestions.Count == 0
-                ? string.Empty
-                : suggestions.Count == 1
+            return new ExternalSkillAlertViewModel
+            {
+                Message = suggestions.Count == 1
                     ? "This pack may benefit from 1 external skill you can add."
                     : $"This pack may benefit from {suggestions.Count} external skills you can add.",
-            Suggestions = suggestions
+                Suggestions = suggestions
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(opportunityLabel))
+        {
+            return new ExternalSkillAlertViewModel();
+        }
+
+        return new ExternalSkillAlertViewModel
+        {
+            Message = enabledSourceCount == 0
+                ? $"This pack looks like it could benefit from an external {opportunityLabel} skill. Add one or more skill websites in Admin > Settings to enable suggestions."
+                : $"This pack looks like it could benefit from an external {opportunityLabel} skill, but none matched from the configured sources yet.",
+            Suggestions = Array.Empty<ExternalSkillSuggestionViewModel>()
         };
     }
 
@@ -361,6 +403,41 @@ public sealed partial class ExternalSkillSuggestionService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
+
+    private static string GetOpportunityLabel(string question, IReadOnlyCollection<string> searchTokens)
+    {
+        var tokens = Tokenize(string.Join(' ', searchTokens.Prepend(question ?? string.Empty)));
+
+        if (CountMatches(tokens, ExchangeOnlineTokens) >= 3)
+        {
+            return "Exchange Online PowerShell";
+        }
+
+        if (CountMatches(tokens, AzureTokens) >= 2)
+        {
+            return "Azure";
+        }
+
+        if (CountMatches(tokens, WebUiTokens) >= 2)
+        {
+            return "web UI";
+        }
+
+        if (CountMatches(tokens, DesktopTokens) >= 2)
+        {
+            return "desktop app";
+        }
+
+        if (CountMatches(tokens, DirectoryAdminTokens) >= 3)
+        {
+            return "directory admin";
+        }
+
+        return string.Empty;
+    }
+
+    private static int CountMatches(IEnumerable<string> tokens, IReadOnlySet<string> candidates)
+        => tokens.Count(token => candidates.Contains(token));
 
     [GeneratedRegex("---\\s*(?<body>.*?)---", RegexOptions.Singleline)]
     private static partial Regex FrontMatterRegex();
