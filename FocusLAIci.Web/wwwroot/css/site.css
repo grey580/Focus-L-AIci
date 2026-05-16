@@ -1091,7 +1091,18 @@ body[data-theme="dark"] .theme-toggle-icon-moon {
 }
 
 .dashboard-skill-alert-button {
+  background: #fff7db;
+  border: 1px solid #9b7a12;
+  color: #5f4700;
+  font-weight: 700;
   justify-self: start;
+}
+
+.dashboard-skill-alert-button:hover,
+.dashboard-skill-alert-button:focus {
+  background: #ffe8a6;
+  border-color: #8a6b0b;
+  color: #3f2f00;
 }
 
 .dashboard-pack-summary {
@@ -2814,6 +2825,19 @@ body[data-theme="dark"] .btn-outline-secondary:focus {
 body[data-theme="dark"] .btn-outline-light {
   border-color: rgba(255, 255, 255, 0.38);
   color: #fff;
+}
+
+body[data-theme="dark"] .dashboard-skill-alert-button {
+  background: #ffd86b;
+  border-color: #ffcc42;
+  color: #241600;
+}
+
+body[data-theme="dark"] .dashboard-skill-alert-button:hover,
+body[data-theme="dark"] .dashboard-skill-alert-button:focus {
+  background: #ffe28f;
+  border-color: #ffd86b;
+  color: #120b00;
 }
 
 body[data-theme="dark"] .alert-success {
