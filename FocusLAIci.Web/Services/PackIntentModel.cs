@@ -15,6 +15,32 @@ public sealed record PackIntentPrediction(
     decimal RepositoryArchitectureScore,
     string ModelId)
 {
+    public decimal OperationsFamilyScore => Math.Max(ExternalOperationsScore, Math.Max(DirectoryAdminScore, GenericAutomationScore));
+
+    public decimal CodeFamilyScore => Math.Max(CodeIntentScore, RepositoryArchitectureScore);
+
+    public decimal TopScore => new[]
+    {
+        ExternalOperationsScore,
+        DirectoryAdminScore,
+        CodeIntentScore,
+        GenericAutomationScore,
+        RepositoryArchitectureScore
+    }.Max();
+
+    public decimal RunnerUpScore => new[]
+    {
+        ExternalOperationsScore,
+        DirectoryAdminScore,
+        CodeIntentScore,
+        GenericAutomationScore,
+        RepositoryArchitectureScore
+    }.OrderByDescending(x => x).Skip(1).FirstOrDefault();
+
+    public decimal TopMargin => TopScore - RunnerUpScore;
+
+    public bool IsAmbiguous => TopScore < 0.60m || TopMargin < 0.08m;
+
     public bool IsExternalOperationsQuery => ExternalOperationsScore >= 0.54m;
 
     public bool IsDirectoryAdminQuery => DirectoryAdminScore >= 0.56m;
@@ -44,6 +70,8 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         new("mail", 0.7m),
         new("mailbox", 1.0m),
         new("mailboxes", 1.0m),
+        new("on prem", 1.0m, true),
+        new("on premises", 1.1m, true),
         new("office365", 1.0m),
         new("office 365", 1.0m, true),
         new("o365", 1.0m),
@@ -56,12 +84,15 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         new("domain", 0.8m),
         new("dns", 0.9m),
         new("proxy addresses", 1.0m, true),
+        new("proxy address", 0.9m, true),
         new("proxyaddresses", 1.0m),
         new("user principal name", 1.0m, true),
         new("upn", 0.8m),
         new("userprincipalname", 0.9m),
         new("mail nickname", 0.9m, true),
         new("mailnickname", 0.9m),
+        new("title", 0.4m),
+        new("department", 0.5m),
         new("export", 0.8m),
         new("csv", 0.8m),
         new("disabled", 0.6m),
@@ -90,6 +121,8 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         new("mail", 1.5m),
         new("mailbox", 2.1m),
         new("mailboxes", 2.1m),
+        new("on prem", 1.4m, true),
+        new("on premises", 1.6m, true),
         new("office365", 1.7m),
         new("office 365", 1.7m, true),
         new("o365", 1.5m),
@@ -104,6 +137,7 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         new("forwarder", 1.4m),
         new("forest", 1.4m),
         new("proxy addresses", 2.2m, true),
+        new("proxy address", 1.8m, true),
         new("proxyaddresses", 2.2m),
         new("user principal name", 1.9m, true),
         new("attribute", 1.3m),
@@ -112,6 +146,10 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         new("userprincipalname", 2.0m),
         new("mail nickname", 1.7m, true),
         new("mailnickname", 1.6m),
+        new("title", 0.8m),
+        new("department", 0.9m),
+        new("phone", 0.6m),
+        new("telephone", 0.7m),
         new("repo", -1.4m),
         new("project", -1.2m),
         new("code", -1.2m),
@@ -188,6 +226,13 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         new("list", 0.8m),
         new("automation", 1.1m),
         new("users", 0.5m),
+        new("accounts", 0.9m),
+        new("stale", 0.7m),
+        new("backup", 0.6m),
+        new("backups", 0.6m),
+        new("hash", 0.8m),
+        new("hashes", 0.8m),
+        new("compare object", 0.8m, true),
         new("compare", 1.0m),
         new("comparison", 1.0m),
         new("difference", 1.0m),
@@ -245,7 +290,7 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
 
     public static TinyLocalPackIntentModel Shared { get; } = new();
 
-    public string ModelId => "tiny-local-pack-intent-v2";
+    public string ModelId => "tiny-local-pack-intent-v3";
 
     public PackIntentPrediction Predict(string? question)
     {
@@ -256,22 +301,31 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             return new PackIntentPrediction(0m, 0m, 0m, 0m, 0m, ModelId);
         }
 
-        var externalOperationsScore = Score(normalized, tokens, -1.35m, ExternalOperationsFeatures);
-        var directoryAdminScore = Score(normalized, tokens, -1.55m, DirectoryAdminFeatures);
-        var codeIntentScore = Score(normalized, tokens, -1.75m, CodeIntentFeatures);
-        var genericAutomationScore = Score(normalized, tokens, -1.85m, GenericAutomationFeatures);
-        var repositoryArchitectureScore = Score(normalized, tokens, -1.95m, RepositoryArchitectureFeatures);
+        var facets = ExtractFacetSignals(normalized, tokens);
+        var externalOperationsRaw = ScoreRaw(normalized, tokens, -1.35m, ExternalOperationsFeatures);
+        var directoryAdminRaw = ScoreRaw(normalized, tokens, -1.55m, DirectoryAdminFeatures);
+        var codeIntentRaw = ScoreRaw(normalized, tokens, -1.75m, CodeIntentFeatures);
+        var genericAutomationRaw = ScoreRaw(normalized, tokens, -1.85m, GenericAutomationFeatures);
+        var repositoryArchitectureRaw = ScoreRaw(normalized, tokens, -1.95m, RepositoryArchitectureFeatures);
+
+        ApplyFacetAdjustments(
+            facets,
+            ref externalOperationsRaw,
+            ref directoryAdminRaw,
+            ref codeIntentRaw,
+            ref genericAutomationRaw,
+            ref repositoryArchitectureRaw);
 
         return new PackIntentPrediction(
-            externalOperationsScore,
-            directoryAdminScore,
-            codeIntentScore,
-            genericAutomationScore,
-            repositoryArchitectureScore,
+            ToProbability(externalOperationsRaw),
+            ToProbability(directoryAdminRaw),
+            ToProbability(codeIntentRaw),
+            ToProbability(genericAutomationRaw),
+            ToProbability(repositoryArchitectureRaw),
             ModelId);
     }
 
-    private static decimal Score(string normalizedQuestion, HashSet<string> tokens, decimal bias, IReadOnlyCollection<WeightedFeature> features)
+    private static decimal ScoreRaw(string normalizedQuestion, HashSet<string> tokens, decimal bias, IReadOnlyCollection<WeightedFeature> features)
     {
         decimal raw = bias;
         foreach (var feature in features)
@@ -292,8 +346,97 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             }
         }
 
+        return raw;
+    }
+
+    private static decimal ToProbability(decimal raw)
+    {
         var probability = 1d / (1d + Math.Exp((double)-raw));
         return decimal.Round((decimal)probability, 4);
+    }
+
+    private static FacetSignals ExtractFacetSignals(string normalizedQuestion, IReadOnlyCollection<string> tokens)
+    {
+        var hasFileComparisonIntent =
+            (tokens.Any(token => token is "compare" or "comparison" or "diff" or "difference" or "differences" or "hash" or "hashes")
+             || normalizedQuestion.Contains("compare object", StringComparison.Ordinal))
+            && (tokens.Any(token => token is "file" or "files" or "folder" or "folders" or "directory" or "directories" or "backup" or "backups")
+                || normalizedQuestion.Contains("directory tree", StringComparison.Ordinal));
+
+        var hasDirectoryScope =
+            tokens.Any(token => token is "ldap" or "entra" or "exchange" or "upn" or "userprincipalname" or "proxyaddresses" or "mailnickname")
+            || normalizedQuestion.Contains("active directory", StringComparison.Ordinal)
+            || normalizedQuestion.Contains("on prem", StringComparison.Ordinal)
+            || normalizedQuestion.Contains("on premises", StringComparison.Ordinal)
+            || normalizedQuestion.Contains("proxy address", StringComparison.Ordinal)
+            || normalizedQuestion.Contains("user principal name", StringComparison.Ordinal);
+        var hasDirectoryAttributes =
+            tokens.Any(token => token is "attribute" or "attributes" or "title" or "department" or "phone" or "telephone" or "email" or "emails" or "mail" or "mailbox" or "mailboxes" or "upn" or "userprincipalname" or "proxyaddresses" or "mailnickname")
+            || normalizedQuestion.Contains("proxy address", StringComparison.Ordinal)
+            || normalizedQuestion.Contains("user principal name", StringComparison.Ordinal)
+            || normalizedQuestion.Contains("mail nickname", StringComparison.Ordinal);
+        var hasDirectoryAttributeIntent = hasDirectoryScope && hasDirectoryAttributes;
+
+        var hasRepoArchitectureIntent =
+            (tokens.Any(token => token is "architecture" or "refactor" or "module" or "modules" or "component" or "components" or "structure" or "design" or "blueprint" or "overview" or "onboarding" or "boundaries")
+             || normalizedQuestion.Contains("service boundaries", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("module layout", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("architecture overview", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("codebase structure", StringComparison.Ordinal))
+            && !hasFileComparisonIntent;
+        var hasRepoCodeIntent =
+            tokens.Any(token => token is "repo" or "repository" or "project" or "code" or "class" or "method" or "controller" or "implementation" or "symbol" or "symbols" or "namespace")
+            || (tokens.Any(token => token is "file" or "files")
+                && tokens.Any(token => token is "repo" or "repository" or "project" or "code" or "source"));
+
+        return new FacetSignals(
+            hasFileComparisonIntent,
+            hasDirectoryAttributeIntent,
+            hasRepoArchitectureIntent,
+            hasRepoCodeIntent);
+    }
+
+    private static void ApplyFacetAdjustments(
+        FacetSignals facets,
+        ref decimal externalOperationsRaw,
+        ref decimal directoryAdminRaw,
+        ref decimal codeIntentRaw,
+        ref decimal genericAutomationRaw,
+        ref decimal repositoryArchitectureRaw)
+    {
+        if (facets.HasFileComparisonIntent)
+        {
+            genericAutomationRaw += 1.3m;
+            codeIntentRaw -= 1.2m;
+            repositoryArchitectureRaw -= 1.0m;
+            directoryAdminRaw -= 1.2m;
+            externalOperationsRaw -= 0.8m;
+        }
+
+        if (facets.HasDirectoryAttributeIntent)
+        {
+            directoryAdminRaw += 1.2m;
+            externalOperationsRaw += 0.4m;
+            codeIntentRaw -= 1.0m;
+            repositoryArchitectureRaw -= 0.9m;
+        }
+
+        if (facets.HasRepoArchitectureIntent)
+        {
+            repositoryArchitectureRaw += 1.3m;
+            codeIntentRaw += 0.5m;
+            genericAutomationRaw -= 0.9m;
+            directoryAdminRaw -= 0.8m;
+            externalOperationsRaw -= 0.8m;
+        }
+
+        if (facets.HasRepoCodeIntent && !facets.HasFileComparisonIntent)
+        {
+            codeIntentRaw += 0.9m;
+            genericAutomationRaw -= 0.8m;
+            directoryAdminRaw -= 0.7m;
+            externalOperationsRaw -= 0.7m;
+        }
     }
 
     private static string Normalize(string? question)
@@ -323,4 +466,9 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
     }
 
     private sealed record WeightedFeature(string Feature, decimal Weight, bool IsPhrase = false);
+    private sealed record FacetSignals(
+        bool HasFileComparisonIntent,
+        bool HasDirectoryAttributeIntent,
+        bool HasRepoArchitectureIntent,
+        bool HasRepoCodeIntent);
 }

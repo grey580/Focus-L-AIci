@@ -2089,6 +2089,46 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task ContextService_CloudServiceQueries_DoNotPromoteGenericServiceWordToCodeIntent()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        dbContext.Skills.Add(new SkillEntry
+        {
+            Name = "Instrument App Insights telemetry",
+            Slug = "instrument-app-insights-telemetry-service-test",
+            Summary = "Add Azure Application Insights telemetry and deployment visibility.",
+            Category = SkillCategory.System,
+            WhenToUse = "Use this for Azure deployment, telemetry, identity, and cloud observability work.",
+            Flow = "Review Azure deployment.\nAdd telemetry.\nVerify identity and monitoring.",
+            TriggerHintsText = "azure, cloud, deployment, identity, app insights, telemetry",
+            IsPinned = true
+        });
+        dbContext.CodeGraphProjects.Add(new CodeGraphProject
+        {
+            Name = "Focus L-AIci",
+            RootPath = @"C:\Copilot\Focus L-AIci",
+            Description = "Application code.",
+            Summary = "Repo source code.",
+            UpdatedUtc = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "Instrument Azure App Insights telemetry for this service.",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.RecommendedSkills);
+        Assert.Equal("Instrument App Insights telemetry", pack.RecommendedSkills.First().Name);
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
     public async Task ContextService_DesktopAppQueries_PreferDotnetDesktopSkills()
     {
         await using var harness = await TestHarness.CreateAsync();

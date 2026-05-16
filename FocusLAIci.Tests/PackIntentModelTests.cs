@@ -175,4 +175,31 @@ public sealed class PackIntentModelTests
             Assert.Equal(expectedRepositoryArchitecture.Value, prediction.IsRepositoryArchitectureQuery);
         }
     }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_PrefersDirectoryAdminForOnPremAttributeQueries()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("Audit on prem LDAP users for blank proxy address and title values.");
+
+        Assert.True(prediction.IsDirectoryAdminQuery);
+        Assert.True(prediction.DirectoryAdminScore > prediction.GenericAutomationScore);
+    }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_StaysGenericForAccountsAutomation()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("Create a script to export stale accounts to CSV.");
+
+        Assert.True(prediction.IsGenericAutomationQuery);
+        Assert.False(prediction.HasExplicitCodeIntent);
+    }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_FlagsRepositoryArchitectureWhenServiceBoundariesAreRequested()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("Give me an architecture overview of the repository and its service boundaries.");
+
+        Assert.True(prediction.IsRepositoryArchitectureQuery);
+        Assert.True(prediction.CodeFamilyScore >= prediction.OperationsFamilyScore);
+    }
 }

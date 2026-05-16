@@ -48,7 +48,7 @@ public sealed partial class ContextService
     ];
     private static readonly HashSet<string> StrongCodeIntentTokens =
     [
-        "code", "repo", "repository", "project", "symbol", "symbols", "class", "method", "controller", "service", "implementation", "source", "codebase"
+        "code", "repo", "repository", "project", "symbol", "symbols", "class", "method", "controller", "implementation", "codebase", "namespace"
     ];
     private static readonly HashSet<string> DirectoryDomainTokens =
     [
@@ -139,6 +139,10 @@ public sealed partial class ContextService
     [
         "repo", "repository", "codebase", "architecture", "refactor", "map", "structure", "design", "system", "module", "component", "onboarding"
     ];
+    private static readonly string[] RepositoryArchitecturePhrases =
+    [
+        "service boundaries", "module layout", "codebase structure", "system architecture", "architecture overview"
+    ];
     private static readonly HashSet<string> CodeMemoryTokens =
     [
         "code", "repo", "repository", "project", "file", "files", "class", "method", "controller", "service", "implementation", "source", "startup", "runtime", "path", "ranking"
@@ -176,14 +180,35 @@ public sealed partial class ContextService
         var semanticTokens = ExpandSemanticTokens(tokens);
         var intentPrediction = _packIntentModel.Predict(normalizedQuestion);
         var preferDurableMemoryLead = ShouldPreferDurableMemoryLead(normalizedQuestion, effectiveInput);
-        var externalAdminQuery = intentPrediction.IsExternalOperationsQuery || IsExternalOperationsQuery(tokens);
-        var directoryAdminQuery = intentPrediction.IsDirectoryAdminQuery || IsDirectoryAdminQuery(tokens);
-        var explicitCodeQuery = intentPrediction.HasExplicitCodeIntent || HasExplicitCodeIntent(tokens);
-        var genericAutomationQuery = intentPrediction.IsGenericAutomationQuery && !directoryAdminQuery && !explicitCodeQuery;
-        var repositoryArchitectureQuery = intentPrediction.IsRepositoryArchitectureQuery;
-        var currentProjectCodeQuery = explicitCodeQuery && HasCurrentProjectHint(tokens);
-        var localSupportQuery = IsLocalSupportQuery(tokens);
         var fileComparisonQuery = HasFileComparisonIntent(tokens, normalizedQuestionPhrase);
+        var codeFamilyPreferred = intentPrediction.CodeFamilyScore >= intentPrediction.OperationsFamilyScore + 0.08m;
+        var operationsFamilyPreferred = intentPrediction.OperationsFamilyScore >= intentPrediction.CodeFamilyScore + 0.08m;
+        var externalAdminQuery = intentPrediction.IsExternalOperationsQuery
+                                 || (!codeFamilyPreferred
+                                     && intentPrediction.ExternalOperationsScore >= 0.35m
+                                     && IsExternalOperationsQuery(tokens));
+        var directoryAdminQuery = intentPrediction.IsDirectoryAdminQuery
+                                  || (!codeFamilyPreferred
+                                      && intentPrediction.DirectoryAdminScore >= 0.35m
+                                      && IsDirectoryAdminQuery(tokens));
+        var explicitCodeQuery = intentPrediction.HasExplicitCodeIntent
+                                || (!operationsFamilyPreferred
+                                    && intentPrediction.CodeIntentScore >= 0.38m
+                                    && HasExplicitCodeIntent(tokens));
+        var repositoryArchitectureQuery = intentPrediction.IsRepositoryArchitectureQuery
+                                          || (!operationsFamilyPreferred
+                                              && intentPrediction.RepositoryArchitectureScore >= 0.40m
+                                              && IsRepositoryArchitectureQuery(tokens, normalizedQuestionPhrase));
+        var currentProjectHint = HasCurrentProjectHint(tokens);
+        if (fileComparisonQuery && !currentProjectHint)
+        {
+            explicitCodeQuery = false;
+        }
+
+        var genericAutomationQuery = intentPrediction.IsGenericAutomationQuery && !directoryAdminQuery && !explicitCodeQuery;
+        var currentProjectCodeQuery = explicitCodeQuery && currentProjectHint;
+
+        var localSupportQuery = IsLocalSupportQuery(tokens);
         var webUiQuery = IsWebUiQuery(tokens);
         var cloudOpsQuery = IsCloudOpsQuery(tokens);
         var desktopAppQuery = IsDesktopAppQuery(tokens, normalizedQuestionPhrase);
@@ -1839,6 +1864,10 @@ public sealed partial class ContextService
         return tokens.Any(token => token is "file" or "files")
                && tokens.Any(token => token is "repo" or "repository" or "project" or "code" or "source");
     }
+
+    private static bool IsRepositoryArchitectureQuery(IReadOnlyCollection<string> tokens, string normalizedQuery)
+        => tokens.Count(token => RepositoryArchitectureTokens.Contains(token)) >= 2
+           || ContainsAnyPhrase(normalizedQuery, RepositoryArchitecturePhrases);
 
     private static bool IsDirectoryAdminQuery(IReadOnlyCollection<string> tokens)
         => tokens.Count(token => DirectoryAdminTokens.Contains(token)) >= 2;
