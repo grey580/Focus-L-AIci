@@ -231,7 +231,7 @@ public sealed partial class ExternalSkillSuggestionService
         foreach (Match match in AnchorRegex().Matches(catalogText))
         {
             var href = match.Groups["href"].Value.Trim();
-            var label = HtmlDecode(match.Groups["label"].Value.Trim());
+            var label = SanitizeCandidateLabel(match.Groups["label"].Value.Trim(), href);
             if (string.IsNullOrWhiteSpace(href))
             {
                 continue;
@@ -250,7 +250,7 @@ public sealed partial class ExternalSkillSuggestionService
 
         foreach (Match match in MarkdownLinkRegex().Matches(catalogText))
         {
-            var label = match.Groups["label"].Value.Trim();
+            var label = SanitizeCandidateLabel(match.Groups["label"].Value.Trim(), match.Groups["href"].Value.Trim());
             var href = match.Groups["href"].Value.Trim();
             var absoluteUrl = ToAbsoluteUrl(source.CatalogUrl, href);
             if (!absoluteUrl.Contains("skill", StringComparison.OrdinalIgnoreCase)
@@ -380,13 +380,65 @@ public sealed partial class ExternalSkillSuggestionService
 
     private static string GuessNameFromUrl(string url)
     {
-        var segment = new Uri(url).Segments.LastOrDefault()?.Trim('/', ' ') ?? "Imported skill";
+        var uri = new Uri(url);
+        var segments = uri.Segments
+            .Select(segment => segment.Trim('/', ' '))
+            .Where(segment => !string.IsNullOrWhiteSpace(segment))
+            .ToArray();
+        if (segments.Length == 0)
+        {
+            return "Imported skill";
+        }
+
+        var segment = segments[^1];
+        if (segment.Equals("SKILL.md", StringComparison.OrdinalIgnoreCase)
+            || segment.Equals("README.md", StringComparison.OrdinalIgnoreCase))
+        {
+            segment = segments.Length >= 2 ? segments[^2] : segment;
+        }
+
         segment = segment.Replace(".md", string.Empty, StringComparison.OrdinalIgnoreCase);
         return segment.Replace('-', ' ').Replace('_', ' ').Trim();
     }
 
     private static string HtmlDecode(string value)
         => System.Net.WebUtility.HtmlDecode(value);
+
+    private static string SanitizeCandidateLabel(string value, string href)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return GuessNameFromUrl(ToAbsoluteOrOriginalUrl(href));
+        }
+
+        var decoded = HtmlDecode(value);
+        if (decoded.Contains('<', StringComparison.Ordinal) || decoded.Contains('>', StringComparison.Ordinal))
+        {
+            var stripped = HtmlTagRegex().Replace(decoded, " ");
+            stripped = Regex.Replace(stripped, "\\s+", " ").Trim();
+            if (string.IsNullOrWhiteSpace(stripped) || LooksLikeCatalogRowNoise(stripped))
+            {
+                return GuessNameFromUrl(ToAbsoluteOrOriginalUrl(href));
+            }
+
+            return stripped;
+        }
+
+        return decoded.Trim();
+    }
+
+    private static bool LooksLikeCatalogRowNoise(string value)
+    {
+        var normalized = value.Trim();
+        return normalized.Length > 80
+               || Regex.IsMatch(normalized, @"\b\d+(\.\d+)?[KMB]?\b", RegexOptions.IgnoreCase)
+               || normalized.Contains("lg:col-span", StringComparison.OrdinalIgnoreCase)
+               || normalized.Contains("text-", StringComparison.OrdinalIgnoreCase)
+               || normalized.Contains("font-", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ToAbsoluteOrOriginalUrl(string value)
+        => Uri.TryCreate(value, UriKind.Absolute, out var absolute) ? absolute.ToString() : value;
 
     private static string TrimStatus(string value)
         => TrimText(value, 260);
@@ -447,6 +499,9 @@ public sealed partial class ExternalSkillSuggestionService
 
     [GeneratedRegex("\\[(?<label>[^\\]]+)\\]\\((?<href>[^\\)]+)\\)", RegexOptions.IgnoreCase)]
     private static partial Regex MarkdownLinkRegex();
+
+    [GeneratedRegex("<[^>]+>", RegexOptions.Singleline)]
+    private static partial Regex HtmlTagRegex();
 
     [GeneratedRegex("[a-z0-9]+", RegexOptions.IgnoreCase)]
     private static partial Regex WordRegex();

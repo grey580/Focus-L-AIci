@@ -2762,6 +2762,35 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task ExternalSkillSuggestionService_StripsHtmlNoiseFromCatalogLabels()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+        dbContext.ExternalSkillSources.Add(new ExternalSkillSource
+        {
+            Name = "skills.sh",
+            CatalogUrl = "https://www.skills.sh/",
+            Description = "Catalog",
+            IsEnabled = true
+        });
+        await dbContext.SaveChangesAsync();
+
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["https://www.skills.sh/"] = """
+                <a href="https://www.skills.sh/coreyhaines31/marketingskills/cold-email"><div class="lg:col-span-1 text-left"><span class="text-sm lg:text-base text-(--ds-gray-600) font-mono">232</span></div><div class="lg:col-span-13 min-w-1 flex flex-col lg:flex-row lg:items-baseline lg:gap-2"><h3 class="font-semibold text-foreground truncate whitespace-nowrap">cold-email</h3><p class="text-xs lg:text-sm text-(--ds-gray-600) font-mono mt-0.5 lg:mt-0 truncate">coreyhaines31/marketingskills</p></div><div class="lg:col-span-2 text-right flex items-center justify-end gap-2"><span class="font-mono text-sm text-foreground">48.7K</span></div></a>
+                """
+        }));
+
+        var service = new ExternalSkillSuggestionService(dbContext, httpClient);
+        var suggestions = await service.SuggestSkillsAsync("write a cold email campaign", ["cold", "email"], 6, CancellationToken.None);
+
+        Assert.NotEmpty(suggestions);
+        Assert.Equal("cold email", suggestions.First().Name);
+        Assert.DoesNotContain("<div", suggestions.First().Name, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ExternalSkillSuggestionService_ImportSuggestionAsync_PersistsImportedSkill()
     {
         await using var harness = await TestHarness.CreateAsync();
