@@ -1829,6 +1829,12 @@ body[data-theme="dark"] .theme-toggle-icon-moon {
   grid-column: 1 / -1;
 }
 
+.external-skill-source-list {
+  max-height: 28rem;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
 .visualizer-layout {
   display: grid;
   gap: 1.5rem;
