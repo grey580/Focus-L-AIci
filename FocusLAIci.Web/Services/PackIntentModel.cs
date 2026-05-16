@@ -13,7 +13,8 @@ public sealed record PackIntentPrediction(
     decimal CodeIntentScore,
     decimal GenericAutomationScore,
     decimal RepositoryArchitectureScore,
-    string ModelId)
+    string ModelId,
+    bool IsProjectHistoryQuery = false)
 {
     public decimal OperationsFamilyScore => Math.Max(ExternalOperationsScore, Math.Max(DirectoryAdminScore, GenericAutomationScore));
 
@@ -322,7 +323,8 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             ToProbability(codeIntentRaw),
             ToProbability(genericAutomationRaw),
             ToProbability(repositoryArchitectureRaw),
-            ModelId);
+            ModelId,
+            facets.HasProjectHistoryIntent);
     }
 
     private static decimal ScoreRaw(string normalizedQuestion, HashSet<string> tokens, decimal bias, IReadOnlyCollection<WeightedFeature> features)
@@ -388,12 +390,25 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             tokens.Any(token => token is "repo" or "repository" or "project" or "code" or "class" or "method" or "controller" or "implementation" or "symbol" or "symbols" or "namespace")
             || (tokens.Any(token => token is "file" or "files")
                 && tokens.Any(token => token is "repo" or "repository" or "project" or "code" or "source"));
+        var hasProjectHistoryIntent =
+            (tokens.Any(token => token is "changed" or "change" or "shipped" or "ship" or "recent" or "recently" or "latest" or "new" or "current" or "state" or "status" or "summary" or "summarize" or "recap" or "progress" or "updated" or "updates")
+             || normalizedQuestion.Contains("what changed", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("what s new", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("whats new", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("what shipped", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("latest work", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("recent work", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("current state", StringComparison.Ordinal))
+            && (tokens.Any(token => token is "project" or "repo" or "repository" or "codebase" or "work")
+                || normalizedQuestion.Contains("c copilot", StringComparison.Ordinal))
+            && !hasDirectoryScope;
 
         return new FacetSignals(
             hasFileComparisonIntent,
             hasDirectoryAttributeIntent,
             hasRepoArchitectureIntent,
-            hasRepoCodeIntent);
+            hasRepoCodeIntent,
+            hasProjectHistoryIntent);
     }
 
     private static void ApplyFacetAdjustments(
@@ -437,6 +452,15 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             directoryAdminRaw -= 0.7m;
             externalOperationsRaw -= 0.7m;
         }
+
+        if (facets.HasProjectHistoryIntent)
+        {
+            codeIntentRaw += 0.8m;
+            repositoryArchitectureRaw += 0.6m;
+            genericAutomationRaw -= 0.8m;
+            directoryAdminRaw -= 0.6m;
+            externalOperationsRaw -= 0.6m;
+        }
     }
 
     private static string Normalize(string? question)
@@ -470,5 +494,6 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         bool HasFileComparisonIntent,
         bool HasDirectoryAttributeIntent,
         bool HasRepoArchitectureIntent,
-        bool HasRepoCodeIntent);
+        bool HasRepoCodeIntent,
+        bool HasProjectHistoryIntent);
 }

@@ -1986,6 +1986,65 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task ContextService_ProjectHistoryQueries_PreferMatchedMemoryAndProjectAndSuppressGenericSkills()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        dbContext.Memories.AddRange(
+            new MemoryEntry
+            {
+                Title = "Built the Sophos XGS desktop monitor in C:\\Copilot\\Sophos-XGS with encrypted credential storage, XML API polling, KPI dashboard, raw-tag explorer, desktop alerts, and dark mode support. Published output lives in the publish folder.",
+                Summary = "Recent shipped state for the Sophos XGS desktop monitor project.",
+                Content = "Sophos XGS build summary and current shipped state.",
+                Kind = MemoryKind.Insight,
+                SourceKind = SourceKind.ManualNote,
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new MemoryEntry
+            {
+                Title = "Dashboard should separate intent, active work, and durable knowledge",
+                Summary = "Focus dashboard layout decision.",
+                Content = "Homepage layout guidance for Focus.",
+                Kind = MemoryKind.Decision,
+                SourceKind = SourceKind.ManualNote,
+                UpdatedUtc = DateTime.UtcNow.AddDays(-2)
+            });
+        dbContext.CodeGraphProjects.AddRange(
+            new CodeGraphProject
+            {
+                Name = "Sophos XGS Monitor",
+                RootPath = @"C:\Copilot\Sophos-XGS",
+                Description = "Desktop monitoring app.",
+                Summary = "Sophos XGS project.",
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new CodeGraphProject
+            {
+                Name = "Focus L-AIci",
+                RootPath = @"C:\Copilot\Focus L-AIci",
+                Description = "Local-first memory system.",
+                Summary = "Focus project.",
+                UpdatedUtc = DateTime.UtcNow
+            });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "What changed recently around \"Built the Sophos XGS desktop monitor in C:\\Copilot\\Sophos-XGS with encrypted credential storage, XML API polling, KPI dashboard, raw-tag explorer, desktop alerts, and dark mode support. Published outp\"?",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.Empty(pack!.RecommendedSkills);
+        Assert.NotEmpty(pack.Memories);
+        Assert.Equal("Built the Sophos XGS desktop monitor in C:\\Copilot\\Sophos-XGS with encrypted credential storage, XML API polling, KPI dashboard, raw-tag explorer, desktop alerts, and dark mode support. Published output lives in the publish folder.", pack.Memories.First().Title);
+        Assert.Single(pack.CodeGraphProjects);
+        Assert.Equal("Sophos XGS Monitor", pack.CodeGraphProjects.First().Title);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
     public async Task ContextService_WebUiQueries_PreferWebSkillsAndSuppressCodeGraphNoise()
     {
         await using var harness = await TestHarness.CreateAsync();

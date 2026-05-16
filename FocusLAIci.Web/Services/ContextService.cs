@@ -207,6 +207,11 @@ public sealed partial class ContextService
 
         var genericAutomationQuery = intentPrediction.IsGenericAutomationQuery && !directoryAdminQuery && !explicitCodeQuery;
         var currentProjectCodeQuery = explicitCodeQuery && currentProjectHint;
+        var projectHistoryQuery = intentPrediction.IsProjectHistoryQuery && !directoryAdminQuery && !genericAutomationQuery && !fileComparisonQuery;
+        if (projectHistoryQuery)
+        {
+            preferDurableMemoryLead = true;
+        }
 
         var localSupportQuery = IsLocalSupportQuery(tokens);
         var webUiQuery = IsWebUiQuery(tokens);
@@ -377,6 +382,16 @@ public sealed partial class ContextService
         var projectPreferences = projects.ToDictionary(
             project => project.Id,
             project => BuildProjectPreference(project, tokens, normalizedQuestion));
+        var projectHistoryFocusProject = projectHistoryQuery
+            ? projects
+                .Where(project => projectPreferences[project.Id].ProjectQueryBoost > 0m || projectPreferences[project.Id].HasStrongAffinity)
+                .OrderByDescending(project => projectPreferences[project.Id].ProjectQueryBoost)
+                .ThenByDescending(project => projectPreferences[project.Id].RepoAffinityBoost)
+                .FirstOrDefault()
+            : null;
+        var projectHistoryFocusTokens = projectHistoryFocusProject is null
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : Tokenize($"{projectHistoryFocusProject.Name} {Path.GetFileName(projectHistoryFocusProject.RootPath)}");
         var externalOpsQuery = IsExternalOperationsQuery(tokens);
 
         var memoryResults = memories
@@ -400,6 +415,7 @@ public sealed partial class ContextService
                 score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.Memory, memory.SourceKind, memory.Kind), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.Memory));
                 score = ApplyBoost(score, BuildScopedMemoryBoost(memory, effectiveInput), BuildScopedMemoryBoostLabel(effectiveInput));
                 score = ApplyBoost(score, effectiveInput.PreferRecentChanges && recentMemoryIds.Contains(memory.Id) ? 2m : 0m, "Recent change");
+                score = ApplyBoost(score, projectHistoryQuery && recentMemoryIds.Contains(memory.Id) ? 4m : 0m, projectHistoryQuery ? "Recent project history" : string.Empty);
                 score = ApplyBoost(score, preferDurableMemoryLead ? DurableMemoryQuestionBoost(memory) : 0m, "Durable memory lead");
                 score = ApplyBoost(score, externalAdminQuery ? BuildExternalAdminMemoryBoost(memory) : 0m, externalAdminQuery ? "Directory admin context" : string.Empty);
                 score = ApplyBoost(
@@ -413,6 +429,7 @@ public sealed partial class ContextService
             .Where(x => !directoryAdminQuery || explicitCodeQuery || IsDirectoryAdminRelevantMemory(x.Memory, tokens, normalizedQuestionPhrase))
             .Where(x => !directoryAdminQuery || explicitCodeQuery || x.Match.Score >= 20m)
             .Where(x => !fileComparisonQuery || IsFileComparisonRelevantMemory(x.Memory))
+            .Where(x => !projectHistoryQuery || projectHistoryFocusTokens.Count == 0 || IsProjectHistoryRelevantMemory(x.Memory, projectHistoryFocusTokens))
             .Where(x => !genericAutomationQuery || IsGenericAutomationRelevantMemory(x.Memory))
             .Where(x => !localSupportQuery || IsLocalSupportRelevantMemory(x.Memory))
             .Where(x => !webUiQuery || currentProjectCodeQuery || IsWebUiRelevantMemory(x.Memory))
@@ -552,9 +569,10 @@ public sealed partial class ContextService
                 return new { Project = project, Match = score };
             })
             .Where(x => x.Match.Score > 0)
+            .Where(x => !projectHistoryQuery || projectHistoryFocusProject is null || x.Project.Id == projectHistoryFocusProject.Id || projectPreferences[x.Project.Id].ProjectQueryBoost > 0m)
             .OrderByDescending(x => x.Match.Score)
             .ThenByDescending(x => x.Project.UpdatedUtc)
-            .Take(Math.Max(3, Math.Min(6, resultsPerSection)))
+            .Take(projectHistoryQuery ? Math.Min(2, Math.Max(1, resultsPerSection)) : Math.Max(3, Math.Min(6, resultsPerSection)))
             .Select(x => new ContextRecordViewModel
             {
                 Kind = ContextRecordKind.CodeGraphProject,
@@ -572,7 +590,7 @@ public sealed partial class ContextService
             })
             .ToArray();
 
-        var fileResults = suppressCodeGraph
+        var fileResults = suppressCodeGraph || (projectHistoryQuery && !explicitCodeQuery)
             ? Array.Empty<ContextRecordViewModel>()
             : files
             .Select(file =>
@@ -622,7 +640,7 @@ public sealed partial class ContextService
             })
             .ToArray();
 
-        var nodeResults = suppressCodeGraph
+        var nodeResults = suppressCodeGraph || (projectHistoryQuery && !explicitCodeQuery)
             ? Array.Empty<ContextRecordViewModel>()
             : nodes
             .Select(node =>
@@ -713,6 +731,10 @@ public sealed partial class ContextService
             recommendedSkillMatches = recommendedSkillMatches
                 .Where(match => IsDirectoryAdminRelevantSkill(match.Skill, tokens, normalizedQuestionPhrase))
                 .ToArray();
+        }
+        else if (projectHistoryQuery)
+        {
+            recommendedSkillMatches = Array.Empty<SkillRecommendationMatch>();
         }
         else if (genericAutomationQuery)
         {
@@ -2082,6 +2104,21 @@ public sealed partial class ContextService
         return HasFileComparisonIntent(tokens, normalizedText)
                || (tokens.Any(token => token is "powershell" or "script")
                    && tokens.Any(token => token is "hash" or "hashes" or "compare" or "diff" or "difference" or "differences"));
+    }
+
+    private static bool IsProjectHistoryRelevantMemory(MemoryEntry memory, IReadOnlyCollection<string> focusTokens)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var tokens = Tokenize(text);
+        return focusTokens.Count > 0 && focusTokens.Count(token => tokens.Contains(token)) >= 2;
     }
 
     private static bool IsGenericAutomationRelevantSkill(SkillEntry skill, IReadOnlyCollection<string> queryTokens, string normalizedQuery)

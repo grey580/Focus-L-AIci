@@ -202,4 +202,22 @@ public sealed class PackIntentModelTests
         Assert.True(prediction.IsRepositoryArchitectureQuery);
         Assert.True(prediction.CodeFamilyScore >= prediction.OperationsFamilyScore);
     }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_FlagsProjectHistoryQueries()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("What changed recently around C:\\Copilot\\Sophos-XGS?");
+
+        Assert.True(prediction.IsProjectHistoryQuery);
+        Assert.True(prediction.CodeFamilyScore >= prediction.OperationsFamilyScore);
+    }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_FlagsCurrentStateProjectQueries()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("Summarize the current state of project Focus L-AIci.");
+
+        Assert.True(prediction.IsProjectHistoryQuery);
+        Assert.False(prediction.IsGenericAutomationQuery);
+    }
 }
