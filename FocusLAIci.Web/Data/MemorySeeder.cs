@@ -772,6 +772,27 @@ public static class MemorySeeder
             true,
             "microsoft"),
         new(
+            "Compare folder contents with PowerShell",
+            "compare-folder-contents-with-powershell",
+            "Use PowerShell to compare two folders, line up matching relative paths, and report files that differ or exist only on one side.",
+            SkillCategory.Task,
+            "Use this when you need a PowerShell script to compare two directories or folders and show missing or changed files.",
+            """
+            Enumerate both folder trees recursively and normalize to relative paths so the same file can be compared across roots.
+            Use Get-FileHash or size and timestamp checks to detect changed files, and Compare-Object to find left-only and right-only paths.
+            Return a compact result that labels each item as different, only-in-source, or only-in-target.
+            Export to CSV when the differences need to be reviewed outside the shell.
+            Keep the script local-file focused and do not pull in repo or source-code assumptions unless the task explicitly asks for code.
+            """,
+            """
+            Create a PowerShell script that compares two folders and shows which files are different.
+            Report files that only exist in one directory tree or have different contents.
+            Compare two local folders and export the differences to CSV.
+            """,
+            "powershell, script, compare folders, compare files, folder diff, file diff, differences, compare-object, get-filehash, directories",
+            true,
+            null),
+        new(
             "Get Exchange Online mailbox inventory",
             "get-exchange-online-mailbox-inventory",
             "Use Exchange Online PowerShell to list mailboxes and their mailbox types with `Get-EXOMailbox` and `RecipientTypeDetails`.",

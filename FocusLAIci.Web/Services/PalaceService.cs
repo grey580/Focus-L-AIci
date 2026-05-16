@@ -1072,6 +1072,23 @@ public sealed class PalaceService
         int limit,
         CancellationToken cancellationToken)
     {
+        if (!string.IsNullOrWhiteSpace(question) && category is null)
+        {
+            var pack = await _contextService.BuildContextPackAsync(new ContextBriefInput
+            {
+                Question = question.Trim(),
+                WingId = wingId,
+                ResultsPerSection = Math.Clamp(limit, 3, 10)
+            }, cancellationToken);
+
+            if (pack?.RecommendedSkills.Count > 0)
+            {
+                return pack.RecommendedSkills
+                    .Take(limit)
+                    .ToArray();
+            }
+        }
+
         var dbSkills = await _dbContext.Skills
             .AsNoTracking()
             .Include(x => x.Wing)

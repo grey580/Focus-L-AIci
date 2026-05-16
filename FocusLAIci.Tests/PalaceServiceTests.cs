@@ -366,6 +366,7 @@ public sealed class PalaceServiceTests
         Assert.Contains(skills, x => x.Slug == "manage-secret-scanning");
         Assert.Contains(skills, x => x.Slug == "configure-codeql-scanning");
         Assert.Contains(skills, x => x.Slug == "audit-on-prem-active-directory-user-attributes");
+        Assert.Contains(skills, x => x.Slug == "compare-folder-contents-with-powershell");
         Assert.Contains(skills, x => x.Slug == "get-exchange-online-mailbox-inventory");
         Assert.All(skills.Where(x =>
             x.Slug is "acquire-codebase-knowledge"
@@ -388,6 +389,7 @@ public sealed class PalaceServiceTests
                 or "plan-threat-model-analysis"
                 or "manage-secret-scanning"
                 or "audit-on-prem-active-directory-user-attributes"
+                or "compare-folder-contents-with-powershell"
                 or "configure-codeql-scanning"
                 or "get-exchange-online-mailbox-inventory"), x => Assert.NotNull(x.ReviewAfterUtc));
     }
@@ -471,6 +473,37 @@ public sealed class PalaceServiceTests
 
         Assert.NotEmpty(recommendations);
         Assert.Equal("audit-on-prem-active-directory-user-attributes", recommendations.First().Slug);
+    }
+
+    [Fact]
+    public async Task RecommendSkillsAsync_PrefersFolderComparisonPowerShellSkill()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var scope = harness.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<FocusMemoryContext>();
+        var repoSkillCatalogService = scope.ServiceProvider.GetRequiredService<RepoSkillCatalogService>();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        var service = new PalaceService(
+            dbContext,
+            new ContextService(dbContext),
+            NullFocusEventPublisher.Instance,
+            null,
+            new FocusAgentCatalogService(),
+            repoSkillCatalogService);
+
+        var recommendations = await service.RecommendSkillsAsync(
+            "need a powershell script that will compare two different folders files and show the differences",
+            null,
+            null,
+            5,
+            CancellationToken.None);
+
+        Assert.NotEmpty(recommendations);
+        Assert.Equal("compare-folder-contents-with-powershell", recommendations.First().Slug);
+        Assert.DoesNotContain(recommendations, x => x.Slug == "get-exchange-online-mailbox-inventory");
+        Assert.DoesNotContain(recommendations, x => x.Slug == "audit-on-prem-active-directory-user-attributes");
     }
 
     [Fact]
@@ -1883,6 +1916,39 @@ public sealed class PalaceServiceTests
 
         Assert.NotNull(pack);
         Assert.Empty(pack!.RecommendedSkills);
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
+    public async Task ContextService_FolderComparisonAutomationQueries_SuppressCodeGraphAndPreferFolderCompareSkill()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        dbContext.CodeGraphProjects.Add(new CodeGraphProject
+        {
+            Name = "Focus L-AIci",
+            RootPath = @"C:\Copilot\Focus L-AIci",
+            Description = "Focus source.",
+            Summary = "Application code.",
+            UpdatedUtc = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "need a powershell script that will compare two different folders files and show the differences",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.RecommendedSkills);
+        Assert.Equal("compare-folder-contents-with-powershell", pack.RecommendedSkills.First().Slug);
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "get-exchange-online-mailbox-inventory");
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "audit-on-prem-active-directory-user-attributes");
         Assert.Empty(pack.CodeGraphProjects);
         Assert.Empty(pack.CodeGraphFiles);
         Assert.Empty(pack.CodeGraphNodes);

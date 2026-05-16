@@ -40,27 +40,31 @@ public sealed partial class ContextService
     };
     private static readonly HashSet<string> ExternalOpsTokens =
     [
-        "powershell", "script", "active", "directory", "emails", "email", "mail", "users", "user", "ldap", "ad"
+        "powershell", "script", "active", "directory", "emails", "email", "mail", "mailboxes", "users", "user", "ldap", "ad"
     ];
     private static readonly HashSet<string> CodeIntentTokens =
     [
         "code", "repo", "project", "file", "files", "symbol", "symbols", "class", "method", "controller", "service", "implementation", "source"
     ];
+    private static readonly HashSet<string> StrongCodeIntentTokens =
+    [
+        "code", "repo", "repository", "project", "symbol", "symbols", "class", "method", "controller", "service", "implementation", "source", "codebase"
+    ];
     private static readonly HashSet<string> DirectoryDomainTokens =
     [
-        "active", "directory", "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "domain", "ad", "forest", "dns", "forwarder", "exchange", "o365", "m365", "proxyaddresses", "upn", "userprincipalname", "mailnickname"
+        "active", "directory", "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "mailboxes", "domain", "ad", "forest", "dns", "forwarder", "exchange", "o365", "m365", "proxyaddresses", "upn", "userprincipalname", "mailnickname"
     ];
     private static readonly HashSet<string> DirectoryAdminTokens =
     [
-        "directory", "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "domain", "ad", "exchange", "o365", "m365", "proxyaddresses", "upn", "userprincipalname", "mailnickname", "attribute", "attributes"
+        "directory", "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "mailboxes", "domain", "ad", "exchange", "o365", "m365", "proxyaddresses", "upn", "userprincipalname", "mailnickname", "attribute", "attributes"
     ];
     private static readonly HashSet<string> DirectoryAdminHighSignalTokens =
     [
-        "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "domain", "forest", "dns", "forwarder", "exchange", "o365", "m365", "proxyaddresses", "upn", "userprincipalname", "mailnickname"
+        "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "mailboxes", "domain", "forest", "dns", "forwarder", "exchange", "o365", "m365", "proxyaddresses", "upn", "userprincipalname", "mailnickname"
     ];
     private static readonly HashSet<string> DirectoryAdminAttributeTokens =
     [
-        "email", "emails", "mail", "mailbox", "proxyaddresses", "attribute", "attributes", "upn", "userprincipalname", "mailnickname", "title", "department", "phone", "telephone"
+        "email", "emails", "mail", "mailbox", "mailboxes", "proxyaddresses", "attribute", "attributes", "upn", "userprincipalname", "mailnickname", "title", "department", "phone", "telephone"
     ];
     private static readonly HashSet<string> DirectoryAdminExactAttributeTokens =
     [
@@ -88,7 +92,8 @@ public sealed partial class ContextService
     ];
     private static readonly HashSet<string> GenericAutomationHighSignalTokens =
     [
-        "export", "csv", "disabled", "audit", "report", "query", "list", "automation", "inactive", "users", "user"
+        "export", "csv", "disabled", "audit", "report", "query", "list", "automation", "inactive", "users", "user",
+        "compare", "diff", "difference", "differences", "folder", "folders", "file", "files", "directory", "directories"
     ];
     private static readonly HashSet<string> LocalSupportTokens =
     [
@@ -182,6 +187,7 @@ public sealed partial class ContextService
         var cloudOpsQuery = IsCloudOpsQuery(tokens);
         var desktopAppQuery = IsDesktopAppQuery(tokens, normalizedQuestionPhrase);
         var suppressCodeGraph = (externalAdminQuery && !explicitCodeQuery)
+                                || genericAutomationQuery
                                 || localSupportQuery
                                 || (cloudOpsQuery && !explicitCodeQuery)
                                 || ((webUiQuery || desktopAppQuery) && !currentProjectCodeQuery && !repositoryArchitectureQuery);
@@ -683,7 +689,7 @@ public sealed partial class ContextService
         else if (genericAutomationQuery)
         {
             recommendedSkillMatches = recommendedSkillMatches
-                .Where(match => IsGenericAutomationRelevantSkill(match.Skill))
+                .Where(match => IsGenericAutomationRelevantSkill(match.Skill, tokens, normalizedQuestionPhrase))
                 .ToArray();
         }
         else if (localSupportQuery)
@@ -1821,7 +1827,15 @@ public sealed partial class ContextService
         => tokens.Count > 0 && tokens.Count(token => ExternalOpsTokens.Contains(token)) >= 2;
 
     private static bool HasExplicitCodeIntent(IReadOnlyCollection<string> tokens)
-        => tokens.Any(token => CodeIntentTokens.Contains(token));
+    {
+        if (tokens.Any(token => StrongCodeIntentTokens.Contains(token)))
+        {
+            return true;
+        }
+
+        return tokens.Any(token => token is "file" or "files")
+               && tokens.Any(token => token is "repo" or "repository" or "project" or "code" or "source");
+    }
 
     private static bool IsDirectoryAdminQuery(IReadOnlyCollection<string> tokens)
         => tokens.Count(token => DirectoryAdminTokens.Contains(token)) >= 2;
@@ -2020,7 +2034,7 @@ public sealed partial class ContextService
                && productTokens.Count(token => tokens.Contains(token)) == 0;
     }
 
-    private static bool IsGenericAutomationRelevantSkill(SkillEntry skill)
+    private static bool IsGenericAutomationRelevantSkill(SkillEntry skill, IReadOnlyCollection<string> queryTokens, string normalizedQuery)
     {
         var text = string.Join(' ', new[]
         {
@@ -2031,7 +2045,15 @@ public sealed partial class ContextService
             skill.TriggerHintsText
         });
         var tokens = Tokenize(text);
-        return tokens.Count(token => GenericAutomationHighSignalTokens.Contains(token)) >= 2;
+        var queryHasFileComparisonIntent = HasFileComparisonIntent(queryTokens, normalizedQuery);
+        var skillHasFileComparisonIntent = HasFileComparisonIntent(tokens, NormalizePhrase(text));
+        if (queryHasFileComparisonIntent && !skillHasFileComparisonIntent)
+        {
+            return false;
+        }
+
+        return skillHasFileComparisonIntent
+            || tokens.Count(token => GenericAutomationHighSignalTokens.Contains(token)) >= 2;
     }
 
     private static bool IsLocalSupportRelevantMemory(MemoryEntry memory)
@@ -2287,6 +2309,17 @@ public sealed partial class ContextService
         }
 
         return families;
+    }
+
+    private static bool HasFileComparisonIntent(IReadOnlyCollection<string> tokens, string normalizedText)
+    {
+        var hasComparisonSignal = tokens.Any(token => token is "compare" or "diff" or "difference" or "differences")
+                                  || normalizedText.Contains("compare object", StringComparison.Ordinal)
+                                  || normalizedText.Contains("compare two folders", StringComparison.Ordinal)
+                                  || normalizedText.Contains("folder diff", StringComparison.Ordinal)
+                                  || normalizedText.Contains("file diff", StringComparison.Ordinal);
+        var hasFileSystemSignal = tokens.Any(token => token is "file" or "files" or "folder" or "folders" or "directory" or "directories");
+        return hasComparisonSignal && hasFileSystemSignal;
     }
 
     private static IEnumerable<string> EnumerateTokens(string? value, bool keepStopWords = false)
