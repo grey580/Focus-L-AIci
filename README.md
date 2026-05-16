@@ -9,6 +9,7 @@
 - **AI setup:** [docs/AI-AUTOSETUP-PROMPT.md](docs/AI-AUTOSETUP-PROMPT.md)
 - **Feature guide:** [docs/FEATURES.md](docs/FEATURES.md)
 - **Usage guide:** [docs/USING-FOCUS-L-AICI.md](docs/USING-FOCUS-L-AICI.md)
+- **Tiny model guide:** [docs/TINY-LOCAL-PACK-INTENT-MODEL.md](docs/TINY-LOCAL-PACK-INTENT-MODEL.md)
 
 **Focus L-AIci** is a local-first memory palace for engineers, builders, researchers, and AI-assisted teams who do not want important reasoning to disappear into chat history.
 

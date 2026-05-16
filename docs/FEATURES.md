@@ -28,6 +28,12 @@
 - archived context-pack build history for later ranking and tuning
 - sample data seeding for quick onboarding
 
+## Tiny model
+
+Focus L-AIci includes a built-in tiny local intent classifier for context-pack routing and skill reranking.
+
+See [TINY-LOCAL-PACK-INTENT-MODEL.md](TINY-LOCAL-PACK-INTENT-MODEL.md) for the full explanation of how it works, what it predicts, and where it integrates into the app.
+
 ## Memory model
 
 Focus L-AIci uses a memory-palace inspired structure:
