@@ -265,14 +265,26 @@
                         @if (topMatch.SemanticScore > 0m)
                         {
                             <span>Semantic @topMatch.SemanticScore.ToString("0.0")</span>
-                        }
-                    }
-                </div>
-                @if (Model.ContextPack.SearchTokens.Count > 0)
-                {
-                    <div class="tag-row mb-0">
-                        @foreach (var token in Model.ContextPack.SearchTokens)
-                        {
+                         }
+                     }
+                 </div>
+                 @if (Model.ContextPack.ExternalSkillAlert.HasAlert)
+                 {
+                      <div class="alert alert-warning mt-2 mb-0 dashboard-skill-alert" role="alert">
+                          <div>
+                              <strong>External skill alert.</strong>
+                              <span>@Model.ContextPack.ExternalSkillAlert.Message</span>
+                          </div>
+                          <button class="btn btn-sm btn-outline-dark dashboard-skill-alert-button" type="button" data-bs-toggle="offcanvas" data-bs-target="#externalSkillSuggestions" aria-controls="externalSkillSuggestions">
+                             Open skill panel
+                          </button>
+                      </div>
+                  }
+                 @if (Model.ContextPack.SearchTokens.Count > 0)
+                 {
+                     <div class="tag-row mb-0">
+                         @foreach (var token in Model.ContextPack.SearchTokens)
+                         {
                             <span class="tag-pill">@token</span>
                         }
                     </div>
@@ -294,23 +306,11 @@
                                     <button type="submit" class="dashboard-suggestion-pill" title="@suggestion">@suggestion</button>
                                 </form>
                             }
-                        </div>
-                     </div>
-                 }
-                 @if (Model.ContextPack.ExternalSkillAlert.HasAlert)
-                 {
-                      <div class="alert alert-warning mt-3 mb-0 d-flex justify-content-between align-items-center gap-3" role="alert">
-                          <div>
-                              <strong>External skill alert.</strong>
-                              <span>@Model.ContextPack.ExternalSkillAlert.Message</span>
-                          </div>
-                          <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="offcanvas" data-bs-target="#externalSkillSuggestions" aria-controls="externalSkillSuggestions">
-                             @(Model.ContextPack.ExternalSkillAlert.HasSuggestions ? "Review suggestions" : "Review skill sources")
-                          </button>
+                         </div>
                       </div>
                   }
-             </div>
-         </div>
+              </div>
+          </div>
 
         <div class="card shadow-sm border-0 dashboard-panel dashboard-launch-card dashboard-launch-card-highlight">
             <div class="card-body dashboard-mini-panel">

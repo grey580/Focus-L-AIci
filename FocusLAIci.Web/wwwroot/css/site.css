@@ -1085,6 +1085,15 @@ body[data-theme="dark"] .theme-toggle-icon-moon {
   gap: 0.45rem;
 }
 
+.dashboard-skill-alert {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.dashboard-skill-alert-button {
+  justify-self: start;
+}
+
 .dashboard-pack-summary {
   background: linear-gradient(180deg, #eff5ff 0%, #f8fbff 100%);
   border: 1px solid #d5e3fb;
