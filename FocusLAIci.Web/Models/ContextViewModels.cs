@@ -48,9 +48,11 @@ public sealed class ContextPackViewModel
     public string Question { get; init; } = string.Empty;
     public string Summary { get; init; } = string.Empty;
     public string GoalLabel { get; init; } = string.Empty;
+    public bool NeedsMoreContext { get; init; }
     public ContextBriefInput Input { get; init; } = new();
     public IReadOnlyCollection<string> SearchTokens { get; init; } = Array.Empty<string>();
     public IReadOnlyCollection<DashboardWarningViewModel> DetectedGapItems { get; init; } = Array.Empty<DashboardWarningViewModel>();
+    public IReadOnlyCollection<string> ClarifyingQuestions { get; init; } = Array.Empty<string>();
     public IReadOnlyCollection<ContextRecordViewModel> TopMatches { get; init; } = Array.Empty<ContextRecordViewModel>();
     public IReadOnlyCollection<ContextRecordViewModel> Memories { get; init; } = Array.Empty<ContextRecordViewModel>();
     public IReadOnlyCollection<ContextRecordViewModel> Todos { get; init; } = Array.Empty<ContextRecordViewModel>();

@@ -14,7 +14,11 @@ public sealed record PackIntentPrediction(
     decimal GenericAutomationScore,
     decimal RepositoryArchitectureScore,
     string ModelId,
-    bool IsProjectHistoryQuery = false)
+    bool IsProjectHistoryQuery = false,
+    int ObservedTokenCount = 0,
+    int InformativeTokenCount = 0,
+    bool HasTaskFrame = false,
+    int FacetSignalCount = 0)
 {
     public decimal OperationsFamilyScore => Math.Max(ExternalOperationsScore, Math.Max(DirectoryAdminScore, GenericAutomationScore));
 
@@ -42,6 +46,12 @@ public sealed record PackIntentPrediction(
 
     public bool IsAmbiguous => TopScore < 0.60m || TopMargin < 0.08m;
 
+    public bool NeedsMoreContext =>
+        ObservedTokenCount <= 1
+        || (InformativeTokenCount == 0 && FacetSignalCount == 0)
+        || (IsAmbiguous && InformativeTokenCount < 2 && FacetSignalCount == 0)
+        || (!HasTaskFrame && IsAmbiguous && InformativeTokenCount == 0 && FacetSignalCount == 0);
+
     public bool IsExternalOperationsQuery => ExternalOperationsScore >= 0.54m;
 
     public bool IsDirectoryAdminQuery => DirectoryAdminScore >= 0.56m;
@@ -56,6 +66,23 @@ public sealed record PackIntentPrediction(
 public sealed class TinyLocalPackIntentModel : IPackIntentModel
 {
     private static readonly char[] TokenSeparators = [' ', '\r', '\n', '\t', ',', '.', ':', ';', '/', '\\', '(', ')', '[', ']', '{', '}', '-', '_', '"', '\''];
+    private static readonly HashSet<string> LowInformationTokens =
+    [
+        "a", "an", "app", "apps", "build", "create", "do", "does", "fix", "general", "help", "issue", "issues", "look",
+        "make", "need", "problem", "problems", "project", "projects", "powershell", "repo", "repository", "script",
+        "scripts", "show", "something", "stuff", "task", "thing", "things", "update", "use", "want", "work", "working", "write"
+    ];
+    private static readonly HashSet<string> TaskFrameTokens =
+    [
+        "audit", "check", "compare", "debug", "describe", "diagnose", "diff", "explain", "export", "find", "fix", "how",
+        "implement", "instrument", "investigate", "list", "map", "patch", "review", "show", "summarize", "trace",
+        "troubleshoot", "what", "when", "where", "why"
+    ];
+    private static readonly string[] TaskFramePhrases =
+    [
+        "current state", "latest work", "recent work", "service boundaries", "what changed", "what shipped", "what s new",
+        "windows forms", "app insights"
+    ];
 
     private static readonly WeightedFeature[] ExternalOperationsFeatures =
     [
@@ -324,7 +351,11 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             ToProbability(genericAutomationRaw),
             ToProbability(repositoryArchitectureRaw),
             ModelId,
-            facets.HasProjectHistoryIntent);
+            facets.HasProjectHistoryIntent,
+            tokens.Count,
+            CountInformativeTokens(tokens),
+            HasTaskFrame(normalized, tokens),
+            CountFacetSignals(facets));
     }
 
     private static decimal ScoreRaw(string normalizedQuestion, HashSet<string> tokens, decimal bias, IReadOnlyCollection<WeightedFeature> features)
@@ -462,6 +493,23 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             externalOperationsRaw -= 0.6m;
         }
     }
+
+    private static int CountInformativeTokens(IReadOnlyCollection<string> tokens)
+        => tokens.Count(token => !LowInformationTokens.Contains(token));
+
+    private static bool HasTaskFrame(string normalizedQuestion, IReadOnlyCollection<string> tokens)
+        => tokens.Any(TaskFrameTokens.Contains)
+           || TaskFramePhrases.Any(phrase => normalizedQuestion.Contains(phrase, StringComparison.Ordinal));
+
+    private static int CountFacetSignals(FacetSignals facets)
+        => new[]
+        {
+            facets.HasFileComparisonIntent,
+            facets.HasDirectoryAttributeIntent,
+            facets.HasRepoArchitectureIntent,
+            facets.HasRepoCodeIntent,
+            facets.HasProjectHistoryIntent
+        }.Count(value => value);
 
     private static string Normalize(string? question)
     {

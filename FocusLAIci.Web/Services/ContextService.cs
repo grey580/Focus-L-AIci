@@ -220,6 +220,21 @@ public sealed partial class ContextService
         var webUiQuery = IsWebUiQuery(tokens);
         var cloudOpsQuery = IsCloudOpsQuery(tokens);
         var desktopAppQuery = IsDesktopAppQuery(tokens, normalizedQuestionPhrase);
+        var needsMoreContext = tokens.Count > 0
+                               && intentPrediction.NeedsMoreContext
+                               && !HasStrongPackDomainSignals(
+                                   tokens,
+                                   normalizedQuestionPhrase,
+                                   directoryAdminQuery,
+                                   explicitCodeQuery,
+                                   repositoryArchitectureQuery,
+                                   fileComparisonQuery,
+                                   projectHistoryQuery,
+                                   localSupportQuery,
+                                   wmiDiagnosticQuery,
+                                   webUiQuery,
+                                   cloudOpsQuery,
+                                   desktopAppQuery);
         var suppressCodeGraph = (externalAdminQuery && !explicitCodeQuery)
                                 || fileComparisonQuery
                                 || genericAutomationQuery
@@ -232,6 +247,56 @@ public sealed partial class ContextService
         }
 
         var resultsPerSection = Math.Clamp(effectiveInput.ResultsPerSection, 3, 10);
+        if (needsMoreContext)
+        {
+            var gapItems = BuildLowContextGapItems();
+            var clarifyingQuestions = BuildClarifyingQuestions(
+                tokens,
+                normalizedQuestionPhrase,
+                projectHistoryQuery,
+                explicitCodeQuery,
+                fileComparisonQuery,
+                localSupportQuery,
+                webUiQuery,
+                cloudOpsQuery,
+                desktopAppQuery);
+            return await ArchivePackIfNeededAsync(new ContextPackViewModel
+            {
+                Question = normalizedQuestion,
+                Summary = "Need more context before Focus can build a fact-based pack.",
+                GoalLabel = GetPackGoalLabel(effectiveInput.PackGoal),
+                NeedsMoreContext = true,
+                Input = new ContextBriefInput
+                {
+                    Question = normalizedQuestion,
+                    IncludeCompletedWork = effectiveInput.IncludeCompletedWork,
+                    WingId = effectiveInput.WingId,
+                    RoomId = effectiveInput.RoomId,
+                    Kind = effectiveInput.Kind,
+                    Tag = effectiveInput.Tag,
+                    IncludeRetired = effectiveInput.IncludeRetired,
+                    ExpandHistory = effectiveInput.ExpandHistory,
+                    ResultsPerSection = resultsPerSection,
+                    PackGoal = effectiveInput.PackGoal,
+                    PreferRecentChanges = effectiveInput.PreferRecentChanges
+                },
+                SearchTokens = tokens.OrderBy(x => x).ToArray(),
+                DetectedGapItems = gapItems,
+                ClarifyingQuestions = clarifyingQuestions,
+                ExportText = BuildExportText(
+                    normalizedQuestion,
+                    effectiveInput.PackGoal,
+                    Array.Empty<SkillCardViewModel>(),
+                    Array.Empty<ContextRecordViewModel>(),
+                    Array.Empty<ContextRecordViewModel>(),
+                    Array.Empty<ContextRecordViewModel>(),
+                    Array.Empty<ContextRecordViewModel>(),
+                    Array.Empty<ContextRecordViewModel>(),
+                    Array.Empty<ContextRecordViewModel>(),
+                    gapItems,
+                    clarifyingQuestions)
+            }, cancellationToken);
+        }
 
         var memories = await _dbContext.Memories
             .AsNoTracking()
@@ -792,6 +857,7 @@ public sealed partial class ContextService
             Question = normalizedQuestion,
             Summary = BuildSummary(memoryResults, todoResults, ticketResults, projectResults, fileResults, nodeResults),
             GoalLabel = GetPackGoalLabel(effectiveInput.PackGoal),
+            NeedsMoreContext = false,
             Input = new ContextBriefInput
             {
                 Question = normalizedQuestion,
@@ -807,6 +873,8 @@ public sealed partial class ContextService
                 PreferRecentChanges = effectiveInput.PreferRecentChanges
             },
             SearchTokens = tokens.OrderBy(x => x).ToArray(),
+            DetectedGapItems = Array.Empty<DashboardWarningViewModel>(),
+            ClarifyingQuestions = Array.Empty<string>(),
             TopMatches = topMatches,
             Memories = memoryResults,
             Todos = todoResults,
@@ -815,35 +883,21 @@ public sealed partial class ContextService
             CodeGraphFiles = fileResults,
             CodeGraphNodes = nodeResults,
             RecommendedSkills = recommendedSkills,
-            ExportText = BuildExportText(normalizedQuestion, effectiveInput.PackGoal, recommendedSkills, memoryResults, todoResults, ticketResults, projectResults, fileResults, nodeResults)
+            ExportText = BuildExportText(
+                normalizedQuestion,
+                effectiveInput.PackGoal,
+                recommendedSkills,
+                memoryResults,
+                todoResults,
+                ticketResults,
+                projectResults,
+                fileResults,
+                nodeResults,
+                Array.Empty<DashboardWarningViewModel>(),
+                Array.Empty<string>())
         };
 
-        if (_packBuildArchiveService is null)
-        {
-            return pack;
-        }
-
-        var archivedBuildId = await _packBuildArchiveService.RecordAsync(pack, cancellationToken);
-        return new ContextPackViewModel
-        {
-            ArchivedBuildId = archivedBuildId,
-            Question = pack.Question,
-            Summary = pack.Summary,
-            GoalLabel = pack.GoalLabel,
-            Input = pack.Input,
-            SearchTokens = pack.SearchTokens,
-            DetectedGapItems = pack.DetectedGapItems,
-            TopMatches = pack.TopMatches,
-            Memories = pack.Memories,
-            Todos = pack.Todos,
-            Tickets = pack.Tickets,
-            CodeGraphProjects = pack.CodeGraphProjects,
-            CodeGraphFiles = pack.CodeGraphFiles,
-            CodeGraphNodes = pack.CodeGraphNodes,
-            RecommendedSkills = pack.RecommendedSkills,
-            ExternalSkillAlert = pack.ExternalSkillAlert,
-            ExportText = pack.ExportText
-        };
+        return await ArchivePackIfNeededAsync(pack, cancellationToken);
     }
 
     public async Task<ContextLinksPanelViewModel> BuildLinksPanelAsync(
@@ -1200,7 +1254,9 @@ public sealed partial class ContextService
         IReadOnlyCollection<ContextRecordViewModel> tickets,
         IReadOnlyCollection<ContextRecordViewModel> projects,
         IReadOnlyCollection<ContextRecordViewModel> files,
-        IReadOnlyCollection<ContextRecordViewModel> nodes)
+        IReadOnlyCollection<ContextRecordViewModel> nodes,
+        IReadOnlyCollection<DashboardWarningViewModel> detectedGapItems,
+        IReadOnlyCollection<string> clarifyingQuestions)
     {
         var sections = new[]
         {
@@ -1216,6 +1272,30 @@ public sealed partial class ContextService
             .AppendLine($"Context pack: {question}")
             .AppendLine($"Goal: {GetPackGoalLabel(goal)}")
             .AppendLine();
+
+        if (detectedGapItems.Count > 0)
+        {
+            builder.AppendLine("Context gaps");
+            builder.AppendLine("------------");
+            foreach (var gap in detectedGapItems)
+            {
+                builder.Append("- ").AppendLine(gap.Message);
+            }
+
+            builder.AppendLine();
+        }
+
+        if (clarifyingQuestions.Count > 0)
+        {
+            builder.AppendLine("Clarifying follow-ups");
+            builder.AppendLine("---------------------");
+            foreach (var questionPrompt in clarifyingQuestions)
+            {
+                builder.Append("- ").AppendLine(questionPrompt);
+            }
+
+            builder.AppendLine();
+        }
 
         builder.AppendLine("Recommended skills");
         builder.AppendLine("------------------");
@@ -1322,6 +1402,178 @@ public sealed partial class ContextService
             RecommendationScoreLabel = match.Score <= 0m ? string.Empty : match.Score.ToString("0.#"),
             UpdatedUtc = match.Skill.UpdatedUtc
         };
+    }
+
+    private async Task<ContextPackViewModel> ArchivePackIfNeededAsync(ContextPackViewModel pack, CancellationToken cancellationToken)
+    {
+        if (_packBuildArchiveService is null)
+        {
+            return pack;
+        }
+
+        var archivedBuildId = await _packBuildArchiveService.RecordAsync(pack, cancellationToken);
+        return new ContextPackViewModel
+        {
+            ArchivedBuildId = archivedBuildId,
+            Question = pack.Question,
+            Summary = pack.Summary,
+            GoalLabel = pack.GoalLabel,
+            NeedsMoreContext = pack.NeedsMoreContext,
+            Input = pack.Input,
+            SearchTokens = pack.SearchTokens,
+            DetectedGapItems = pack.DetectedGapItems,
+            ClarifyingQuestions = pack.ClarifyingQuestions,
+            TopMatches = pack.TopMatches,
+            Memories = pack.Memories,
+            Todos = pack.Todos,
+            Tickets = pack.Tickets,
+            CodeGraphProjects = pack.CodeGraphProjects,
+            CodeGraphFiles = pack.CodeGraphFiles,
+            CodeGraphNodes = pack.CodeGraphNodes,
+            RecommendedSkills = pack.RecommendedSkills,
+            ExternalSkillAlert = pack.ExternalSkillAlert,
+            ExportText = pack.ExportText
+        };
+    }
+
+    private static IReadOnlyCollection<DashboardWarningViewModel> BuildLowContextGapItems()
+    {
+        return
+        [
+            new DashboardWarningViewModel
+            {
+                Code = "need-more-context",
+                Severity = "warning",
+                Message = "The question is too thin to route reliably, so Focus is holding back instead of guessing.",
+                ActionLabel = string.Empty,
+                ActionUrl = string.Empty
+            }
+        ];
+    }
+
+    private static IReadOnlyCollection<string> BuildClarifyingQuestions(
+        IReadOnlyCollection<string> tokens,
+        string normalizedQuestion,
+        bool projectHistoryQuery,
+        bool explicitCodeQuery,
+        bool fileComparisonQuery,
+        bool localSupportQuery,
+        bool webUiQuery,
+        bool cloudOpsQuery,
+        bool desktopAppQuery)
+    {
+        if (fileComparisonQuery)
+        {
+            return
+            [
+                "Which two folders should Focus compare, and do you want name, size, hash, or content differences?",
+                "Should the result show changed files only, or also left-only and right-only files?"
+            ];
+        }
+
+        if (projectHistoryQuery || tokens.Contains("project") || tokens.Contains("repo") || tokens.Contains("repository"))
+        {
+            return
+            [
+                "Which project or path should Focus inspect?",
+                "Do you want recent changes, current status, or specific files and symbols?"
+            ];
+        }
+
+        if (explicitCodeQuery || tokens.Contains("code") || tokens.Contains("file") || tokens.Contains("files"))
+        {
+            return
+            [
+                "Which project, file, class, or method should Focus inspect?",
+                "What exact change or question do you want answered about that code?"
+            ];
+        }
+
+        if (localSupportQuery || normalizedQuestion.Contains("wmi", StringComparison.Ordinal) || normalizedQuestion.Contains("winrm", StringComparison.Ordinal))
+        {
+            return
+            [
+                "Which PC or endpoint is this about, and do you want a local-only or remote check?",
+                "Do you want to test WMI itself, WinRM remoting, or a specific namespace or class?"
+            ];
+        }
+
+        if (webUiQuery)
+        {
+            return
+            [
+                "Which page or component is affected, and what is visibly wrong?",
+                "Is this a layout issue, CSS regression, accessibility problem, or dark-mode issue?"
+            ];
+        }
+
+        if (cloudOpsQuery)
+        {
+            return
+            [
+                "Which Azure service, app, or subscription is this about?",
+                "Do you want telemetry, deployment, identity, or configuration guidance?"
+            ];
+        }
+
+        if (desktopAppQuery)
+        {
+            return
+            [
+                "Which desktop app is this about, and what behavior is failing?",
+                "Do you need diagnostics, UX fixes, packaging help, or runtime troubleshooting?"
+            ];
+        }
+
+        return
+        [
+            "What system, project, or machine is this about?",
+            "What exact outcome do you need so Focus can route on facts instead of guessing?"
+        ];
+    }
+
+    private static bool HasStrongPackDomainSignals(
+        IReadOnlyCollection<string> tokens,
+        string normalizedQuestion,
+        bool directoryAdminQuery,
+        bool explicitCodeQuery,
+        bool repositoryArchitectureQuery,
+        bool fileComparisonQuery,
+        bool projectHistoryQuery,
+        bool localSupportQuery,
+        bool wmiDiagnosticQuery,
+        bool webUiQuery,
+        bool cloudOpsQuery,
+        bool desktopAppQuery)
+    {
+        if (directoryAdminQuery || explicitCodeQuery || repositoryArchitectureQuery || fileComparisonQuery || projectHistoryQuery || wmiDiagnosticQuery)
+        {
+            return true;
+        }
+
+        if (localSupportQuery && tokens.Intersect(LocalSupportHighSignalTokens, StringComparer.OrdinalIgnoreCase).Any())
+        {
+            return true;
+        }
+
+        if (webUiQuery && tokens.Intersect(WebUiHighSignalTokens, StringComparer.OrdinalIgnoreCase).Count() >= 2)
+        {
+            return true;
+        }
+
+        if (cloudOpsQuery && tokens.Intersect(CloudOpsHighSignalTokens, StringComparer.OrdinalIgnoreCase).Count() >= 2)
+        {
+            return true;
+        }
+
+        if (desktopAppQuery && tokens.Intersect(DesktopAppTokens, StringComparer.OrdinalIgnoreCase).Count() >= 2)
+        {
+            return true;
+        }
+
+        return normalizedQuestion.Contains("windows forms", StringComparison.Ordinal)
+               || normalizedQuestion.Contains("app insights", StringComparison.Ordinal)
+               || normalizedQuestion.Contains("high dpi", StringComparison.Ordinal);
     }
 
     private static IReadOnlyCollection<string> SplitSkillText(string? value)

@@ -2102,6 +2102,38 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task ContextService_ThinQueries_AskForMoreContextInsteadOfGuessing()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        dbContext.Memories.Add(new MemoryEntry
+        {
+            Title = "PowerShell automation reference",
+            Summary = "Generic scripting note that should not be guessed from a thin prompt.",
+            Content = "Generic PowerShell notes.",
+            Kind = MemoryKind.Reference,
+            SourceKind = SourceKind.ManualNote,
+            UpdatedUtc = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync("powershell script", CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.True(pack!.NeedsMoreContext);
+        Assert.Contains(pack.DetectedGapItems, gap => gap.Code == "need-more-context");
+        Assert.NotEmpty(pack.ClarifyingQuestions);
+        Assert.Empty(pack.TopMatches);
+        Assert.Empty(pack.Memories);
+        Assert.Empty(pack.RecommendedSkills);
+        Assert.Contains("fact-based pack", pack.Summary, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ContextService_WebUiQueries_PreferWebSkillsAndSuppressCodeGraphNoise()
     {
         await using var harness = await TestHarness.CreateAsync();

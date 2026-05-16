@@ -220,4 +220,20 @@ public sealed class PackIntentModelTests
         Assert.True(prediction.IsProjectHistoryQuery);
         Assert.False(prediction.IsGenericAutomationQuery);
     }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_FlagsThinPowershellPromptsForMoreContext()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("powershell script");
+
+        Assert.True(prediction.NeedsMoreContext);
+    }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_FlagsSingleTokenPromptsForMoreContext()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("project");
+
+        Assert.True(prediction.NeedsMoreContext);
+    }
 }
