@@ -772,6 +772,27 @@ public static class MemorySeeder
             true,
             "microsoft"),
         new(
+            "Check when an Active Directory user's password expires",
+            "check-when-an-active-directory-users-password-expires",
+            "Use command-line or PowerShell AD queries to show when a user's password expires and whether the account is set to never expire.",
+            SkillCategory.Task,
+            "Use this when you need a command line command or PowerShell script to check password expiry for an on-prem Active Directory user.",
+            """
+            Prefer Get-ADUser with PasswordNeverExpires and msDS-UserPasswordExpiryTimeComputed when the ActiveDirectory module is available.
+            Convert msDS-UserPasswordExpiryTimeComputed from file time so the result shows a readable expiry timestamp.
+            Return PasswordNeverExpires explicitly so you can tell the difference between no expiry and a future expiry date.
+            Use net user <username> /domain as a fallback when you need a quick command-line answer without a fuller PowerShell report.
+            Keep the output focused on the username, password-never-expires flag, and expiry date or status.
+            """,
+            """
+            Show me the command line command to see when a user's password is expiring.
+            Create a PowerShell command to check when an AD user's password expires.
+            Check whether a domain user's password is set to never expire.
+            """,
+            "active directory, ad, password expiry, password expires, password expiring, powershell, command line, get-aduser, msds-userpasswordexpirytimecomputed, net user, passwordneverexpires",
+            true,
+            "microsoft"),
+        new(
             "Compare folder contents with PowerShell",
             "compare-folder-contents-with-powershell",
             "Use PowerShell to compare two folders, line up matching relative paths, and report files that differ or exist only on one side.",

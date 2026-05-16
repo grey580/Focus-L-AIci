@@ -119,6 +119,14 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         new("userprincipalname", 0.9m),
         new("mail nickname", 0.9m, true),
         new("mailnickname", 0.9m),
+        new("password", 1.0m),
+        new("passwords", 1.0m),
+        new("expiry", 1.1m),
+        new("expiring", 1.1m),
+        new("expires", 1.0m),
+        new("expired", 0.8m),
+        new("msds userpasswordexpirytimecomputed", 1.2m, true),
+        new("net user", 0.8m, true),
         new("title", 0.4m),
         new("department", 0.5m),
         new("export", 0.8m),
@@ -174,6 +182,14 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         new("userprincipalname", 2.0m),
         new("mail nickname", 1.7m, true),
         new("mailnickname", 1.6m),
+        new("password", 1.5m),
+        new("passwords", 1.5m),
+        new("expiry", 1.7m),
+        new("expiring", 1.7m),
+        new("expires", 1.5m),
+        new("expired", 1.2m),
+        new("msds userpasswordexpirytimecomputed", 2.0m, true),
+        new("net user", 1.0m, true),
         new("title", 0.8m),
         new("department", 0.9m),
         new("phone", 0.6m),
@@ -442,6 +458,13 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             && (tokens.Any(token => token is "project" or "repo" or "repository" or "codebase" or "work")
                 || normalizedQuestion.Contains("c copilot", StringComparison.Ordinal))
             && !hasDirectoryScope;
+        var hasPasswordExpiryIntent =
+            (tokens.Any(token => token is "password" or "passwords")
+             || normalizedQuestion.Contains("password expiry", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("password expires", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("password expiring", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("msds userpasswordexpirytimecomputed", StringComparison.Ordinal))
+            && tokens.Any(token => token is "expiry" or "expiring" or "expires" or "expired" or "when" or "user" or "users" or "account" or "accounts");
         var hasPortCheckIntent =
             (tokens.Any(token => token is "port" or "ports" or "tcp" or "udp" or "listener" or "listeners" or "socket" or "sockets")
              || normalizedQuestion.Contains("test netconnection", StringComparison.Ordinal)
@@ -454,6 +477,7 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             hasRepoArchitectureIntent,
             hasRepoCodeIntent,
             hasProjectHistoryIntent,
+            hasPasswordExpiryIntent,
             hasPortCheckIntent);
     }
 
@@ -508,6 +532,15 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             externalOperationsRaw -= 0.6m;
         }
 
+        if (facets.HasPasswordExpiryIntent)
+        {
+            directoryAdminRaw += 1.4m;
+            externalOperationsRaw += 0.5m;
+            genericAutomationRaw -= 0.7m;
+            codeIntentRaw -= 0.9m;
+            repositoryArchitectureRaw -= 0.8m;
+        }
+
         if (facets.HasPortCheckIntent)
         {
             genericAutomationRaw += 1.1m;
@@ -533,6 +566,7 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             facets.HasRepoArchitectureIntent,
             facets.HasRepoCodeIntent,
             facets.HasProjectHistoryIntent,
+            facets.HasPasswordExpiryIntent,
             facets.HasPortCheckIntent
         }.Count(value => value);
 
@@ -569,5 +603,6 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         bool HasRepoArchitectureIntent,
         bool HasRepoCodeIntent,
         bool HasProjectHistoryIntent,
+        bool HasPasswordExpiryIntent,
         bool HasPortCheckIntent);
 }

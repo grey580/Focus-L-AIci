@@ -56,23 +56,23 @@ public sealed partial class ContextService
     ];
     private static readonly HashSet<string> DirectoryAdminTokens =
     [
-        "directory", "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "mailboxes", "domain", "ad", "exchange", "o365", "m365", "proxyaddresses", "upn", "userprincipalname", "mailnickname", "attribute", "attributes"
+        "directory", "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "mailboxes", "domain", "ad", "exchange", "o365", "m365", "proxyaddresses", "upn", "userprincipalname", "mailnickname", "attribute", "attributes", "password", "passwords", "expiry", "expiring", "expires", "expired"
     ];
     private static readonly HashSet<string> DirectoryAdminHighSignalTokens =
     [
-        "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "mailboxes", "domain", "forest", "dns", "forwarder", "exchange", "o365", "m365", "proxyaddresses", "upn", "userprincipalname", "mailnickname"
+        "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "mailboxes", "domain", "forest", "dns", "forwarder", "exchange", "o365", "m365", "proxyaddresses", "upn", "userprincipalname", "mailnickname", "password", "passwords", "expiry", "expiring", "expires", "expired"
     ];
     private static readonly HashSet<string> DirectoryAdminAttributeTokens =
     [
-        "email", "emails", "mail", "mailbox", "mailboxes", "proxyaddresses", "attribute", "attributes", "upn", "userprincipalname", "mailnickname", "title", "department", "phone", "telephone"
+        "email", "emails", "mail", "mailbox", "mailboxes", "proxyaddresses", "attribute", "attributes", "upn", "userprincipalname", "mailnickname", "title", "department", "phone", "telephone", "password", "passwords", "expiry", "expiring", "expires", "expired"
     ];
     private static readonly HashSet<string> DirectoryAdminExactAttributeTokens =
     [
-        "title", "department", "phone", "telephone", "proxyaddresses", "upn", "userprincipalname", "mailnickname"
+        "title", "department", "phone", "telephone", "proxyaddresses", "upn", "userprincipalname", "mailnickname", "password", "passwords", "expiry", "expiring", "expires", "expired"
     ];
     private static readonly string[] DirectoryAdminAttributePhrases =
     [
-        "proxy addresses", "user principal name", "mail nickname"
+        "proxy addresses", "user principal name", "mail nickname", "password expiry", "password expires", "password expiring"
     ];
     private static readonly HashSet<string> DirectoryAdminBroadInfraTokens =
     [
@@ -2782,6 +2782,20 @@ public sealed partial class ContextService
             || normalizedText.Contains("mail nickname", StringComparison.Ordinal))
         {
             families.Add("mailnickname");
+        }
+
+        if (tokens.Any(token => token.Equals("password", StringComparison.OrdinalIgnoreCase)
+                                || token.Equals("passwords", StringComparison.OrdinalIgnoreCase)
+                                || token.Equals("expiry", StringComparison.OrdinalIgnoreCase)
+                                || token.Equals("expiring", StringComparison.OrdinalIgnoreCase)
+                                || token.Equals("expires", StringComparison.OrdinalIgnoreCase)
+                                || token.Equals("expired", StringComparison.OrdinalIgnoreCase))
+            || normalizedText.Contains("password expiry", StringComparison.Ordinal)
+            || normalizedText.Contains("password expires", StringComparison.Ordinal)
+            || normalizedText.Contains("password expiring", StringComparison.Ordinal)
+            || normalizedText.Contains("msds userpasswordexpirytimecomputed", StringComparison.Ordinal))
+        {
+            families.Add("password-expiry");
         }
 
         return families;

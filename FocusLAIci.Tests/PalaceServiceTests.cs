@@ -1917,6 +1917,33 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task ContextService_PasswordExpiryQueries_PreferPasswordExpirySkillAndSuppressNoise()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "i need to command line command to see when a users password is expiring",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.RecommendedSkills);
+        Assert.Equal("check-when-an-active-directory-users-password-expires", pack.RecommendedSkills.First().Slug);
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "work-as-web-coder");
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "instrument-app-insights-telemetry");
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "review-dotnet-design-patterns");
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "review-web-design-quality");
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "understand-focus-local-runtime-quirks");
+        Assert.True(pack.Memories.Count == 0 || pack.Memories.All(memory => !memory.Title.Contains("ADMT", StringComparison.OrdinalIgnoreCase)));
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
     public async Task ContextService_LocalSupportQueries_SuppressCodeGraphAndIrrelevantSkills()
     {
         await using var harness = await TestHarness.CreateAsync();

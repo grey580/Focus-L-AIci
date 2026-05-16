@@ -41,6 +41,7 @@ public sealed class PackIntentModelTests
         Add(data, "Review proxy address drift between Graph and Exchange.", true, true, false, null, false);
         Add(data, "Trace forest DNS forwarder issues affecting ADMT.", null, true, false, null, false);
         Add(data, "Find blank Active Directory profile attributes for users.", true, true, false, null, false);
+        Add(data, "Show me the command line command to see when a user's password is expiring.", true, true, false, null, false);
 
         // Generic automation and scripting
         Add(data, "Write a PowerShell script to export disabled users to CSV.", true, false, false, true, false);
@@ -131,9 +132,9 @@ public sealed class PackIntentModelTests
         Add(data, "Why is the local desktop app blurry on a high DPI monitor?", false, false, false, false, false);
         Add(data, "Compare two folders after a backup job and export only the changed files.", null, false, false, true, false);
 
-        if (data.Count != 101)
+        if (data.Count != 102)
         {
-            throw new InvalidOperationException($"Expected 101 representative queries but found {data.Count}.");
+            throw new InvalidOperationException($"Expected 102 representative queries but found {data.Count}.");
         }
 
         return data;
@@ -230,6 +231,15 @@ public sealed class PackIntentModelTests
         Assert.True(prediction.IsGenericAutomationQuery);
         Assert.False(prediction.IsDirectoryAdminQuery);
         Assert.False(prediction.HasExplicitCodeIntent);
+    }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_PrefersDirectoryAdminForPasswordExpiryQueries()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("Show me the command line command to see when a user's password is expiring.");
+
+        Assert.True(prediction.IsDirectoryAdminQuery);
+        Assert.True(prediction.DirectoryAdminScore > prediction.GenericAutomationScore);
     }
 
     [Fact]
