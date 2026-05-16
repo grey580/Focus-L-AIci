@@ -1502,6 +1502,79 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task ContextService_SuppressesUnrelatedCodeGraphNoiseForExternalOpsQueries()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        var activeDirectoryWing = new Wing
+        {
+            Name = "Directory Ops Test",
+            Slug = "directory-ops-test",
+            Description = "Directory administration notes."
+        };
+        var greyCanaryWing = new Wing
+        {
+            Name = "Grey Canary Product Test",
+            Slug = "grey-canary-product-test",
+            Description = "Product runbooks."
+        };
+        dbContext.Wings.AddRange(activeDirectoryWing, greyCanaryWing);
+
+        dbContext.Memories.Add(new MemoryEntry
+        {
+            Title = "AD immutable ID migration",
+            Summary = "Active Directory mail and identity mapping guidance.",
+            Content = "For Active Directory work, inspect user mail attributes and related identity fields before migration.",
+            Kind = MemoryKind.Reference,
+            SourceKind = SourceKind.ManualNote,
+            Wing = activeDirectoryWing,
+            UpdatedUtc = DateTime.UtcNow
+        });
+        dbContext.Memories.Add(new MemoryEntry
+        {
+            Title = "Grey Canary uninstall PowerShell script",
+            Summary = "Endpoint removal uses a PowerShell script and callback flow.",
+            Content = "Run the uninstall PowerShell script, then wait for the Grey Canary status callback to finish endpoint removal.",
+            Kind = MemoryKind.Reference,
+            SourceKind = SourceKind.ManualNote,
+            Wing = greyCanaryWing,
+            UpdatedUtc = DateTime.UtcNow
+        });
+
+        dbContext.CodeGraphProjects.AddRange(
+            new CodeGraphProject
+            {
+                Name = "Focus L-AIci",
+                RootPath = @"C:\Copilot\Focus L-AIci",
+                Description = "Local-first development memory tool.",
+                Summary = "App source code.",
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new CodeGraphProject
+            {
+                Name = "Simple SMB Tester",
+                RootPath = @"C:\Copilot\Simple SMB Tester",
+                Description = "Portable file share utility.",
+                Summary = "Desktop utility source code.",
+                UpdatedUtc = DateTime.UtcNow
+            });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync("powershell script active directory users emails", CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.Memories);
+        Assert.Equal("AD immutable ID migration", pack.Memories.First().Title);
+        Assert.DoesNotContain(pack.Memories.Take(3), memory => memory.Title.Contains("Grey Canary", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+        Assert.Empty(pack.RecommendedSkills);
+    }
+
+    [Fact]
     public async Task QuickCaptureAsync_CreatesMemoryWithDerivedTags()
     {
         await using var harness = await TestHarness.CreateAsync();

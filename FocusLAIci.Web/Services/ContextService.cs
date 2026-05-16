@@ -37,6 +37,26 @@ public sealed partial class ContextService
         ["debug"] = ["troubleshoot", "diagnose", "fix"],
         ["code"] = ["symbol", "file", "project", "implementation"]
     };
+    private static readonly HashSet<string> ExternalOpsTokens =
+    [
+        "powershell", "script", "active", "directory", "emails", "email", "mail", "users", "user", "ldap", "ad"
+    ];
+    private static readonly HashSet<string> CodeIntentTokens =
+    [
+        "code", "repo", "project", "file", "files", "symbol", "symbols", "class", "method", "controller", "service", "implementation", "source"
+    ];
+    private static readonly HashSet<string> DirectoryDomainTokens =
+    [
+        "active", "directory", "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "domain", "ad", "forest", "dns", "forwarder"
+    ];
+    private static readonly HashSet<string> DirectoryAdminTokens =
+    [
+        "directory", "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "domain", "ad"
+    ];
+    private static readonly HashSet<string> DirectoryAdminHighSignalTokens =
+    [
+        "ldap", "entra", "graph", "mail", "email", "emails", "mailbox", "domain", "forest", "dns", "forwarder"
+    ];
 
     private readonly FocusMemoryContext _dbContext;
     private readonly CurrentProjectContext? _currentProjectContext;
@@ -60,6 +80,9 @@ public sealed partial class ContextService
         var tokens = Tokenize(normalizedQuestion);
         var semanticTokens = ExpandSemanticTokens(tokens);
         var preferDurableMemoryLead = ShouldPreferDurableMemoryLead(normalizedQuestion, effectiveInput);
+        var externalAdminQuery = IsExternalOperationsQuery(tokens);
+        var directoryAdminQuery = IsDirectoryAdminQuery(tokens);
+        var explicitCodeQuery = HasExplicitCodeIntent(tokens);
         if (tokens.Count == 0)
         {
             return null;
@@ -219,6 +242,7 @@ public sealed partial class ContextService
         var projectPreferences = projects.ToDictionary(
             project => project.Id,
             project => BuildProjectPreference(project, tokens, normalizedQuestion));
+        var externalOpsQuery = IsExternalOperationsQuery(tokens);
 
         var memoryResults = memories
             .Select(memory =>
@@ -242,10 +266,17 @@ public sealed partial class ContextService
                 score = ApplyBoost(score, BuildScopedMemoryBoost(memory, effectiveInput), BuildScopedMemoryBoostLabel(effectiveInput));
                 score = ApplyBoost(score, effectiveInput.PreferRecentChanges && recentMemoryIds.Contains(memory.Id) ? 2m : 0m, "Recent change");
                 score = ApplyBoost(score, preferDurableMemoryLead ? DurableMemoryQuestionBoost(memory) : 0m, "Durable memory lead");
+                score = ApplyBoost(score, externalAdminQuery ? BuildExternalAdminMemoryBoost(memory) : 0m, externalAdminQuery ? "Directory admin context" : string.Empty);
+                score = ApplyBoost(
+                    score,
+                    directoryAdminQuery ? BuildDirectoryAdminMismatchPenalty(memory) : 0m,
+                    directoryAdminQuery ? "Directory domain mismatch" : string.Empty);
 
                 return new { Memory = memory, Match = score, Trust = trust };
             })
             .Where(x => x.Match.Score > 0)
+            .Where(x => !directoryAdminQuery || explicitCodeQuery || IsDirectoryAdminRelevantMemory(x.Memory))
+            .Where(x => !directoryAdminQuery || explicitCodeQuery || x.Match.Score >= 20m)
             .OrderByDescending(x => x.Match.Score)
             .ThenByDescending(x => x.Memory.UpdatedUtc)
             .Take(resultsPerSection)
@@ -350,7 +381,9 @@ public sealed partial class ContextService
             })
             .ToArray();
 
-        var projectResults = projects
+        var projectResults = externalAdminQuery && !explicitCodeQuery
+            ? Array.Empty<ContextRecordViewModel>()
+            : projects
             .Select(project =>
             {
                 var score = ScoreFields(
@@ -368,6 +401,10 @@ public sealed partial class ContextService
                 score = ApplyBoost(score, preferDurableMemoryLead ? 0.5m : 0m, "Project context");
                 score = ApplyBoost(score, projectPreferences[project.Id].ProjectQueryBoost, projectPreferences[project.Id].ProjectQueryBoostLabel);
                 score = ApplyBoost(score, projectPreferences[project.Id].RepoAffinityBoost, projectPreferences[project.Id].RepoAffinityBoostLabel);
+                score = ApplyBoost(
+                    score,
+                    externalOpsQuery && !projectPreferences[project.Id].HasStrongAffinity ? -8m : 0m,
+                    externalOpsQuery && !projectPreferences[project.Id].HasStrongAffinity ? "Non-code admin query" : string.Empty);
 
                 return new { Project = project, Match = score };
             })
@@ -392,7 +429,9 @@ public sealed partial class ContextService
             })
             .ToArray();
 
-        var fileResults = files
+        var fileResults = externalAdminQuery && !explicitCodeQuery
+            ? Array.Empty<ContextRecordViewModel>()
+            : files
             .Select(file =>
             {
                 var score = ScoreFields(
@@ -411,6 +450,10 @@ public sealed partial class ContextService
                 {
                     score = ApplyBoost(score, projectPreference.ProjectQueryBoost, projectPreference.ProjectQueryBoostLabel);
                     score = ApplyBoost(score, projectPreference.RepoAffinityBoost, projectPreference.RepoAffinityBoostLabel);
+                    score = ApplyBoost(
+                        score,
+                        externalOpsQuery && !projectPreference.HasStrongAffinity ? -8m : 0m,
+                        externalOpsQuery && !projectPreference.HasStrongAffinity ? "Non-code admin query" : string.Empty);
                 }
 
                 return new { File = file, Match = score };
@@ -436,7 +479,9 @@ public sealed partial class ContextService
             })
             .ToArray();
 
-        var nodeResults = nodes
+        var nodeResults = externalAdminQuery && !explicitCodeQuery
+            ? Array.Empty<ContextRecordViewModel>()
+            : nodes
             .Select(node =>
             {
                 var score = ScoreFields(
@@ -456,6 +501,10 @@ public sealed partial class ContextService
                 {
                     score = ApplyBoost(score, projectPreference.ProjectQueryBoost, projectPreference.ProjectQueryBoostLabel);
                     score = ApplyBoost(score, projectPreference.RepoAffinityBoost, projectPreference.RepoAffinityBoostLabel);
+                    score = ApplyBoost(
+                        score,
+                        externalOpsQuery && !projectPreference.HasStrongAffinity ? -8m : 0m,
+                        externalOpsQuery && !projectPreference.HasStrongAffinity ? "Non-code admin query" : string.Empty);
                 }
 
                 return new { Node = node, Match = score };
@@ -509,12 +558,20 @@ public sealed partial class ContextService
             nodeResults,
             resultsPerSection,
             preferDurableMemoryLead);
-        var recommendedSkills = SkillRecommendationEngine.Recommend(
+        var recommendedSkillMatches = SkillRecommendationEngine.Recommend(
                 skills,
                 normalizedQuestion,
                 effectiveInput.WingId,
                 null,
-                Math.Clamp(resultsPerSection, 3, 6))
+                Math.Clamp(resultsPerSection, 3, 6));
+        if (directoryAdminQuery && !explicitCodeQuery)
+        {
+            recommendedSkillMatches = recommendedSkillMatches
+                .Where(match => IsDirectoryAdminRelevantSkill(match.Skill))
+                .ToArray();
+        }
+
+        var recommendedSkills = recommendedSkillMatches
             .Select(MapRecommendedSkill)
             .ToArray();
 
@@ -1503,7 +1560,8 @@ public sealed partial class ContextService
             projectQueryBoost,
             projectQueryBoost > 0m ? "Explicit project match" : string.Empty,
             repoAffinityBoost,
-            repoAffinityBoost > 0m ? "Current project repo" : repoAffinityBoost < 0m ? "Outside current project" : string.Empty);
+            repoAffinityBoost > 0m ? "Current project repo" : repoAffinityBoost < 0m ? "Outside current project" : string.Empty,
+            projectQueryBoost >= 5m || repoAffinityBoost > 0m);
     }
 
     private static decimal BuildProjectQueryBoost(CodeGraphProject project, IReadOnlyCollection<string> tokens, string normalizedQuestion)
@@ -1587,6 +1645,114 @@ public sealed partial class ContextService
 
     private static string NormalizePath(string path)
         => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+
+    private static bool IsExternalOperationsQuery(IReadOnlyCollection<string> tokens)
+        => tokens.Count > 0 && tokens.Count(token => ExternalOpsTokens.Contains(token)) >= 2;
+
+    private static bool HasExplicitCodeIntent(IReadOnlyCollection<string> tokens)
+        => tokens.Any(token => CodeIntentTokens.Contains(token));
+
+    private static bool IsDirectoryAdminQuery(IReadOnlyCollection<string> tokens)
+        => tokens.Count(token => DirectoryAdminTokens.Contains(token)) >= 2;
+
+    private static decimal BuildExternalAdminMemoryBoost(MemoryEntry memory)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var matches = Tokenize(text).Count(token => DirectoryDomainTokens.Contains(token));
+        if (matches >= 3)
+        {
+            return 8m;
+        }
+
+        if (matches == 2)
+        {
+            return 5m;
+        }
+
+        if (matches == 1)
+        {
+            return 2m;
+        }
+
+        return 0m;
+    }
+
+    private static decimal BuildDirectoryAdminMismatchPenalty(MemoryEntry memory)
+    {
+        var domainMatches = GetDirectoryAdminDomainMatchCount(memory);
+        if (domainMatches > 0)
+        {
+            return 0m;
+        }
+
+        var productHintText = string.Join(' ', new[] { memory.Title, memory.Summary, memory.Wing?.Name, memory.Room?.Name });
+        var productTokens = Tokenize(productHintText);
+        return productTokens.Contains("grey", StringComparer.OrdinalIgnoreCase) || productTokens.Contains("canary", StringComparer.OrdinalIgnoreCase)
+            ? -48m
+            : -18m;
+    }
+
+    private static int GetDirectoryAdminDomainMatchCount(MemoryEntry memory)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        return Tokenize(text).Count(token => DirectoryAdminTokens.Contains(token));
+    }
+
+    private static bool IsDirectoryAdminRelevantMemory(MemoryEntry memory)
+    {
+        var highSignalText = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var structuralText = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var highSignalTokens = Tokenize(highSignalText);
+        var structuralTokens = Tokenize(structuralText);
+        return highSignalTokens.Count(token => DirectoryAdminHighSignalTokens.Contains(token)) > 0
+               || structuralTokens.Count(token => DirectoryAdminTokens.Contains(token)) >= 2;
+    }
+
+    private static bool IsDirectoryAdminRelevantSkill(SkillEntry skill)
+    {
+        var text = string.Join(' ', new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.WhenToUse,
+            skill.Flow,
+            skill.TriggerHintsText
+        });
+        var tokens = Tokenize(text);
+        return tokens.Count(token => DirectoryAdminHighSignalTokens.Contains(token)) > 0
+               || tokens.Count(token => DirectoryAdminTokens.Contains(token)) >= 2;
+    }
 
     private static HashSet<string> Tokenize(string? value, bool keepStopWords = false)
     {
@@ -1683,7 +1849,7 @@ public sealed partial class ContextService
 
     private sealed record WeightedField(string? Text, string Key, string Label, decimal PerTokenWeight, string ExactReason, string PartialReason);
     private sealed record CurrentProjectContext(string RootPath, IReadOnlyCollection<string> Tokens);
-    private sealed record ProjectPreference(decimal ProjectQueryBoost, string ProjectQueryBoostLabel, decimal RepoAffinityBoost, string RepoAffinityBoostLabel);
+    private sealed record ProjectPreference(decimal ProjectQueryBoost, string ProjectQueryBoostLabel, decimal RepoAffinityBoost, string RepoAffinityBoostLabel, bool HasStrongAffinity);
     private sealed record ContextScoreOutcome(
         decimal Score,
         decimal SemanticScore,

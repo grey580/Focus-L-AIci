@@ -5,6 +5,10 @@ namespace FocusLAIci.Web.Services;
 internal static class SkillRecommendationEngine
 {
     internal const int DefaultReviewWindowDays = 90;
+    private static readonly HashSet<string> GenericQueryTokens = ["build", "check", "create", "fix", "make", "need", "review", "run", "script", "show", "use", "users", "user", "work"];
+    private static readonly HashSet<string> ExternalOpsTokens = ["powershell", "script", "active", "directory", "emails", "email", "mail", "ldap", "ad"];
+    private static readonly HashSet<string> DirectoryAdminTokens = ["directory", "emails", "email", "mail", "ldap", "ad", "graph", "entra", "mailbox"];
+    private static readonly HashSet<string> CodeIntentTokens = ["code", "repo", "project", "file", "files", "symbol", "symbols", "class", "method", "controller", "service", "implementation", "source"];
 
     public static IReadOnlyCollection<SkillRecommendationMatch> Recommend(
         IEnumerable<SkillEntry> skills,
@@ -16,6 +20,10 @@ internal static class SkillRecommendationEngine
         var now = DateTime.UtcNow;
         var trimmedQuestion = question?.Trim() ?? string.Empty;
         var queryTokens = Tokenize(trimmedQuestion);
+        var substantiveQueryTokens = queryTokens.Where(token => !GenericQueryTokens.Contains(token)).ToArray();
+        var externalOpsQuery = substantiveQueryTokens.Count(token => ExternalOpsTokens.Contains(token)) >= 2;
+        var explicitCodeQuery = substantiveQueryTokens.Any(token => CodeIntentTokens.Contains(token));
+        var directoryAdminQuery = substantiveQueryTokens.Count(token => DirectoryAdminTokens.Contains(token)) >= 2;
         var effectiveLimit = Math.Clamp(limit, 1, 12);
         var filteredSkills = skills
             .Where(skill => !category.HasValue || skill.Category == category.Value)
@@ -38,11 +46,20 @@ internal static class SkillRecommendationEngine
 
         if (queryTokens.Length > 0)
         {
-            var matched = ranked.Where(x => x.Score > 0m).Take(effectiveLimit).ToArray();
+            var matched = ranked
+                .Where(x => x.Score > 0m)
+                .Where(x => !externalOpsQuery || explicitCodeQuery || (!directoryAdminQuery ? x.IsExternalOpsQualified : x.IsDirectoryAdminQualified))
+                .Take(effectiveLimit)
+                .ToArray();
             if (matched.Length > 0)
             {
                 return matched;
             }
+        }
+
+        if (externalOpsQuery && !explicitCodeQuery)
+        {
+            return Array.Empty<SkillRecommendationMatch>();
         }
 
         var fallback = ranked
@@ -135,6 +152,21 @@ internal static class SkillRecommendationEngine
         var triggerHits = CountOverlap(queryTokens, triggerTokens);
         var summaryHits = CountOverlap(queryTokens, summaryTokens);
         var guidanceHits = CountOverlap(queryTokens, guidanceTokens);
+        var substantiveQueryTokens = queryTokens.Where(token => !GenericQueryTokens.Contains(token)).ToArray();
+        var substantiveMatches = CountOverlap(substantiveQueryTokens, nameTokens)
+                                 + CountOverlap(substantiveQueryTokens, triggerTokens)
+                                 + CountOverlap(substantiveQueryTokens, summaryTokens)
+                                 + CountOverlap(substantiveQueryTokens, guidanceTokens);
+        var externalOpsQuery = substantiveQueryTokens.Count(token => ExternalOpsTokens.Contains(token)) >= 2;
+        var directoryAdminQuery = substantiveQueryTokens.Count(token => DirectoryAdminTokens.Contains(token)) >= 2;
+        var externalOpsMatches = CountOverlap(ExternalOpsTokens, nameTokens)
+                                 + CountOverlap(ExternalOpsTokens, triggerTokens)
+                                 + CountOverlap(ExternalOpsTokens, summaryTokens)
+                                 + CountOverlap(ExternalOpsTokens, guidanceTokens);
+        var directoryAdminMatches = CountOverlap(DirectoryAdminTokens, nameTokens)
+                                    + CountOverlap(DirectoryAdminTokens, triggerTokens)
+                                    + CountOverlap(DirectoryAdminTokens, summaryTokens)
+                                    + CountOverlap(DirectoryAdminTokens, guidanceTokens);
 
         if (nameHits > 0)
         {
@@ -182,6 +214,16 @@ internal static class SkillRecommendationEngine
             score -= 8m;
         }
 
+        if (externalOpsQuery && substantiveMatches == 0)
+        {
+            score -= 18m;
+        }
+
+        if (directoryAdminQuery && directoryAdminMatches == 0)
+        {
+            score -= 24m;
+        }
+
         if (queryTokens.Count == 0)
         {
             score += skill.IsPinned ? 6m : 0m;
@@ -189,7 +231,12 @@ internal static class SkillRecommendationEngine
         }
 
         var reason = BuildReason(reasons, skill, wingId, now);
-        return new SkillRecommendationMatch(skill, Math.Round(score, 2), reason);
+        return new SkillRecommendationMatch(
+            skill,
+            Math.Round(score, 2),
+            reason,
+            externalOpsMatches > 0 && substantiveMatches > 0,
+            directoryAdminMatches > 0 && substantiveMatches > 0);
     }
 
     private static string BuildReason(IReadOnlyCollection<string> reasons, SkillEntry skill, Guid? wingId, DateTime now)
@@ -280,4 +327,4 @@ internal static class SkillRecommendationEngine
     }
 }
 
-internal sealed record SkillRecommendationMatch(SkillEntry Skill, decimal Score, string Reason);
+internal sealed record SkillRecommendationMatch(SkillEntry Skill, decimal Score, string Reason, bool IsExternalOpsQualified = false, bool IsDirectoryAdminQualified = false);
