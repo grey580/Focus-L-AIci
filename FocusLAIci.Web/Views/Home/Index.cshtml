@@ -380,13 +380,9 @@
                         {
                             <div class="card border-0 shadow-sm">
                                 <div class="card-body">
-                                    <div class="d-flex justify-content-between align-items-start gap-3">
-                                        <div>
-                                            <h3 class="h6 mb-1">@suggestion.Name</h3>
-                                            <div class="small text-secondary mb-2">@suggestion.SourceName</div>
-                                        </div>
-                                        <span class="badge text-bg-light">Score @suggestion.Score</span>
-                                    </div>
+                                    <h3 class="h6 mb-1">@suggestion.Name</h3>
+                                    <div class="small text-secondary">@suggestion.SourceName</div>
+                                    <div class="small text-secondary mb-2">Score @suggestion.Score</div>
                                     @if (!string.IsNullOrWhiteSpace(suggestion.Summary))
                                     {
                                         <p class="small mb-2">@suggestion.Summary</p>
