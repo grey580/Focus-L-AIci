@@ -63,6 +63,7 @@ public sealed class PackIntentModelTests
         Add(data, "Create a script to compare folders and flag mismatched file hashes.", null, false, false, true, false);
         Add(data, "Build a file inventory diff between two local directories.", null, false, false, true, false);
         Add(data, "Export the differences between two Windows folders.", null, false, false, true, false);
+        Add(data, "Create a PowerShell script that checks whether TCP port 443 is open.", null, false, false, true, false);
 
         // Explicit code intent
         Add(data, "In Focus L-AIci, find the ContextService code and improve current project ranking.", false, false, true, false, false);
@@ -130,9 +131,9 @@ public sealed class PackIntentModelTests
         Add(data, "Why is the local desktop app blurry on a high DPI monitor?", false, false, false, false, false);
         Add(data, "Compare two folders after a backup job and export only the changed files.", null, false, false, true, false);
 
-        if (data.Count != 100)
+        if (data.Count != 101)
         {
-            throw new InvalidOperationException($"Expected 100 representative queries but found {data.Count}.");
+            throw new InvalidOperationException($"Expected 101 representative queries but found {data.Count}.");
         }
 
         return data;
@@ -219,6 +220,16 @@ public sealed class PackIntentModelTests
 
         Assert.True(prediction.IsProjectHistoryQuery);
         Assert.False(prediction.IsGenericAutomationQuery);
+    }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_PrefersGenericAutomationForPortChecks()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("Create a PowerShell script that checks whether TCP port 443 is open.");
+
+        Assert.True(prediction.IsGenericAutomationQuery);
+        Assert.False(prediction.IsDirectoryAdminQuery);
+        Assert.False(prediction.HasExplicitCodeIntent);
     }
 
     [Fact]

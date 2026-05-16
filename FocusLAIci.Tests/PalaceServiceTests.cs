@@ -2134,6 +2134,63 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task ContextService_PortCheckQueries_PreferPortSkillAndSuppressUnrelatedNoise()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+        dbContext.Memories.AddRange(
+            new MemoryEntry
+            {
+                Title = "Check whether TCP port 443 is listening with PowerShell",
+                Summary = "Use Test-NetConnection or Get-NetTCPConnection to verify a local or remote port.",
+                Content = "PowerShell port check guidance with Test-NetConnection and Get-NetTCPConnection.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new MemoryEntry
+            {
+                Title = "Open trap ports are not enough to prove trap behavior",
+                Summary = "SNMP trap ports alone do not prove end-to-end behavior.",
+                Content = "Trap ports being open is not the same as a listener or a successful connection test.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new MemoryEntry
+            {
+                Title = "ADMT plus USMT PC domain migration checklist",
+                Summary = "Migration guidance for moving PCs between domains.",
+                Content = "PC migration and domain membership checklist.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                UpdatedUtc = DateTime.UtcNow
+            });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "create a powershell script that can check and see if a port is open",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.RecommendedSkills);
+        Assert.Equal("check-whether-a-port-is-open-with-powershell", pack.RecommendedSkills.First().Slug);
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "check-wmi-health-on-a-windows-pc");
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "compare-folder-contents-with-powershell");
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "get-exchange-online-mailbox-inventory");
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "audit-on-prem-active-directory-user-attributes");
+        Assert.True(pack.Memories.Count == 0 || pack.Memories.First().Title == "Check whether TCP port 443 is listening with PowerShell");
+        Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("trap ports", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("ADMT", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
     public async Task ContextService_WebUiQueries_PreferWebSkillsAndSuppressCodeGraphNoise()
     {
         await using var harness = await TestHarness.CreateAsync();

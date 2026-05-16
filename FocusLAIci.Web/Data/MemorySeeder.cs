@@ -814,6 +814,27 @@ public static class MemorySeeder
             true,
             null),
         new(
+            "Check whether a port is open with PowerShell",
+            "check-whether-a-port-is-open-with-powershell",
+            "Use PowerShell to test whether a TCP or UDP port is listening or reachable and return a clear open or closed result.",
+            SkillCategory.Task,
+            "Use this when you need a PowerShell script to check whether a local or remote port is open, listening, or reachable.",
+            """
+            Decide whether you need a local listener check, a remote connectivity test, or both before writing the script.
+            Use Test-NetConnection for TCP reachability checks when available, and fall back to TcpClient or a socket approach when you need finer control.
+            For local listeners, query Get-NetTCPConnection or netstat output and match the exact port.
+            Return a short result that includes the host, port, protocol, and whether the port appears open, closed, or filtered.
+            Surface common blockers such as firewall, service-not-listening, or remote host unreachable instead of only returning true or false.
+            """,
+            """
+            Create a PowerShell script that checks whether a port is open.
+            Test whether TCP port 443 is reachable on a remote server with PowerShell.
+            Check whether a local Windows machine is listening on a specific port.
+            """,
+            "powershell, port, open port, tcp, udp, test-netconnection, get-nettcpconnection, netstat, listener, socket, firewall",
+            true,
+            null),
+        new(
             "Get Exchange Online mailbox inventory",
             "get-exchange-online-mailbox-inventory",
             "Use Exchange Online PowerShell to list mailboxes and their mailbox types with `Get-EXOMailbox` and `RecipientTypeDetails`.",

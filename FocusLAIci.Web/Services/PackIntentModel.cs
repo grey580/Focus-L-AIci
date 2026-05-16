@@ -265,6 +265,15 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         new("comparison", 1.0m),
         new("difference", 1.0m),
         new("differences", 1.0m),
+        new("port", 1.0m),
+        new("ports", 1.0m),
+        new("tcp", 0.9m),
+        new("udp", 0.8m),
+        new("listener", 0.8m),
+        new("listeners", 0.8m),
+        new("socket", 0.7m),
+        new("sockets", 0.7m),
+        new("test netconnection", 1.1m, true),
         new("diff", 0.9m),
         new("folder", 0.9m),
         new("folders", 0.9m),
@@ -433,13 +442,19 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             && (tokens.Any(token => token is "project" or "repo" or "repository" or "codebase" or "work")
                 || normalizedQuestion.Contains("c copilot", StringComparison.Ordinal))
             && !hasDirectoryScope;
+        var hasPortCheckIntent =
+            (tokens.Any(token => token is "port" or "ports" or "tcp" or "udp" or "listener" or "listeners" or "socket" or "sockets")
+             || normalizedQuestion.Contains("test netconnection", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("netstat", StringComparison.Ordinal))
+            && tokens.Any(token => token is "open" or "check" or "listen" or "listening" or "reachable" or "reachability" or "connect" or "connection" or "test");
 
         return new FacetSignals(
             hasFileComparisonIntent,
             hasDirectoryAttributeIntent,
             hasRepoArchitectureIntent,
             hasRepoCodeIntent,
-            hasProjectHistoryIntent);
+            hasProjectHistoryIntent,
+            hasPortCheckIntent);
     }
 
     private static void ApplyFacetAdjustments(
@@ -492,6 +507,15 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             directoryAdminRaw -= 0.6m;
             externalOperationsRaw -= 0.6m;
         }
+
+        if (facets.HasPortCheckIntent)
+        {
+            genericAutomationRaw += 1.1m;
+            directoryAdminRaw -= 1.0m;
+            externalOperationsRaw -= 0.7m;
+            codeIntentRaw -= 0.8m;
+            repositoryArchitectureRaw -= 0.7m;
+        }
     }
 
     private static int CountInformativeTokens(IReadOnlyCollection<string> tokens)
@@ -508,7 +532,8 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             facets.HasDirectoryAttributeIntent,
             facets.HasRepoArchitectureIntent,
             facets.HasRepoCodeIntent,
-            facets.HasProjectHistoryIntent
+            facets.HasProjectHistoryIntent,
+            facets.HasPortCheckIntent
         }.Count(value => value);
 
     private static string Normalize(string? question)
@@ -543,5 +568,6 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         bool HasDirectoryAttributeIntent,
         bool HasRepoArchitectureIntent,
         bool HasRepoCodeIntent,
-        bool HasProjectHistoryIntent);
+        bool HasProjectHistoryIntent,
+        bool HasPortCheckIntent);
 }

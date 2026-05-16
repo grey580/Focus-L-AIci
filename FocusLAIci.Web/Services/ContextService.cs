@@ -93,17 +93,18 @@ public sealed partial class ContextService
     private static readonly HashSet<string> GenericAutomationHighSignalTokens =
     [
         "export", "csv", "disabled", "audit", "report", "query", "list", "automation", "inactive", "users", "user",
-        "compare", "diff", "difference", "differences", "folder", "folders", "file", "files", "directory", "directories"
+        "compare", "diff", "difference", "differences", "folder", "folders", "file", "files", "directory", "directories",
+        "port", "ports", "tcp", "udp", "listener", "listeners", "socket", "sockets"
     ];
     private static readonly HashSet<string> LocalSupportTokens =
     [
         "windows", "pc", "network", "wifi", "slow", "performance", "troubleshoot", "troubleshooting", "latency", "local",
-        "wmi", "cim", "winmgmt", "rpc", "computer", "computers", "winrm"
+        "wmi", "cim", "winmgmt", "rpc", "computer", "computers", "winrm", "port", "ports", "tcp", "udp"
     ];
     private static readonly HashSet<string> LocalSupportHighSignalTokens =
     [
         "network", "wifi", "slow", "performance", "troubleshoot", "troubleshooting", "latency",
-        "wmi", "cim", "winmgmt", "rpc", "computer", "computers", "winrm"
+        "wmi", "cim", "winmgmt", "rpc", "computer", "computers", "winrm", "port", "ports", "tcp", "udp"
     ];
     private static readonly HashSet<string> WebUiTokens =
     [
@@ -209,6 +210,7 @@ public sealed partial class ContextService
 
         var localSupportQuery = IsLocalSupportQuery(tokens);
         var wmiDiagnosticQuery = HasWmiDiagnosticIntent(tokens, normalizedQuestionPhrase);
+        var portCheckQuery = HasPortCheckIntent(tokens, normalizedQuestionPhrase);
         var genericAutomationQuery = intentPrediction.IsGenericAutomationQuery && !directoryAdminQuery && !explicitCodeQuery && !localSupportQuery;
         var currentProjectCodeQuery = explicitCodeQuery && currentProjectHint;
         var projectHistoryQuery = intentPrediction.IsProjectHistoryQuery && !directoryAdminQuery && !genericAutomationQuery && !fileComparisonQuery;
@@ -230,11 +232,12 @@ public sealed partial class ContextService
                                    repositoryArchitectureQuery,
                                    fileComparisonQuery,
                                    projectHistoryQuery,
-                                   localSupportQuery,
-                                   wmiDiagnosticQuery,
-                                   webUiQuery,
-                                   cloudOpsQuery,
-                                   desktopAppQuery);
+                                    localSupportQuery,
+                                    wmiDiagnosticQuery,
+                                    portCheckQuery,
+                                    webUiQuery,
+                                    cloudOpsQuery,
+                                    desktopAppQuery);
         var suppressCodeGraph = (externalAdminQuery && !explicitCodeQuery)
                                 || fileComparisonQuery
                                 || genericAutomationQuery
@@ -499,6 +502,7 @@ public sealed partial class ContextService
             .Where(x => !fileComparisonQuery || IsFileComparisonRelevantMemory(x.Memory))
             .Where(x => !projectHistoryQuery || projectHistoryFocusTokens.Count == 0 || IsProjectHistoryRelevantMemory(x.Memory, projectHistoryFocusTokens))
             .Where(x => !wmiDiagnosticQuery || IsWmiDiagnosticRelevantMemory(x.Memory))
+            .Where(x => !portCheckQuery || IsPortCheckRelevantMemory(x.Memory))
             .Where(x => !genericAutomationQuery || IsGenericAutomationRelevantMemory(x.Memory))
             .Where(x => !localSupportQuery || IsLocalSupportRelevantMemory(x.Memory))
             .Where(x => !webUiQuery || currentProjectCodeQuery || IsWebUiRelevantMemory(x.Memory))
@@ -809,6 +813,12 @@ public sealed partial class ContextService
         {
             recommendedSkillMatches = recommendedSkillMatches
                 .Where(match => IsWmiDiagnosticRelevantSkill(match.Skill))
+                .ToArray();
+        }
+        else if (portCheckQuery)
+        {
+            recommendedSkillMatches = recommendedSkillMatches
+                .Where(match => IsPortCheckRelevantSkill(match.Skill))
                 .ToArray();
         }
         else if (localSupportQuery)
@@ -1498,6 +1508,15 @@ public sealed partial class ContextService
             ];
         }
 
+        if (HasPortCheckIntent(tokens, normalizedQuestion))
+        {
+            return
+            [
+                "Which host and port should Focus test, and is it TCP or UDP?",
+                "Do you want a local listener check, a remote reachability test, or both?"
+            ];
+        }
+
         if (webUiQuery)
         {
             return
@@ -1542,11 +1561,12 @@ public sealed partial class ContextService
         bool projectHistoryQuery,
         bool localSupportQuery,
         bool wmiDiagnosticQuery,
+        bool portCheckQuery,
         bool webUiQuery,
         bool cloudOpsQuery,
         bool desktopAppQuery)
     {
-        if (directoryAdminQuery || explicitCodeQuery || repositoryArchitectureQuery || fileComparisonQuery || projectHistoryQuery || wmiDiagnosticQuery)
+        if (directoryAdminQuery || explicitCodeQuery || repositoryArchitectureQuery || fileComparisonQuery || projectHistoryQuery || wmiDiagnosticQuery || portCheckQuery)
         {
             return true;
         }
@@ -2391,6 +2411,12 @@ public sealed partial class ContextService
             || normalizedQuery.Contains("get wmiobject", StringComparison.Ordinal))
            && tokens.Any(token => token is "pc" or "computer" or "computers" or "windows" or "local");
 
+    private static bool HasPortCheckIntent(IReadOnlyCollection<string> tokens, string normalizedQuery)
+        => (tokens.Any(token => token is "port" or "ports" or "tcp" or "udp" or "listener" or "listeners" or "socket" or "sockets")
+            || normalizedQuery.Contains("test netconnection", StringComparison.Ordinal)
+            || normalizedQuery.Contains("netstat", StringComparison.Ordinal))
+           && tokens.Any(token => token is "open" or "check" or "listen" or "listening" or "reachable" or "connect" or "connection" or "test");
+
     private static bool IsWmiDiagnosticRelevantMemory(MemoryEntry memory)
     {
         var text = string.Join(' ', new[]
@@ -2428,6 +2454,54 @@ public sealed partial class ContextService
                && tokens.Any(token => token is "windows" or "pc" or "computer" or "computers");
     }
 
+    private static bool IsPortCheckRelevantMemory(MemoryEntry memory)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var normalizedText = NormalizePhrase(text);
+        var tokens = Tokenize(text);
+        var hasPortSignal =
+            tokens.Any(token => token is "tcp" or "udp" or "socket" or "sockets")
+            || normalizedText.Contains("test netconnection", StringComparison.Ordinal)
+            || normalizedText.Contains("get nettcpconnection", StringComparison.Ordinal)
+            || normalizedText.Contains("tcpclient", StringComparison.Ordinal)
+            || normalizedText.Contains("system net sockets", StringComparison.Ordinal)
+            || normalizedText.Contains("netstat", StringComparison.Ordinal);
+        var hasCheckSemantics =
+            tokens.Any(token => token is "powershell" or "script" or "check" or "test" or "reachable" or "listening" or "connection" or "connect")
+            || normalizedText.Contains("test netconnection", StringComparison.Ordinal)
+            || normalizedText.Contains("get nettcpconnection", StringComparison.Ordinal)
+            || normalizedText.Contains("check whether", StringComparison.Ordinal);
+        var hasExcludeSignals =
+            tokens.Any(token => token is "admt" or "domain" or "migration" or "migrate" or "trap" or "snmp");
+        return hasPortSignal && hasCheckSemantics && !hasExcludeSignals;
+    }
+
+    private static bool IsPortCheckRelevantSkill(SkillEntry skill)
+    {
+        var text = string.Join(' ', new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.WhenToUse,
+            skill.Flow,
+            skill.TriggerHintsText
+        });
+        var normalizedText = NormalizePhrase(text);
+        var tokens = Tokenize(text);
+        return (tokens.Any(token => token is "port" or "ports" or "tcp" or "udp" or "listener" or "listeners" or "socket" or "sockets")
+                || normalizedText.Contains("test netconnection", StringComparison.Ordinal)
+                || normalizedText.Contains("netstat", StringComparison.Ordinal))
+               && tokens.Any(token => token is "open" or "listen" or "listening" or "reachable" or "connect" or "connection" or "firewall");
+    }
+
     private static bool IsGenericAutomationRelevantSkill(SkillEntry skill, IReadOnlyCollection<string> queryTokens, string normalizedQuery)
     {
         var text = string.Join(' ', new[]
@@ -2440,13 +2514,21 @@ public sealed partial class ContextService
         });
         var tokens = Tokenize(text);
         var queryHasFileComparisonIntent = HasFileComparisonIntent(queryTokens, normalizedQuery);
+        var queryHasPortCheckIntent = HasPortCheckIntent(queryTokens, normalizedQuery);
         var skillHasFileComparisonIntent = HasFileComparisonIntent(tokens, NormalizePhrase(text));
+        var skillHasPortCheckIntent = HasPortCheckIntent(tokens, NormalizePhrase(text));
         if (queryHasFileComparisonIntent && !skillHasFileComparisonIntent)
         {
             return false;
         }
 
+        if (queryHasPortCheckIntent && !skillHasPortCheckIntent)
+        {
+            return false;
+        }
+
         return skillHasFileComparisonIntent
+            || skillHasPortCheckIntent
             || tokens.Count(token => GenericAutomationHighSignalTokens.Contains(token)) >= 2;
     }
 
