@@ -33,6 +33,12 @@
     }
 
     var extraCommandSuggestions = commandSuggestions.Skip(1).ToArray();
+    var lazyPackQuestion = !string.IsNullOrWhiteSpace(Model.ContextInput.Question)
+        ? Model.ContextInput.Question
+        : Model.FallbackContext?.WasApplied == true
+            ? Model.FallbackContext.SuggestedQuestion
+            : string.Empty;
+    var shouldLazyLoadContextPack = Model.ContextPack is null && !string.IsNullOrWhiteSpace(lazyPackQuestion);
 
 }
 
@@ -221,241 +227,34 @@
 
 @if (Model.ContextPack is not null)
 {
-    <section class="dashboard-launch-grid mb-4">
-        <div class="card shadow-sm border-0 dashboard-panel dashboard-launch-card">
-            <div class="card-body dashboard-mini-panel">
-                <div class="section-heading">
-                    <div>
-                        <div class="dashboard-status-label">Latest pack</div>
-                        <h2 class="h5 mb-0">Context pack</h2>
-                    </div>
-                    <div class="dashboard-command-results-actions">
-                        <form method="post" asp-controller="Context" asp-action="SavePack" class="d-inline">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="Question" value="@Model.ContextInput.Question" />
-                            <input type="hidden" name="PackGoal" value="@Model.ContextInput.PackGoal" />
-                            <input type="hidden" name="ResultsPerSection" value="@Model.ContextInput.ResultsPerSection" />
-                            <input type="hidden" name="IncludeCompletedWork" value="@Model.ContextInput.IncludeCompletedWork.ToString().ToLowerInvariant()" />
-                            <input type="hidden" name="ExpandHistory" value="@Model.ContextInput.ExpandHistory.ToString().ToLowerInvariant()" />
-                            <button type="submit" class="btn btn-outline-primary btn-sm">Save</button>
-                        </form>
-                        <form method="post" asp-controller="Context" asp-action="ExportPack" class="d-inline">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="Question" value="@Model.ContextInput.Question" />
-                            <input type="hidden" name="PackGoal" value="@Model.ContextInput.PackGoal" />
-                            <input type="hidden" name="ResultsPerSection" value="@Model.ContextInput.ResultsPerSection" />
-                            <input type="hidden" name="IncludeCompletedWork" value="@Model.ContextInput.IncludeCompletedWork.ToString().ToLowerInvariant()" />
-                            <input type="hidden" name="ExpandHistory" value="@Model.ContextInput.ExpandHistory.ToString().ToLowerInvariant()" />
-                            <button type="submit" class="btn btn-outline-secondary btn-sm">Export</button>
-                        </form>
-                        <button type="button" class="btn btn-outline-secondary btn-sm js-copy-target" data-copy-target="context-pack-export">Copy</button>
-                    </div>
-                </div>
-                <strong>@Model.ContextPack.Summary</strong>
-                 <div class="dashboard-feature-workflow-meta">
-                     <span>Built from your question</span>
-                     <span>@Model.ContextPack.TopMatches.Count prioritized matches</span>
-                     @if (Model.ContextPack.ArchivedBuildId.HasValue)
-                     {
-                         <span>Archived for later ranking</span>
-                     }
-                     @if (topMatch is not null)
-                     {
-                        <span>@topMatch.KindLabel • @topMatch.ScoreLabel</span>
-                        @if (topMatch.SemanticScore > 0m)
-                        {
-                            <span>Semantic @topMatch.SemanticScore.ToString("0.0")</span>
-                         }
-                     }
-                 </div>
-                  @if (Model.ContextPack.ExternalSkillAlert.HasAlert)
-                  {
-                      <div class="alert alert-warning mt-2 mb-0 dashboard-skill-alert" role="alert">
-                          <div>
-                              <strong>External skill alert.</strong>
-                              <span>@Model.ContextPack.ExternalSkillAlert.Message</span>
-                          </div>
-                          <button class="btn btn-sm dashboard-skill-alert-button" type="button" data-bs-toggle="offcanvas" data-bs-target="#externalSkillSuggestions" aria-controls="externalSkillSuggestions">
-                             Open skill panel
-                          </button>
-                      </div>
-                   }
-                 @if (Model.ContextPack.DetectedGapItems.Count > 0)
-                 {
-                      <div class="alert alert-warning mt-3 mb-0" role="alert">
-                          <div class="fw-semibold mb-1">Need more context</div>
-                          @foreach (var gap in Model.ContextPack.DetectedGapItems)
-                          {
-                              <div>@gap.Message</div>
-                          }
-                      </div>
-                  }
-                 @if (Model.ContextPack.ClarifyingQuestions.Count > 0)
-                 {
-                     <div class="dashboard-command-followups mt-3">
-                         <span class="dashboard-suggestion-label">Add one of these details</span>
-                         <div class="dashboard-command-shortcut-list">
-                             @foreach (var clarification in Model.ContextPack.ClarifyingQuestions)
-                             {
-                                 <form method="post" asp-action="Index" class="d-inline" data-ajax-target="main[role='main']" data-ajax-loading-text="Building...">
-                                     @Html.AntiForgeryToken()
-                                     <input type="hidden" name="Question" value="@clarification" />
-                                     <input type="hidden" name="PackGoal" value="@Model.ContextInput.PackGoal" />
-                                     <input type="hidden" name="ResultsPerSection" value="@Model.ContextInput.ResultsPerSection" />
-                                     <input type="hidden" name="IncludeCompletedWork" value="@Model.ContextInput.IncludeCompletedWork.ToString().ToLowerInvariant()" />
-                                     <input type="hidden" name="ExpandHistory" value="@Model.ContextInput.ExpandHistory.ToString().ToLowerInvariant()" />
-                                     <button type="submit" class="dashboard-suggestion-pill" title="@clarification">@clarification</button>
-                                 </form>
-                             }
-                         </div>
-                     </div>
-                 }
-                 @if (Model.ContextPack.SearchTokens.Count > 0)
-                 {
-                     <div class="tag-row mb-0">
-                         @foreach (var token in Model.ContextPack.SearchTokens)
-                         {
-                            <span class="tag-pill">@token</span>
-                        }
-                    </div>
-                }
-                 @if (extraCommandSuggestions.Length > 0)
-                 {
-                    <div class="dashboard-command-followups">
-                        <span class="dashboard-suggestion-label">Try another command</span>
-                        <div class="dashboard-command-shortcut-list">
-                            @foreach (var suggestion in extraCommandSuggestions)
-                            {
-                                <form method="post" asp-action="Index" class="d-inline" data-ajax-target="main[role='main']" data-ajax-loading-text="Building...">
-                                    @Html.AntiForgeryToken()
-                                    <input type="hidden" name="Question" value="@suggestion" />
-                                    <input type="hidden" name="PackGoal" value="@Model.ContextInput.PackGoal" />
-                                    <input type="hidden" name="ResultsPerSection" value="@Model.ContextInput.ResultsPerSection" />
-                                    <input type="hidden" name="IncludeCompletedWork" value="@Model.ContextInput.IncludeCompletedWork.ToString().ToLowerInvariant()" />
-                                    <input type="hidden" name="ExpandHistory" value="@Model.ContextInput.ExpandHistory.ToString().ToLowerInvariant()" />
-                                    <button type="submit" class="dashboard-suggestion-pill" title="@suggestion">@suggestion</button>
-                                </form>
-                            }
-                         </div>
-                      </div>
-                  }
-              </div>
-          </div>
-
-        <div class="card shadow-sm border-0 dashboard-panel dashboard-launch-card dashboard-launch-card-highlight">
-            <div class="card-body dashboard-mini-panel">
-                <div class="dashboard-status-label">Next move</div>
-                <h2 class="h5 mb-0">@(Model.ContextPack.NeedsMoreContext
-                    ? "Add detail before Focus tries to route this request."
-                    : topMatch is not null
-                        ? $"Open the strongest {topMatch.KindLabel.ToLowerInvariant()} match before branching out."
-                        : "Review the strongest match, then continue.")</h2>
-                @if (topMatch is not null)
-                {
-                    <p class="memory-summary mb-0">@(topMatch.MatchReason ?? topMatch.Subtitle ?? topMatch.Title)</p>
-                }
-                else if (Model.ContextPack.NeedsMoreContext)
-                {
-                    <p class="memory-summary mb-0">Focus held back because the request did not carry enough grounded detail to build a reliable pack.</p>
-                }
-                <div class="dashboard-feature-workflow-actions">
-                    <a class="btn btn-primary" href="@(Model.ContextPack.NeedsMoreContext ? "#context-pack-export" : topMatch?.Url ?? "#top-matches")">@(Model.ContextPack.NeedsMoreContext ? "Review follow-ups" : topMatch is not null ? $"Open {topMatch.KindLabel}" : "Review matches")</a>
-                    <a class="btn btn-outline-primary" href="@(Model.ContextPack.NeedsMoreContext ? "#recommended-skills" : "#top-matches")">@(Model.ContextPack.NeedsMoreContext ? "Open recommendations" : "See all matches")</a>
-                    @if (Model.RecommendedSkills.Count > 0)
-                    {
-                        <a class="btn btn-outline-primary" href="#recommended-skills">Open skills</a>
-                    }
-                    @if (Model.RecommendedAgents.Count > 0)
-                    {
-                        <a class="btn btn-outline-secondary" href="#recommended-agents">Open agents</a>
-                    }
-                </div>
-            </div>
-        </div>
-
-        <div class="card shadow-sm border-0 dashboard-panel dashboard-launch-card" id="top-matches">
-            <div class="card-body dashboard-mini-panel">
-                <div class="section-heading">
-                    <h2 class="h5">Top matches</h2>
-                    <span class="text-secondary small">@Model.ContextPack.TopMatches.Count prioritized items</span>
-                </div>
-                <div class="code-graph-side-list dashboard-scroll-list dashboard-scroll-list-open">
-                    @foreach (var item in Model.ContextPack.TopMatches.Take(5))
-                    {
-                        <a class="code-graph-side-item" href="@item.Url">
-                            <strong>@item.Title</strong>
-                            <span>@item.KindLabel • @item.ScoreLabel</span>
-                            @if (!string.IsNullOrWhiteSpace(item.MatchReason))
-                            {
-                                <small>@item.MatchReason</small>
-                            }
-                            else if (!string.IsNullOrWhiteSpace(item.Subtitle))
-                            {
-                                <small>@item.Subtitle</small>
-                            }
-                        </a>
-                    }
-                </div>
+    @await Html.PartialAsync("_DashboardContextPack", new DashboardContextPanelViewModel
+    {
+        ContextInput = Model.ContextInput,
+        ContextPack = Model.ContextPack,
+        RecommendedAgents = Model.RecommendedAgents,
+        RecommendedSkills = Model.RecommendedSkills,
+        ExtraCommandSuggestions = extraCommandSuggestions
+    })
+}
+else if (shouldLazyLoadContextPack)
+{
+    <section id="dashboard-pack-loader"
+             class="card shadow-sm border-0 dashboard-panel dashboard-pack-loader mb-4 js-dashboard-pack-loader"
+             data-dashboard-pack-url="@Url.Action("DashboardPack", "Home")"
+             data-question="@lazyPackQuestion"
+             data-pack-goal="@Model.ContextInput.PackGoal"
+             data-results-per-section="@Model.ContextInput.ResultsPerSection"
+             data-include-completed-work="@Model.ContextInput.IncludeCompletedWork.ToString().ToLowerInvariant()"
+             data-expand-history="false">
+        <div class="card-body dashboard-mini-panel dashboard-pack-loader-body">
+            <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+            <div>
+                <div class="dashboard-status-label">Loading pack</div>
+                <h2 class="h5 mb-1">Building your startup context in the background</h2>
+                <p class="memory-summary mb-0">The dashboard shell is ready first. Focus is now loading the heavier context pack, matches, and recommendations.</p>
             </div>
         </div>
     </section>
-
-    <textarea id="context-pack-export" class="form-control d-none">@Model.ContextPack.ExportText</textarea>
-
-    @if (Model.ContextPack.ExternalSkillAlert.HasAlert)
-    {
-        <div class="offcanvas offcanvas-end" tabindex="-1" id="externalSkillSuggestions" aria-labelledby="externalSkillSuggestionsLabel">
-            <div class="offcanvas-header">
-                <h2 class="offcanvas-title h5" id="externalSkillSuggestionsLabel">Suggested external skills</h2>
-                <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-            </div>
-            <div class="offcanvas-body">
-                @if (Model.ContextPack.ExternalSkillAlert.HasSuggestions)
-                {
-                    <p class="text-secondary">Import a suggested skill and Focus will rebuild the current pack against the updated skill catalog.</p>
-                    <div class="d-grid gap-3">
-                        @foreach (var suggestion in Model.ContextPack.ExternalSkillAlert.Suggestions)
-                        {
-                            <div class="card border-0 shadow-sm">
-                                <div class="card-body">
-                                    <h3 class="h6 mb-1">@suggestion.Name</h3>
-                                    <div class="small text-secondary">@suggestion.SourceName</div>
-                                    <div class="small text-secondary mb-2">Score @suggestion.Score</div>
-                                    @if (!string.IsNullOrWhiteSpace(suggestion.Summary))
-                                    {
-                                        <p class="small mb-2">@suggestion.Summary</p>
-                                    }
-                                    <p class="small text-secondary">@suggestion.MatchReason</p>
-                                    <div class="d-flex gap-2">
-                                        <a class="btn btn-sm btn-outline-secondary" href="@suggestion.SkillUrl" target="_blank" rel="noreferrer">Open source</a>
-                                        <form method="post" asp-action="ImportExternalSkill" class="d-inline">
-                                            @Html.AntiForgeryToken()
-                                            <input type="hidden" name="skillUrl" value="@suggestion.SkillUrl" />
-                                            <input type="hidden" name="sourceName" value="@suggestion.SourceName" />
-                                            <input type="hidden" name="Question" value="@Model.ContextInput.Question" />
-                                            <input type="hidden" name="PackGoal" value="@Model.ContextInput.PackGoal" />
-                                            <input type="hidden" name="ResultsPerSection" value="@Model.ContextInput.ResultsPerSection" />
-                                            <input type="hidden" name="IncludeCompletedWork" value="@Model.ContextInput.IncludeCompletedWork.ToString().ToLowerInvariant()" />
-                                            <input type="hidden" name="ExpandHistory" value="@Model.ContextInput.ExpandHistory.ToString().ToLowerInvariant()" />
-                                            <button type="submit" class="btn btn-sm btn-primary">Add and rebuild</button>
-                                        </form>
-                                    </div>
-                                </div>
-                            </div>
-                        }
-                    </div>
-                }
-                else
-                {
-                    <div class="empty-state compact-empty-state">
-                        <strong>No importable external skills were found yet.</strong>
-                        <p class="mb-3">@Model.ContextPack.ExternalSkillAlert.Message</p>
-                        <a class="btn btn-outline-primary" href="@Model.ContextPack.ExternalSkillAlert.SettingsUrl">Open skill sources</a>
-                    </div>
-                }
-            </div>
-        </div>
-    }
 }
 
 <section class="dashboard-status-grid mb-4">
@@ -624,165 +423,7 @@
     </div>
 </section>
 
-@if (Model.ContextPack is not null)
-{
-    var sectionDefinitions = new[]
-    {
-        new { Title = "Memories", Items = Model.ContextPack.Memories, Priority = 0 },
-        new { Title = "Code symbols", Items = Model.ContextPack.CodeGraphNodes, Priority = 1 },
-        new { Title = "Code files", Items = Model.ContextPack.CodeGraphFiles, Priority = 2 },
-        new { Title = "Code graph projects", Items = Model.ContextPack.CodeGraphProjects, Priority = 3 },
-        new { Title = "Todos", Items = Model.ContextPack.Todos, Priority = 4 },
-        new { Title = "Tickets", Items = Model.ContextPack.Tickets, Priority = 5 }
-    };
-    var visibleSections = sectionDefinitions.Where(x => x.Items.Count > 0).OrderBy(x => x.Priority).ToArray();
-    var emptySections = sectionDefinitions.Where(x => x.Items.Count == 0).OrderBy(x => x.Priority).Select(x => x.Title).ToArray();
-
-    <section class="dashboard-context-grid mb-4">
-        @if (visibleSections.Length == 0)
-        {
-            <div class="card shadow-sm border-0 inner-card dashboard-context-card">
-                <div class="card-body dashboard-mini-panel">
-                    <div class="empty-state compact-empty-state">
-                        <h3>No direct source matches</h3>
-                        <p>Try different wording or widen the result scope.</p>
-                    </div>
-                </div>
-            </div>
-        }
-        else
-        {
-            @for (var index = 0; index < visibleSections.Length; index++)
-            {
-                var contextSection = visibleSections[index];
-                var contextCardClass = index == 0
-                    ? "dashboard-context-card-featured"
-                    : index < 3
-                        ? "dashboard-context-card-priority"
-                        : string.Empty;
-                <div class="card shadow-sm border-0 inner-card dashboard-context-card @contextCardClass">
-                    <div class="card-body dashboard-mini-panel">
-                        <div class="section-heading">
-                            <h2 class="h5">@contextSection.Title</h2>
-                            <span class="text-secondary small">@contextSection.Items.Count items</span>
-                        </div>
-                        <div class="code-graph-side-list dashboard-scroll-list">
-                            @foreach (var item in contextSection.Items)
-                            {
-                                <a class="code-graph-side-item" href="@item.Url">
-                                    <strong>@item.Title</strong>
-                                    <span>@item.KindLabel • @item.ScoreLabel</span>
-                                    @if (item.SemanticScore > 0m)
-                                    {
-                                        <small>Semantic @item.SemanticScore.ToString("0.0")</small>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(item.FreshnessWarning))
-                                    {
-                                        <small class="text-warning-emphasis">@item.FreshnessWarning</small>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(item.MatchReason))
-                                    {
-                                        <small>@item.MatchReason</small>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(item.Subtitle))
-                                    {
-                                        <small>@item.Subtitle</small>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(item.Preview))
-                                    {
-                                        <small>@item.Preview</small>
-                                    }
-                                </a>
-                            }
-                        </div>
-                    </div>
-                </div>
-            }
-        }
-    </section>
-
-    @if (emptySections.Length > 0)
-    {
-        <div class="dashboard-context-empty-summary mb-4">
-            <span class="dashboard-context-empty-label">No direct matches in</span>
-            @foreach (var title in emptySections)
-            {
-                <span class="dashboard-context-empty-pill">@title</span>
-            }
-        </div>
-    }
-}
-
 <section class="dashboard-full-width-stack mb-4">
-    @if (Model.ContextPack is not null && (Model.RecommendedAgents.Count > 0 || Model.RecommendedSkills.Count > 0))
-    {
-        <div class="dashboard-recommendations-grid">
-            @if (Model.RecommendedAgents.Count > 0)
-            {
-                <div class="card shadow-sm border-0 inner-card h-100" id="recommended-agents">
-                    <div class="card-body dashboard-mini-panel">
-                        <div class="section-heading">
-                            <h2 class="h5">Recommended agents</h2>
-                            <span class="text-secondary small">@Model.RecommendedAgents.Count scoped agents matched to this task</span>
-                        </div>
-                        <div class="row g-3">
-                            @foreach (var agent in Model.RecommendedAgents.Take(4))
-                            {
-                                <div class="col-md-6">
-                                    <article class="card shadow-sm border-0 inner-card h-100">
-                                        <div class="card-body">
-                                            <div class="memory-meta">@agent.ScopeLabel</div>
-                                            <h3 class="memory-title">
-                                                <a asp-controller="Agents" asp-action="Agent" asp-route-slug="@agent.Slug">@agent.Name</a>
-                                            </h3>
-                                            <p class="memory-summary mb-2 dashboard-clamp-3">@agent.Summary</p>
-                                            @if (!string.IsNullOrWhiteSpace(agent.RecommendationReason))
-                                            {
-                                                <div class="text-secondary small dashboard-clamp-2">@agent.RecommendationReason</div>
-                                            }
-                                        </div>
-                                    </article>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                </div>
-            }
-
-            @if (Model.RecommendedSkills.Count > 0)
-            {
-                <div class="card shadow-sm border-0 inner-card h-100" id="recommended-skills">
-                    <div class="card-body dashboard-mini-panel">
-                        <div class="section-heading">
-                            <h2 class="h5">Recommended skills</h2>
-                            <span class="text-secondary small">@Model.RecommendedSkills.Count runbooks matched to this task</span>
-                        </div>
-                        <div class="row g-3">
-                            @foreach (var skill in Model.RecommendedSkills.Take(4))
-                            {
-                                <div class="col-md-6">
-                                    <article class="card shadow-sm border-0 inner-card h-100">
-                                        <div class="card-body">
-                                            <div class="memory-meta">@skill.CategoryLabel@(string.IsNullOrWhiteSpace(skill.WingName) ? string.Empty : $" • {skill.WingName}")</div>
-                                            <h3 class="memory-title">
-                                                <a asp-controller="Skills" asp-action="Skill" asp-route-slug="@skill.Slug">@skill.Name</a>
-                                            </h3>
-                                            <p class="memory-summary mb-2 dashboard-clamp-3">@skill.Summary</p>
-                                            @if (!string.IsNullOrWhiteSpace(skill.RecommendationReason))
-                                            {
-                                                <div class="text-secondary small dashboard-clamp-2">@skill.RecommendationReason</div>
-                                            }
-                                        </div>
-                                    </article>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                </div>
-            }
-        </div>
-    }
-
     <div class="card shadow-sm border-0 dashboard-panel dashboard-panel-muted">
         <div class="card-body dashboard-mini-panel">
             <div class="section-heading">

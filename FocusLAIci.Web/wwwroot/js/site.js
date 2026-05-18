@@ -111,6 +111,85 @@ document.addEventListener("DOMContentLoaded", () => {
             jquery.validator.unobtrusive.parse(root);
         }
     };
+    const initializeDashboardPackLazyLoads = root => {
+        const scope = root instanceof Element || root instanceof Document ? root : document;
+        const loaders = scope.querySelectorAll(".js-dashboard-pack-loader");
+        for (const loader of loaders) {
+            if (!(loader instanceof HTMLElement) || loader.dataset.packLoading === "true" || loader.dataset.packLoaded === "true") {
+                continue;
+            }
+
+            const requestUrl = loader.dataset.dashboardPackUrl;
+            const question = loader.dataset.question;
+            if (!requestUrl || !question) {
+                continue;
+            }
+
+            loader.dataset.packLoading = "true";
+            const url = new URL(requestUrl, window.location.origin);
+            url.search = new URLSearchParams({
+                question,
+                packGoal: loader.dataset.packGoal || "General",
+                resultsPerSection: loader.dataset.resultsPerSection || "6",
+                includeCompletedWork: loader.dataset.includeCompletedWork || "false",
+                expandHistory: loader.dataset.expandHistory || "true"
+            }).toString();
+
+            fetch(url, {
+                credentials: "same-origin",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest"
+                }
+            })
+                .then(response => {
+                    if (response.status === 204) {
+                        return "";
+                    }
+
+                    if (!response.ok) {
+                        throw new Error(`Request failed with ${response.status}`);
+                    }
+
+                    return response.text();
+                })
+                .then(html => {
+                    if (!html.trim()) {
+                        loader.remove();
+                        return;
+                    }
+
+                    const parsed = new DOMParser().parseFromString(html, "text/html");
+                    const replacementNodes = Array.from(parsed.body.childNodes);
+                    if (replacementNodes.length === 0) {
+                        loader.remove();
+                        return;
+                    }
+
+                    const fragment = document.createDocumentFragment();
+                    for (const node of replacementNodes) {
+                        fragment.appendChild(node);
+                    }
+
+                    loader.replaceWith(fragment);
+                    initializeDashboardPackLazyLoads(document);
+                })
+                .catch(() => {
+                    loader.dataset.packLoading = "false";
+                    loader.classList.add("dashboard-pack-loader-error");
+                    const title = loader.querySelector("h2");
+                    const copy = loader.querySelector(".memory-summary");
+                    if (title) {
+                        title.textContent = "Context pack is taking longer than usual";
+                    }
+                    if (copy) {
+                        copy.textContent = "Refresh the page or build the pack manually if the loader stays here.";
+                    }
+                })
+                .finally(() => {
+                    loader.dataset.packLoaded = "true";
+                });
+        }
+    };
     const swapAjaxTarget = async (requestUrl, requestInit, targetSelector) => {
         const response = await fetch(requestUrl, {
             credentials: "same-origin",
@@ -139,6 +218,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         reparseValidation(nextTarget);
+        initializeDashboardPackLazyLoads(nextTarget);
     };
 
     document.addEventListener("submit", async event => {
@@ -217,4 +297,6 @@ document.addEventListener("DOMContentLoaded", () => {
             window.location.reload();
         }
     });
+
+    initializeDashboardPackLazyLoads(document);
 });

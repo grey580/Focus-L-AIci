@@ -28,6 +28,15 @@ public sealed class DashboardViewModel
     public string? ErrorMessage { get; init; }
 }
 
+public sealed class DashboardContextPanelViewModel
+{
+    public ContextBriefInput ContextInput { get; init; } = new();
+    public ContextPackViewModel ContextPack { get; init; } = new();
+    public IReadOnlyCollection<AgentCardViewModel> RecommendedAgents { get; init; } = Array.Empty<AgentCardViewModel>();
+    public IReadOnlyCollection<SkillCardViewModel> RecommendedSkills { get; init; } = Array.Empty<SkillCardViewModel>();
+    public IReadOnlyCollection<string> ExtraCommandSuggestions { get; init; } = Array.Empty<string>();
+}
+
 public sealed class DashboardDiagnosticsViewModel
 {
     public DateTime GeneratedUtc { get; init; }

@@ -65,6 +65,9 @@ public sealed class PackIntentModelTests
         Add(data, "Build a file inventory diff between two local directories.", null, false, false, true, false);
         Add(data, "Export the differences between two Windows folders.", null, false, false, true, false);
         Add(data, "Create a PowerShell script that checks whether TCP port 443 is open.", null, false, false, true, false);
+        Add(data, "Create a PowerShell script that will download Foxit from their website and install it on a local PC.", null, false, false, true, false);
+        Add(data, "I need the command line command to check DISM.", null, false, false, true, false);
+        Add(data, "Make a PowerShell that will check for missing Windows updates on a PC.", null, false, false, true, false);
 
         // Explicit code intent
         Add(data, "In Focus L-AIci, find the ContextService code and improve current project ranking.", false, false, true, false, false);
@@ -132,9 +135,9 @@ public sealed class PackIntentModelTests
         Add(data, "Why is the local desktop app blurry on a high DPI monitor?", false, false, false, false, false);
         Add(data, "Compare two folders after a backup job and export only the changed files.", null, false, false, true, false);
 
-        if (data.Count != 102)
+        if (data.Count != 105)
         {
-            throw new InvalidOperationException($"Expected 102 representative queries but found {data.Count}.");
+            throw new InvalidOperationException($"Expected 105 representative queries but found {data.Count}.");
         }
 
         return data;
@@ -239,7 +242,55 @@ public sealed class PackIntentModelTests
         var prediction = TinyLocalPackIntentModel.Shared.Predict("Show me the command line command to see when a user's password is expiring.");
 
         Assert.True(prediction.IsDirectoryAdminQuery);
+        Assert.True(prediction.IsPasswordExpiryQuery);
         Assert.True(prediction.DirectoryAdminScore > prediction.GenericAutomationScore);
+    }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_ExposesFileComparisonFacet()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("Compare two folders with PowerShell and report changed files.");
+
+        Assert.True(prediction.IsFileComparisonQuery);
+    }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_ExposesWmiFacet()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("Create a PowerShell script that checks whether WMI is working on a Windows PC.");
+
+        Assert.True(prediction.IsWmiDiagnosticQuery);
+    }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_ExposesSoftwareInstallFacet()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("Create a PowerShell script that will download Foxit from their website and install it on a local PC.");
+
+        Assert.True(prediction.IsSoftwareInstallQuery);
+        Assert.True(prediction.IsGenericAutomationQuery);
+        Assert.False(prediction.IsWmiDiagnosticQuery);
+        Assert.False(prediction.IsPortCheckQuery);
+    }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_ExposesWindowsServicingFacet()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("I need the command line command to check DISM.");
+
+        Assert.True(prediction.IsWindowsServicingQuery);
+        Assert.True(prediction.IsGenericAutomationQuery);
+        Assert.False(prediction.IsDirectoryAdminQuery);
+    }
+
+    [Fact]
+    public void TinyLocalPackIntentModel_ExposesWindowsUpdateFacet()
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict("Make a PowerShell that will check for missing Windows updates on a PC.");
+
+        Assert.True(prediction.IsWindowsUpdateQuery);
+        Assert.True(prediction.IsGenericAutomationQuery);
+        Assert.False(prediction.IsDirectoryAdminQuery);
     }
 
     [Fact]
@@ -254,6 +305,22 @@ public sealed class PackIntentModelTests
     public void TinyLocalPackIntentModel_FlagsSingleTokenPromptsForMoreContext()
     {
         var prediction = TinyLocalPackIntentModel.Shared.Predict("project");
+
+        Assert.True(prediction.NeedsMoreContext);
+    }
+
+    public static TheoryData<string> ClarificationWorthyQueries => new()
+    {
+        "review service deployment",
+        "check ad",
+        "project diff"
+    };
+
+    [Theory]
+    [MemberData(nameof(ClarificationWorthyQueries))]
+    public void TinyLocalPackIntentModel_FlagsClarificationWorthyQueries(string question)
+    {
+        var prediction = TinyLocalPackIntentModel.Shared.Predict(question);
 
         Assert.True(prediction.NeedsMoreContext);
     }

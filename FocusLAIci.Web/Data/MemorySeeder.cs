@@ -856,6 +856,69 @@ public static class MemorySeeder
             true,
             null),
         new(
+            "Download and install Windows software with PowerShell",
+            "download-and-install-windows-software-with-powershell",
+            "Use PowerShell to download a Windows installer from a vendor URL, run a quiet install locally, and surface download or installer failures clearly.",
+            SkillCategory.Task,
+            "Use this when you need a PowerShell script to download software like Foxit or another Windows app from a website and install it on a local PC.",
+            """
+            Confirm the exact download URL, installer type, and supported silent-install switches before scripting the install.
+            Use Invoke-WebRequest or Start-BitsTransfer to save the installer to a known temp path and verify the file exists before launching it.
+            Run the installer with Start-Process -Wait and capture the exit code so download failures and installer failures stay separate.
+            Prefer quiet or silent switches for MSI or EXE installers and return a short status summary for success, failure, and log location.
+            Clean up temporary files only after the installer exits and you have recorded the result.
+            """,
+            """
+            Create a PowerShell script that downloads Foxit from the vendor website and installs it on a local PC.
+            Download a Windows installer from a URL, run a silent local install, and report the exit code.
+            Build a reusable PowerShell install script for a vendor EXE or MSI package.
+            """,
+            "powershell, download, install, installer, software, windows, local pc, vendor website, invoke-webrequest, start-process, msi, exe, silent install, foxit",
+            true,
+            null),
+        new(
+            "Check Windows image health with DISM",
+            "check-windows-image-health-with-dism",
+            "Use DISM command-line checks to verify Windows image health, inspect the component store, and run scan or repair commands when needed.",
+            SkillCategory.Task,
+            "Use this when you need the command-line command for DISM health checks, component store checks, or Windows image repair guidance.",
+            """
+            Start with the exact DISM command the user asked for: CheckHealth for a quick status, ScanHealth for a fuller scan, or RestoreHealth for repair.
+            Clarify whether the target is the local online image or an offline mounted image path before suggesting repair syntax.
+            Keep the output command-focused and mention SFC only as a follow-up when it logically comes after DISM repair.
+            Surface the exact DISM switches so the result is usable directly from Command Prompt or PowerShell.
+            Avoid drifting into unrelated Windows admin workflows unless the user explicitly asks for broader troubleshooting.
+            """,
+            """
+            I need the command line command to check DISM.
+            Show me the DISM command to check Windows image health.
+            What DISM command should I run for CheckHealth, ScanHealth, or RestoreHealth?
+            """,
+            "dism, command line, checkhealth, scanhealth, restorehealth, cleanup-image, component store, image health, windows servicing, sfc",
+            true,
+            null),
+        new(
+            "Check missing Windows updates with PowerShell",
+            "check-missing-windows-updates-with-powershell",
+            "Use PowerShell to detect missing Windows updates on a PC, preferably through the Windows Update Agent API or PSWindowsUpdate when it is available.",
+            SkillCategory.Task,
+            "Use this when you need a PowerShell command or script to check whether a Windows PC is missing updates, list available updates, or report pending KBs.",
+            """
+            Prefer the Windows Update Agent COM API or the PSWindowsUpdate module to discover missing updates; do not rely on Get-HotFix alone because it only shows installed updates.
+            Start with the local machine unless the user explicitly asks for remote execution or fleet reporting.
+            Return a short script that surfaces title, KB number when available, severity/category, and whether a reboot is required.
+            Mention any prerequisite, such as PSWindowsUpdate installation, only if the chosen approach depends on it.
+            Keep the answer focused on finding missing or available updates rather than drifting into DISM, WMI, or unrelated local support checks.
+            """,
+            """
+            Make a PowerShell script that checks for missing Windows updates on a PC.
+            Show me how to list available Windows updates with PowerShell.
+            Use PowerShell to detect pending or missing KB updates on a local Windows machine.
+            """,
+            "windows update, missing updates, available updates, pending updates, powershell, pswindowsupdate, wuapi, microsoft.update.session, kb, hotfix, patch, wsus, local pc",
+            true,
+            null),
+        new(
             "Get Exchange Online mailbox inventory",
             "get-exchange-online-mailbox-inventory",
             "Use Exchange Online PowerShell to list mailboxes and their mailbox types with `Get-EXOMailbox` and `RecipientTypeDetails`.",

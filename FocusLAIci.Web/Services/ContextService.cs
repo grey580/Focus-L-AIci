@@ -106,6 +106,12 @@ public sealed partial class ContextService
         "network", "wifi", "slow", "performance", "troubleshoot", "troubleshooting", "latency",
         "wmi", "cim", "winmgmt", "rpc", "computer", "computers", "winrm", "port", "ports", "tcp", "udp"
     ];
+    private static readonly HashSet<string> RetrievalLowSignalTokens =
+    [
+        "build", "check", "checks", "command", "commands", "computer", "computers", "create", "find", "help", "line",
+        "list", "local", "machine", "machines", "make", "need", "pc", "pcs", "please", "powershell", "run", "script",
+        "show", "tell", "use", "using", "windows", "will", "with"
+    ];
     private static readonly HashSet<string> WebUiTokens =
     [
         "website", "web", "ui", "layout", "homepage", "spacing", "css", "frontend", "design"
@@ -154,17 +160,23 @@ public sealed partial class ContextService
     private readonly FocusMemoryContext _dbContext;
     private readonly CurrentProjectContext? _currentProjectContext;
     private readonly IPackIntentModel _packIntentModel;
+    private readonly IPackDecisionEngine _packDecisionEngine;
+    private readonly IPackCriticEngine _packCriticEngine;
     private readonly PackBuildArchiveService? _packBuildArchiveService;
 
     public ContextService(
         FocusMemoryContext dbContext,
         IHostEnvironment? hostEnvironment = null,
         IPackIntentModel? packIntentModel = null,
+        IPackDecisionEngine? packDecisionEngine = null,
+        IPackCriticEngine? packCriticEngine = null,
         PackBuildArchiveService? packBuildArchiveService = null)
     {
         _dbContext = dbContext;
         _currentProjectContext = ResolveCurrentProjectContext(hostEnvironment?.ContentRootPath);
         _packIntentModel = packIntentModel ?? TinyLocalPackIntentModel.Shared;
+        _packDecisionEngine = packDecisionEngine ?? new PackDecisionEngine();
+        _packCriticEngine = packCriticEngine ?? new PackCriticEngine();
         _packBuildArchiveService = packBuildArchiveService;
     }
 
@@ -183,7 +195,7 @@ public sealed partial class ContextService
         var semanticTokens = ExpandSemanticTokens(tokens);
         var intentPrediction = _packIntentModel.Predict(normalizedQuestion);
         var preferDurableMemoryLead = ShouldPreferDurableMemoryLead(normalizedQuestion, effectiveInput);
-        var fileComparisonQuery = HasFileComparisonIntent(tokens, normalizedQuestionPhrase);
+        var fileComparisonQuery = intentPrediction.IsFileComparisonQuery;
         var codeFamilyPreferred = intentPrediction.CodeFamilyScore >= intentPrediction.OperationsFamilyScore + 0.08m;
         var operationsFamilyPreferred = intentPrediction.OperationsFamilyScore >= intentPrediction.CodeFamilyScore + 0.08m;
         var externalAdminQuery = intentPrediction.IsExternalOperationsQuery
@@ -208,10 +220,13 @@ public sealed partial class ContextService
             explicitCodeQuery = false;
         }
 
-        var localSupportQuery = IsLocalSupportQuery(tokens);
-        var wmiDiagnosticQuery = HasWmiDiagnosticIntent(tokens, normalizedQuestionPhrase);
-        var portCheckQuery = HasPortCheckIntent(tokens, normalizedQuestionPhrase);
-        var genericAutomationQuery = intentPrediction.IsGenericAutomationQuery && !directoryAdminQuery && !explicitCodeQuery && !localSupportQuery;
+        var wmiDiagnosticQuery = intentPrediction.IsWmiDiagnosticQuery;
+        var portCheckQuery = intentPrediction.IsPortCheckQuery;
+        var softwareInstallQuery = intentPrediction.IsSoftwareInstallQuery;
+        var windowsServicingQuery = intentPrediction.IsWindowsServicingQuery;
+        var windowsUpdateQuery = intentPrediction.IsWindowsUpdateQuery;
+        var localSupportQuery = !softwareInstallQuery && !windowsServicingQuery && !windowsUpdateQuery && (wmiDiagnosticQuery || portCheckQuery || IsLocalSupportQuery(tokens));
+        var genericAutomationQuery = intentPrediction.IsGenericAutomationQuery && !windowsServicingQuery && !windowsUpdateQuery && !directoryAdminQuery && !explicitCodeQuery && !localSupportQuery;
         var currentProjectCodeQuery = explicitCodeQuery && currentProjectHint;
         var projectHistoryQuery = intentPrediction.IsProjectHistoryQuery && !directoryAdminQuery && !genericAutomationQuery && !fileComparisonQuery;
         if (projectHistoryQuery)
@@ -222,25 +237,29 @@ public sealed partial class ContextService
         var webUiQuery = IsWebUiQuery(tokens);
         var cloudOpsQuery = IsCloudOpsQuery(tokens);
         var desktopAppQuery = IsDesktopAppQuery(tokens, normalizedQuestionPhrase);
-        var needsMoreContext = tokens.Count > 0
-                               && intentPrediction.NeedsMoreContext
-                               && !HasStrongPackDomainSignals(
-                                   tokens,
-                                   normalizedQuestionPhrase,
-                                   directoryAdminQuery,
-                                   explicitCodeQuery,
-                                   repositoryArchitectureQuery,
-                                   fileComparisonQuery,
-                                   projectHistoryQuery,
+        var hasStrongDomainSignals = HasStrongPackDomainSignals(
+            tokens,
+            normalizedQuestionPhrase,
+            repositoryArchitectureQuery,
+            fileComparisonQuery,
+                                    projectHistoryQuery,
+                                    intentPrediction.IsPasswordExpiryQuery,
+                                    softwareInstallQuery,
+                                    windowsServicingQuery,
+                                    windowsUpdateQuery,
                                     localSupportQuery,
                                     wmiDiagnosticQuery,
                                     portCheckQuery,
-                                    webUiQuery,
-                                    cloudOpsQuery,
-                                    desktopAppQuery);
+            webUiQuery,
+            cloudOpsQuery,
+            desktopAppQuery,
+            currentProjectHint);
+        var queryDecision = _packDecisionEngine.EvaluateQuery(intentPrediction, tokens.Count > 0, hasStrongDomainSignals);
         var suppressCodeGraph = (externalAdminQuery && !explicitCodeQuery)
                                 || fileComparisonQuery
                                 || genericAutomationQuery
+                                || windowsServicingQuery
+                                || windowsUpdateQuery
                                 || localSupportQuery
                                 || (cloudOpsQuery && !explicitCodeQuery)
                                 || ((webUiQuery || desktopAppQuery) && !currentProjectCodeQuery && !repositoryArchitectureQuery);
@@ -250,55 +269,29 @@ public sealed partial class ContextService
         }
 
         var resultsPerSection = Math.Clamp(effectiveInput.ResultsPerSection, 3, 10);
-        if (needsMoreContext)
+        if (!queryDecision.ShouldProceed)
         {
-            var gapItems = BuildLowContextGapItems();
-            var clarifyingQuestions = BuildClarifyingQuestions(
+            return await BuildDecisionPackAsync(
+                queryDecision,
+                normalizedQuestion,
+                effectiveInput,
+                resultsPerSection,
                 tokens,
                 normalizedQuestionPhrase,
                 projectHistoryQuery,
                 explicitCodeQuery,
                 fileComparisonQuery,
+                intentPrediction.IsPasswordExpiryQuery,
+                softwareInstallQuery,
+                windowsServicingQuery,
+                windowsUpdateQuery,
                 localSupportQuery,
+                wmiDiagnosticQuery,
+                portCheckQuery,
                 webUiQuery,
                 cloudOpsQuery,
-                desktopAppQuery);
-            return await ArchivePackIfNeededAsync(new ContextPackViewModel
-            {
-                Question = normalizedQuestion,
-                Summary = "Need more context before Focus can build a fact-based pack.",
-                GoalLabel = GetPackGoalLabel(effectiveInput.PackGoal),
-                NeedsMoreContext = true,
-                Input = new ContextBriefInput
-                {
-                    Question = normalizedQuestion,
-                    IncludeCompletedWork = effectiveInput.IncludeCompletedWork,
-                    WingId = effectiveInput.WingId,
-                    RoomId = effectiveInput.RoomId,
-                    Kind = effectiveInput.Kind,
-                    Tag = effectiveInput.Tag,
-                    IncludeRetired = effectiveInput.IncludeRetired,
-                    ExpandHistory = effectiveInput.ExpandHistory,
-                    ResultsPerSection = resultsPerSection,
-                    PackGoal = effectiveInput.PackGoal,
-                    PreferRecentChanges = effectiveInput.PreferRecentChanges
-                },
-                SearchTokens = tokens.OrderBy(x => x).ToArray(),
-                DetectedGapItems = gapItems,
-                ClarifyingQuestions = clarifyingQuestions,
-                ExportText = BuildExportText(
-                    normalizedQuestion,
-                    effectiveInput.PackGoal,
-                    Array.Empty<SkillCardViewModel>(),
-                    Array.Empty<ContextRecordViewModel>(),
-                    Array.Empty<ContextRecordViewModel>(),
-                    Array.Empty<ContextRecordViewModel>(),
-                    Array.Empty<ContextRecordViewModel>(),
-                    Array.Empty<ContextRecordViewModel>(),
-                    Array.Empty<ContextRecordViewModel>(),
-                    gapItems,
-                    clarifyingQuestions)
-            }, cancellationToken);
+                desktopAppQuery,
+                cancellationToken);
         }
 
         var memories = await _dbContext.Memories
@@ -359,13 +352,8 @@ public sealed partial class ContextService
 
         var tickets = await ticketsQuery.ToListAsync(cancellationToken);
 
-        var projects = await _dbContext.CodeGraphProjects
-            .AsNoTracking()
-            .ToListAsync(cancellationToken);
-        var files = await _dbContext.CodeGraphFiles
-            .AsNoTracking()
-            .Include(x => x.Project)
-            .ToListAsync(cancellationToken);
+        List<CodeGraphProject> projects = [];
+        List<CodeGraphFile> files = [];
 
         Dictionary<Guid, string> ticketNotes = [];
         Dictionary<Guid, string> ticketActivities = [];
@@ -407,20 +395,33 @@ public sealed partial class ContextService
                     cancellationToken);
         }
 
-        var edgeNodeIds = await _dbContext.CodeGraphEdges
-            .AsNoTracking()
-            .Select(x => x.FromNodeId)
-            .Concat(_dbContext.CodeGraphEdges.AsNoTracking().Select(x => x.ToNodeId))
-            .ToListAsync(cancellationToken);
+        Dictionary<Guid, int> nodeDegrees = [];
+        List<CodeGraphNode> nodes = [];
+        if (!suppressCodeGraph)
+        {
+            projects = await _dbContext.CodeGraphProjects
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
+            files = await _dbContext.CodeGraphFiles
+                .AsNoTracking()
+                .Include(x => x.Project)
+                .ToListAsync(cancellationToken);
 
-        var nodeDegrees = edgeNodeIds
-            .GroupBy(x => x)
-            .ToDictionary(x => x.Key, x => x.Count());
+            var edgeNodeIds = await _dbContext.CodeGraphEdges
+                .AsNoTracking()
+                .Select(x => x.FromNodeId)
+                .Concat(_dbContext.CodeGraphEdges.AsNoTracking().Select(x => x.ToNodeId))
+                .ToListAsync(cancellationToken);
 
-        var nodes = await _dbContext.CodeGraphNodes
-            .AsNoTracking()
-            .Include(x => x.File)
-            .ToListAsync(cancellationToken);
+            nodeDegrees = edgeNodeIds
+                .GroupBy(x => x)
+                .ToDictionary(x => x.Key, x => x.Count());
+
+            nodes = await _dbContext.CodeGraphNodes
+                .AsNoTracking()
+                .Include(x => x.File)
+                .ToListAsync(cancellationToken);
+        }
 
         var recentMemoryIds = memories
             .OrderByDescending(x => x.UpdatedUtc)
@@ -450,16 +451,18 @@ public sealed partial class ContextService
             .AsNoTracking()
             .Include(x => x.Wing)
             .ToListAsync(cancellationToken);
-        var projectPreferences = projects.ToDictionary(
-            project => project.Id,
-            project => BuildProjectPreference(project, tokens, normalizedQuestion));
-        var projectHistoryFocusProject = projectHistoryQuery
-            ? projects
+        var projectPreferences = suppressCodeGraph
+            ? new Dictionary<Guid, ProjectPreference>()
+            : projects.ToDictionary(
+                project => project.Id,
+                project => BuildProjectPreference(project, tokens, normalizedQuestion));
+        var projectHistoryFocusProject = suppressCodeGraph || !projectHistoryQuery
+            ? null
+            : projects
                 .Where(project => projectPreferences[project.Id].ProjectQueryBoost > 0m || projectPreferences[project.Id].HasStrongAffinity)
                 .OrderByDescending(project => projectPreferences[project.Id].ProjectQueryBoost)
                 .ThenByDescending(project => projectPreferences[project.Id].RepoAffinityBoost)
-                .FirstOrDefault()
-            : null;
+                .FirstOrDefault();
         var projectHistoryFocusTokens = projectHistoryFocusProject is null
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             : Tokenize($"{projectHistoryFocusProject.Name} {Path.GetFileName(projectHistoryFocusProject.RootPath)}");
@@ -503,6 +506,9 @@ public sealed partial class ContextService
             .Where(x => !projectHistoryQuery || projectHistoryFocusTokens.Count == 0 || IsProjectHistoryRelevantMemory(x.Memory, projectHistoryFocusTokens))
             .Where(x => !wmiDiagnosticQuery || IsWmiDiagnosticRelevantMemory(x.Memory))
             .Where(x => !portCheckQuery || IsPortCheckRelevantMemory(x.Memory))
+            .Where(x => !softwareInstallQuery || IsSoftwareInstallRelevantMemory(x.Memory))
+            .Where(x => !windowsServicingQuery || IsWindowsServicingRelevantMemory(x.Memory))
+            .Where(x => !windowsUpdateQuery || IsWindowsUpdateRelevantMemory(x.Memory))
             .Where(x => !genericAutomationQuery || IsGenericAutomationRelevantMemory(x.Memory))
             .Where(x => !localSupportQuery || IsLocalSupportRelevantMemory(x.Memory))
             .Where(x => !webUiQuery || currentProjectCodeQuery || IsWebUiRelevantMemory(x.Memory))
@@ -781,8 +787,6 @@ public sealed partial class ContextService
         fileResults = ApplyLinkBoost(fileResults, linkedKeys);
         nodeResults = ApplyLinkBoost(nodeResults, linkedKeys);
 
-        await TouchMemoryReferencesAsync(memoryResults.Select(x => x.Id).ToArray(), cancellationToken);
-
         var topMatches = BuildTopMatches(
             memoryResults,
             todoResults,
@@ -792,13 +796,16 @@ public sealed partial class ContextService
             nodeResults,
             resultsPerSection,
             preferDurableMemoryLead);
-        var recommendedSkillMatches = SkillRecommendationEngine.Recommend(
+        var rawRecommendedSkillMatches = SkillRecommendationEngine.Recommend(
                 skills,
                 normalizedQuestion,
                 effectiveInput.WingId,
                 null,
                 Math.Clamp(resultsPerSection, 3, 6),
                 intentPrediction);
+        var retrievalAgreementRatio = CalculateRetrievalAgreementRatio(intentPrediction, rawRecommendedSkillMatches);
+        var specificGroundingRatio = CalculateSpecificGroundingRatio(tokens, normalizedQuestionPhrase, topMatches, rawRecommendedSkillMatches);
+        var recommendedSkillMatches = rawRecommendedSkillMatches;
         if (directoryAdminQuery && !explicitCodeQuery)
         {
             recommendedSkillMatches = recommendedSkillMatches
@@ -819,6 +826,24 @@ public sealed partial class ContextService
         {
             recommendedSkillMatches = recommendedSkillMatches
                 .Where(match => IsPortCheckRelevantSkill(match.Skill))
+                .ToArray();
+        }
+        else if (softwareInstallQuery)
+        {
+            recommendedSkillMatches = recommendedSkillMatches
+                .Where(match => IsSoftwareInstallRelevantSkill(match.Skill))
+                .ToArray();
+        }
+        else if (windowsServicingQuery)
+        {
+            recommendedSkillMatches = recommendedSkillMatches
+                .Where(match => IsWindowsServicingRelevantSkill(match.Skill))
+                .ToArray();
+        }
+        else if (windowsUpdateQuery)
+        {
+            recommendedSkillMatches = recommendedSkillMatches
+                .Where(match => IsWindowsUpdateRelevantSkill(match.Skill))
                 .ToArray();
         }
         else if (localSupportQuery)
@@ -861,8 +886,48 @@ public sealed partial class ContextService
         var recommendedSkills = recommendedSkillMatches
             .Select(MapRecommendedSkill)
             .ToArray();
+        var hasFacetRoute =
+            fileComparisonQuery
+            || projectHistoryQuery
+            || wmiDiagnosticQuery
+            || portCheckQuery
+            || softwareInstallQuery
+            || windowsServicingQuery
+            || windowsUpdateQuery
+            || intentPrediction.IsPasswordExpiryQuery;
+        var retrievalDecision = _packDecisionEngine.EvaluateRetrieval(
+            intentPrediction,
+            topMatches.Count,
+            recommendedSkills.Length,
+            retrievalAgreementRatio,
+            specificGroundingRatio,
+            hasFacetRoute);
+        if (!retrievalDecision.ShouldProceed)
+        {
+            return await BuildDecisionPackAsync(
+                retrievalDecision,
+                normalizedQuestion,
+                effectiveInput,
+                resultsPerSection,
+                tokens,
+                normalizedQuestionPhrase,
+                projectHistoryQuery,
+                explicitCodeQuery,
+                fileComparisonQuery,
+                intentPrediction.IsPasswordExpiryQuery,
+                softwareInstallQuery,
+                windowsServicingQuery,
+                windowsUpdateQuery,
+                localSupportQuery,
+                wmiDiagnosticQuery,
+                portCheckQuery,
+                webUiQuery,
+                cloudOpsQuery,
+                desktopAppQuery,
+                cancellationToken);
+        }
 
-        var pack = new ContextPackViewModel
+        var candidatePack = new ContextPackViewModel
         {
             Question = normalizedQuestion,
             Summary = BuildSummary(memoryResults, todoResults, ticketResults, projectResults, fileResults, nodeResults),
@@ -906,8 +971,39 @@ public sealed partial class ContextService
                 Array.Empty<DashboardWarningViewModel>(),
                 Array.Empty<string>())
         };
+        var allowCodeGraph = explicitCodeQuery || repositoryArchitectureQuery || projectHistoryQuery || currentProjectHint;
+        var (finalPack, alreadyArchived) = await RunCriticLoopAsync(
+            candidatePack,
+            normalizedQuestion,
+            normalizedQuestionPhrase,
+            tokens,
+            effectiveInput,
+            resultsPerSection,
+            intentPrediction,
+            projectHistoryQuery,
+            explicitCodeQuery,
+            fileComparisonQuery,
+            localSupportQuery,
+            wmiDiagnosticQuery,
+            portCheckQuery,
+            webUiQuery,
+            cloudOpsQuery,
+            desktopAppQuery,
+            repositoryArchitectureQuery,
+            softwareInstallQuery,
+            windowsServicingQuery,
+            windowsUpdateQuery,
+            allowCodeGraph,
+            hasFacetRoute,
+            preferDurableMemoryLead,
+            cancellationToken);
+        if (alreadyArchived)
+        {
+            return finalPack;
+        }
 
-        return await ArchivePackIfNeededAsync(pack, cancellationToken);
+        await TouchMemoryReferencesAsync(finalPack.Memories.Select(x => x.Id).ToArray(), cancellationToken);
+        return await ArchivePackIfNeededAsync(finalPack, cancellationToken);
     }
 
     public async Task<ContextLinksPanelViewModel> BuildLinksPanelAsync(
@@ -1446,6 +1542,250 @@ public sealed partial class ContextService
         };
     }
 
+    private async Task<(ContextPackViewModel Pack, bool AlreadyArchived)> RunCriticLoopAsync(
+        ContextPackViewModel candidatePack,
+        string normalizedQuestion,
+        string normalizedQuestionPhrase,
+        IReadOnlyCollection<string> tokens,
+        ContextBriefInput effectiveInput,
+        int resultsPerSection,
+        PackIntentPrediction intentPrediction,
+        bool projectHistoryQuery,
+        bool explicitCodeQuery,
+        bool fileComparisonQuery,
+        bool localSupportQuery,
+        bool wmiDiagnosticQuery,
+        bool portCheckQuery,
+        bool webUiQuery,
+        bool cloudOpsQuery,
+        bool desktopAppQuery,
+        bool repositoryArchitectureQuery,
+        bool softwareInstallQuery,
+        bool windowsServicingQuery,
+        bool windowsUpdateQuery,
+        bool allowCodeGraph,
+        bool hasFacetRoute,
+        bool preferDurableMemoryLead,
+        CancellationToken cancellationToken)
+    {
+        if (allowCodeGraph)
+        {
+            return (candidatePack, false);
+        }
+
+        var workingPack = candidatePack;
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            var critique = _packCriticEngine.Evaluate(new PackCritiqueContext(
+                normalizedQuestionPhrase,
+                tokens,
+                workingPack,
+                hasFacetRoute,
+                allowCodeGraph,
+                attempt));
+            if (critique.Action == PackCritiqueAction.Accept)
+            {
+                return (workingPack, false);
+            }
+
+            if (critique.Action == PackCritiqueAction.Repair && attempt < 3)
+            {
+                workingPack = ApplyCriticRepairs(
+                    workingPack,
+                    critique,
+                    normalizedQuestion,
+                    effectiveInput.PackGoal,
+                    resultsPerSection,
+                    preferDurableMemoryLead);
+                continue;
+            }
+
+            var unsupportedDecision = new PackDecision(
+                PackDecisionKind.Unsupported,
+                new PackDecisionScorecard(
+                    TopScore: intentPrediction.TopScore,
+                    TopMargin: intentPrediction.TopMargin,
+                    IsAmbiguous: intentPrediction.IsAmbiguous,
+                    QueryNeedsMoreContext: intentPrediction.NeedsMoreContext,
+                    InformativeTokenCount: intentPrediction.InformativeTokenCount,
+                    SpecificInformativeTokenCount: intentPrediction.SpecificInformativeTokenCount,
+                    FacetSignalCount: intentPrediction.FacetSignalCount,
+                    Reasons: critique.Issues.Select(issue => issue.Message).ToArray()));
+            var unsupportedPack = await BuildDecisionPackAsync(
+                unsupportedDecision,
+                normalizedQuestion,
+                effectiveInput,
+                resultsPerSection,
+                tokens,
+                normalizedQuestionPhrase,
+                projectHistoryQuery,
+                explicitCodeQuery,
+                fileComparisonQuery,
+                intentPrediction.IsPasswordExpiryQuery,
+                softwareInstallQuery,
+                windowsServicingQuery,
+                windowsUpdateQuery,
+                localSupportQuery,
+                wmiDiagnosticQuery,
+                portCheckQuery,
+                webUiQuery,
+                cloudOpsQuery,
+                desktopAppQuery,
+                cancellationToken);
+            return (unsupportedPack, true);
+        }
+
+        return (workingPack, false);
+    }
+
+    private static ContextPackViewModel ApplyCriticRepairs(
+        ContextPackViewModel pack,
+        PackCritiqueResult critique,
+        string normalizedQuestion,
+        ContextPackGoal goal,
+        int resultsPerSection,
+        bool preferDurableMemoryLead)
+    {
+        var issueCodes = critique.Issues.Select(issue => issue.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var groundedSkillIds = (critique.Directive.GroundedSkillIds ?? Array.Empty<Guid>())
+            .ToHashSet();
+        var groundedMemoryIds = (critique.Directive.GroundedMemoryIds ?? Array.Empty<Guid>())
+            .ToHashSet();
+        var recommendedSkills = issueCodes.Contains("ungrounded-skills")
+            ? pack.RecommendedSkills.Where(skill => groundedSkillIds.Contains(skill.Id)).ToArray()
+            : pack.RecommendedSkills.ToArray();
+        var memories = issueCodes.Contains("ungrounded-memories")
+            ? pack.Memories.Where(memory => groundedMemoryIds.Contains(memory.Id)).ToArray()
+            : pack.Memories.ToArray();
+        var codeGraphProjects = critique.Directive.SuppressCodeGraph ? Array.Empty<ContextRecordViewModel>() : pack.CodeGraphProjects.ToArray();
+        var codeGraphFiles = critique.Directive.SuppressCodeGraph ? Array.Empty<ContextRecordViewModel>() : pack.CodeGraphFiles.ToArray();
+        var codeGraphNodes = critique.Directive.SuppressCodeGraph ? Array.Empty<ContextRecordViewModel>() : pack.CodeGraphNodes.ToArray();
+        var topMatches = BuildTopMatches(
+            memories,
+            pack.Todos,
+            pack.Tickets,
+            codeGraphProjects,
+            codeGraphFiles,
+            codeGraphNodes,
+            resultsPerSection,
+            preferDurableMemoryLead);
+
+        return new ContextPackViewModel
+        {
+            Question = pack.Question,
+            Summary = BuildSummary(memories, pack.Todos, pack.Tickets, codeGraphProjects, codeGraphFiles, codeGraphNodes),
+            GoalLabel = pack.GoalLabel,
+            NeedsMoreContext = pack.NeedsMoreContext,
+            Input = pack.Input,
+            SearchTokens = pack.SearchTokens,
+            DetectedGapItems = pack.DetectedGapItems,
+            ClarifyingQuestions = pack.ClarifyingQuestions,
+            TopMatches = topMatches,
+            Memories = memories,
+            Todos = pack.Todos,
+            Tickets = pack.Tickets,
+            CodeGraphProjects = codeGraphProjects,
+            CodeGraphFiles = codeGraphFiles,
+            CodeGraphNodes = codeGraphNodes,
+            RecommendedSkills = recommendedSkills,
+            ExternalSkillAlert = pack.ExternalSkillAlert,
+            ExportText = BuildExportText(
+                normalizedQuestion,
+                goal,
+                recommendedSkills,
+                memories,
+                pack.Todos,
+                pack.Tickets,
+                codeGraphProjects,
+                codeGraphFiles,
+                codeGraphNodes,
+                pack.DetectedGapItems,
+                pack.ClarifyingQuestions)
+        };
+    }
+
+    private async Task<ContextPackViewModel> BuildDecisionPackAsync(
+        PackDecision decision,
+        string normalizedQuestion,
+        ContextBriefInput effectiveInput,
+        int resultsPerSection,
+        IReadOnlyCollection<string> tokens,
+        string normalizedQuestionPhrase,
+        bool projectHistoryQuery,
+        bool explicitCodeQuery,
+        bool fileComparisonQuery,
+        bool passwordExpiryQuery,
+        bool softwareInstallQuery,
+        bool windowsServicingQuery,
+        bool windowsUpdateQuery,
+        bool localSupportQuery,
+        bool wmiDiagnosticQuery,
+        bool portCheckQuery,
+        bool webUiQuery,
+        bool cloudOpsQuery,
+        bool desktopAppQuery,
+        CancellationToken cancellationToken)
+    {
+        var gapItems = decision.Kind == PackDecisionKind.Unsupported
+            ? BuildUnsupportedGroundingGapItems()
+            : BuildLowContextGapItems();
+        var clarifyingQuestions = BuildClarifyingQuestions(
+            tokens,
+            normalizedQuestionPhrase,
+            projectHistoryQuery,
+            explicitCodeQuery,
+            fileComparisonQuery,
+            passwordExpiryQuery,
+            softwareInstallQuery,
+            windowsServicingQuery,
+            windowsUpdateQuery,
+            localSupportQuery,
+            wmiDiagnosticQuery,
+            portCheckQuery,
+            webUiQuery,
+            cloudOpsQuery,
+            desktopAppQuery);
+        var summary = decision.Kind == PackDecisionKind.Unsupported
+            ? "Focus found a likely lane, but it does not have enough grounded supporting context to answer safely yet."
+            : "Need more context before Focus can build a fact-based pack.";
+        return await ArchivePackIfNeededAsync(new ContextPackViewModel
+        {
+            Question = normalizedQuestion,
+            Summary = summary,
+            GoalLabel = GetPackGoalLabel(effectiveInput.PackGoal),
+            NeedsMoreContext = true,
+            Input = new ContextBriefInput
+            {
+                Question = normalizedQuestion,
+                IncludeCompletedWork = effectiveInput.IncludeCompletedWork,
+                WingId = effectiveInput.WingId,
+                RoomId = effectiveInput.RoomId,
+                Kind = effectiveInput.Kind,
+                Tag = effectiveInput.Tag,
+                IncludeRetired = effectiveInput.IncludeRetired,
+                ExpandHistory = effectiveInput.ExpandHistory,
+                ResultsPerSection = resultsPerSection,
+                PackGoal = effectiveInput.PackGoal,
+                PreferRecentChanges = effectiveInput.PreferRecentChanges
+            },
+            SearchTokens = tokens.OrderBy(x => x).ToArray(),
+            DetectedGapItems = gapItems,
+            ClarifyingQuestions = clarifyingQuestions,
+            ExportText = BuildExportText(
+                normalizedQuestion,
+                effectiveInput.PackGoal,
+                Array.Empty<SkillCardViewModel>(),
+                Array.Empty<ContextRecordViewModel>(),
+                Array.Empty<ContextRecordViewModel>(),
+                Array.Empty<ContextRecordViewModel>(),
+                Array.Empty<ContextRecordViewModel>(),
+                Array.Empty<ContextRecordViewModel>(),
+                Array.Empty<ContextRecordViewModel>(),
+                gapItems,
+                clarifyingQuestions)
+        }, cancellationToken);
+    }
+
     private static IReadOnlyCollection<DashboardWarningViewModel> BuildLowContextGapItems()
     {
         return
@@ -1461,13 +1801,34 @@ public sealed partial class ContextService
         ];
     }
 
+    private static IReadOnlyCollection<DashboardWarningViewModel> BuildUnsupportedGroundingGapItems()
+    {
+        return
+        [
+            new DashboardWarningViewModel
+            {
+                Code = "insufficient-grounding",
+                Severity = "warning",
+                Message = "Focus found a likely lane, but it does not have enough grounded support to answer without guessing.",
+                ActionLabel = string.Empty,
+                ActionUrl = string.Empty
+            }
+        ];
+    }
+
     private static IReadOnlyCollection<string> BuildClarifyingQuestions(
         IReadOnlyCollection<string> tokens,
         string normalizedQuestion,
         bool projectHistoryQuery,
         bool explicitCodeQuery,
         bool fileComparisonQuery,
+        bool passwordExpiryQuery,
+        bool softwareInstallQuery,
+        bool windowsServicingQuery,
+        bool windowsUpdateQuery,
         bool localSupportQuery,
+        bool wmiDiagnosticQuery,
+        bool portCheckQuery,
         bool webUiQuery,
         bool cloudOpsQuery,
         bool desktopAppQuery)
@@ -1478,6 +1839,42 @@ public sealed partial class ContextService
             [
                 "Which two folders should Focus compare, and do you want name, size, hash, or content differences?",
                 "Should the result show changed files only, or also left-only and right-only files?"
+            ];
+        }
+
+        if (passwordExpiryQuery)
+        {
+            return
+            [
+                "Which user or account should Focus check for password expiry?",
+                "Do you need an on-prem AD PowerShell command, or a quick net user fallback?"
+            ];
+        }
+
+        if (softwareInstallQuery)
+        {
+            return
+            [
+                "Which software package should Focus install, and do you already know the exact vendor download URL?",
+                "Do you want a silent install for one local PC, or a reusable script with logging and exit-code checks?"
+            ];
+        }
+
+        if (windowsServicingQuery)
+        {
+            return
+            [
+                "Do you need a quick DISM health-check command, or the full scan and repair sequence?",
+                "Is this for the local Windows image, an offline image path, or follow-up repair guidance after a failure?"
+            ];
+        }
+
+        if (windowsUpdateQuery)
+        {
+            return
+            [
+                "Do you want to check a single local PC, or do you need a reusable script that can run on multiple machines?",
+                "Should the script use the built-in Windows Update Agent API only, or may it depend on the PSWindowsUpdate module if it is installed?"
             ];
         }
 
@@ -1499,7 +1896,7 @@ public sealed partial class ContextService
             ];
         }
 
-        if (localSupportQuery || normalizedQuestion.Contains("wmi", StringComparison.Ordinal) || normalizedQuestion.Contains("winrm", StringComparison.Ordinal))
+        if (wmiDiagnosticQuery || (localSupportQuery && (normalizedQuestion.Contains("wmi", StringComparison.Ordinal) || normalizedQuestion.Contains("winrm", StringComparison.Ordinal))))
         {
             return
             [
@@ -1508,7 +1905,16 @@ public sealed partial class ContextService
             ];
         }
 
-        if (HasPortCheckIntent(tokens, normalizedQuestion))
+        if (localSupportQuery && IsRemoteLoggedInUserQuery(tokens, normalizedQuestion))
+        {
+            return
+            [
+                "Do you need the currently logged-in user on one remote PC, or a script that can check many PCs on the network?",
+                "Can the script rely on PowerShell remoting, WMI/CIM, or do you need an option that works when WinRM is not enabled?"
+            ];
+        }
+
+        if (portCheckQuery)
         {
             return
             [
@@ -1554,19 +1960,22 @@ public sealed partial class ContextService
     private static bool HasStrongPackDomainSignals(
         IReadOnlyCollection<string> tokens,
         string normalizedQuestion,
-        bool directoryAdminQuery,
-        bool explicitCodeQuery,
         bool repositoryArchitectureQuery,
         bool fileComparisonQuery,
         bool projectHistoryQuery,
+        bool passwordExpiryQuery,
+        bool softwareInstallQuery,
+        bool windowsServicingQuery,
+        bool windowsUpdateQuery,
         bool localSupportQuery,
         bool wmiDiagnosticQuery,
         bool portCheckQuery,
         bool webUiQuery,
         bool cloudOpsQuery,
-        bool desktopAppQuery)
+        bool desktopAppQuery,
+        bool currentProjectHint)
     {
-        if (directoryAdminQuery || explicitCodeQuery || repositoryArchitectureQuery || fileComparisonQuery || projectHistoryQuery || wmiDiagnosticQuery || portCheckQuery)
+        if (repositoryArchitectureQuery || fileComparisonQuery || projectHistoryQuery || passwordExpiryQuery || softwareInstallQuery || windowsServicingQuery || windowsUpdateQuery || wmiDiagnosticQuery || portCheckQuery)
         {
             return true;
         }
@@ -1593,8 +2002,148 @@ public sealed partial class ContextService
 
         return normalizedQuestion.Contains("windows forms", StringComparison.Ordinal)
                || normalizedQuestion.Contains("app insights", StringComparison.Ordinal)
-               || normalizedQuestion.Contains("high dpi", StringComparison.Ordinal);
+               || normalizedQuestion.Contains("high dpi", StringComparison.Ordinal)
+               || currentProjectHint;
     }
+
+    private static decimal? CalculateRetrievalAgreementRatio(
+        PackIntentPrediction prediction,
+        IReadOnlyCollection<SkillRecommendationMatch> matches)
+    {
+        if (matches.Count == 0)
+        {
+            return null;
+        }
+
+        Func<SkillRecommendationMatch, bool>? qualifier = null;
+        if (prediction.IsDirectoryAdminQuery)
+        {
+            qualifier = match => match.IsDirectoryAdminQualified;
+        }
+        else if (prediction.IsRepositoryArchitectureQuery)
+        {
+            qualifier = match => match.IsRepositoryArchitectureQualified;
+        }
+        else if (prediction.IsGenericAutomationQuery)
+        {
+            qualifier = match => match.IsGenericAutomationQualified;
+        }
+        else if (prediction.IsExternalOperationsQuery)
+        {
+            qualifier = match => match.IsExternalOpsQualified;
+        }
+
+        if (qualifier is null)
+        {
+            return null;
+        }
+
+        var considered = matches.Take(3).ToArray();
+        if (considered.Length == 0)
+        {
+            return null;
+        }
+
+        var aligned = considered.Count(qualifier);
+        return decimal.Round((decimal)aligned / considered.Length, 2);
+    }
+
+    private static decimal? CalculateSpecificGroundingRatio(
+        IReadOnlyCollection<string> queryTokens,
+        string normalizedQuestion,
+        IReadOnlyCollection<ContextRecordViewModel> topMatches,
+        IReadOnlyCollection<SkillRecommendationMatch> skillMatches)
+    {
+        var specificTokens = queryTokens
+            .Where(token => !RetrievalLowSignalTokens.Contains(token))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var specificPhrases = BuildSpecificGroundingPhrases(normalizedQuestion)
+            .ToArray();
+        if (specificTokens.Length == 0 && specificPhrases.Length == 0)
+        {
+            return null;
+        }
+
+        var considered = topMatches
+            .Select(match => BuildGroundingText(match))
+            .Concat(skillMatches.Select(match => BuildGroundingText(match.Skill)))
+            .Take(6)
+            .ToArray();
+        if (considered.Length == 0)
+        {
+            return null;
+        }
+
+        var groundedCount = considered.Count(text => HasSpecificGrounding(text, specificTokens, specificPhrases));
+        return decimal.Round((decimal)groundedCount / considered.Length, 2);
+    }
+
+    private static IEnumerable<string> BuildSpecificGroundingPhrases(string normalizedQuestion)
+    {
+        var tokens = normalizedQuestion
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(token => !RetrievalLowSignalTokens.Contains(token))
+            .ToArray();
+        if (tokens.Length < 2)
+        {
+            return Array.Empty<string>();
+        }
+
+        var phrases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < tokens.Length - 1; index++)
+        {
+            phrases.Add($"{tokens[index]} {tokens[index + 1]}");
+        }
+
+        if (tokens.Length >= 3)
+        {
+            for (var index = 0; index < tokens.Length - 2; index++)
+            {
+                phrases.Add($"{tokens[index]} {tokens[index + 1]} {tokens[index + 2]}");
+            }
+        }
+
+        return phrases;
+    }
+
+    private static bool HasSpecificGrounding(
+        string text,
+        IReadOnlyCollection<string> specificTokens,
+        IReadOnlyCollection<string> specificPhrases)
+    {
+        var normalizedText = NormalizePhrase(text);
+        if (specificPhrases.Any(phrase => normalizedText.Contains(phrase, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        var textTokens = Tokenize(text);
+        var overlap = specificTokens.Count(token => textTokens.Contains(token));
+        return specificTokens.Count == 1
+            ? overlap == 1
+            : overlap >= 2;
+    }
+
+    private static string BuildGroundingText(ContextRecordViewModel record)
+        => string.Join(' ', new[]
+        {
+            record.Title,
+            record.Subtitle,
+            record.Preview,
+            record.MatchReason,
+            string.Join(' ', record.Provenance?.MatchedTokens ?? Array.Empty<string>())
+        });
+
+    private static string BuildGroundingText(SkillEntry skill)
+        => string.Join(' ', new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.WhenToUse,
+            skill.Flow,
+            skill.TriggerHintsText
+        });
 
     private static IReadOnlyCollection<string> SplitSkillText(string? value)
     {
@@ -2181,6 +2730,15 @@ public sealed partial class ContextService
     private static bool IsLocalSupportQuery(IReadOnlyCollection<string> tokens)
         => tokens.Count(token => LocalSupportTokens.Contains(token)) >= 2;
 
+    private static bool IsRemoteLoggedInUserQuery(IReadOnlyCollection<string> tokens, string normalizedQuery)
+        => (tokens.Any(token => token is "logged" or "login" or "logon" or "session" or "sessions" or "quser")
+            || normalizedQuery.Contains("logged in", StringComparison.Ordinal)
+            || normalizedQuery.Contains("logged into", StringComparison.Ordinal)
+            || normalizedQuery.Contains("who is logged", StringComparison.Ordinal)
+            || normalizedQuery.Contains("who s logged", StringComparison.Ordinal)
+            || normalizedQuery.Contains("who's logged", StringComparison.Ordinal))
+           && tokens.Any(token => token is "pc" or "computer" or "computers" or "network" or "remote" or "endpoint");
+
     private static bool IsWebUiQuery(IReadOnlyCollection<string> tokens)
         => tokens.Count(token => WebUiTokens.Contains(token)) >= 2;
 
@@ -2500,6 +3058,135 @@ public sealed partial class ContextService
                 || normalizedText.Contains("test netconnection", StringComparison.Ordinal)
                 || normalizedText.Contains("netstat", StringComparison.Ordinal))
                && tokens.Any(token => token is "open" or "listen" or "listening" or "reachable" or "connect" or "connection" or "firewall");
+    }
+
+    private static bool IsWindowsServicingRelevantMemory(MemoryEntry memory)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var normalizedText = NormalizePhrase(text);
+        var tokens = Tokenize(text);
+        return tokens.Any(token => token is "dism" or "sfc" or "scanhealth" or "restorehealth" or "checkhealth")
+               || normalizedText.Contains("cleanup image", StringComparison.Ordinal)
+               || normalizedText.Contains("component store", StringComparison.Ordinal)
+               || normalizedText.Contains("image health", StringComparison.Ordinal);
+    }
+
+    private static bool IsWindowsServicingRelevantSkill(SkillEntry skill)
+    {
+        var text = string.Join(' ', new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.WhenToUse,
+            skill.Flow,
+            skill.TriggerHintsText
+        });
+        var normalizedText = NormalizePhrase(text);
+        var tokens = Tokenize(text);
+        return tokens.Any(token => token is "dism" or "sfc" or "scanhealth" or "restorehealth" or "checkhealth")
+               || normalizedText.Contains("cleanup image", StringComparison.Ordinal)
+               || normalizedText.Contains("component store", StringComparison.Ordinal)
+               || normalizedText.Contains("image health", StringComparison.Ordinal)
+               || normalizedText.Contains("windows servicing", StringComparison.Ordinal);
+    }
+
+    private static bool IsWindowsUpdateRelevantMemory(MemoryEntry memory)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var normalizedText = NormalizePhrase(text);
+        var tokens = Tokenize(text);
+        return tokens.Any(token => token is "pswindowsupdate" or "wuapi" or "wsus" or "kb" or "hotfix" or "hotfixes")
+               || normalizedText.Contains("windows update", StringComparison.Ordinal)
+               || normalizedText.Contains("microsoft update", StringComparison.Ordinal)
+               || normalizedText.Contains("missing updates", StringComparison.Ordinal)
+               || normalizedText.Contains("available updates", StringComparison.Ordinal)
+               || normalizedText.Contains("pending updates", StringComparison.Ordinal);
+    }
+
+    private static bool IsWindowsUpdateRelevantSkill(SkillEntry skill)
+    {
+        var text = string.Join(' ', new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.WhenToUse,
+            skill.Flow,
+            skill.TriggerHintsText
+        });
+        var normalizedText = NormalizePhrase(text);
+        var tokens = Tokenize(text);
+        return tokens.Any(token => token is "pswindowsupdate" or "wuapi" or "hotfix" or "hotfixes" or "kb" or "wsus")
+               || normalizedText.Contains("windows update", StringComparison.Ordinal)
+               || normalizedText.Contains("microsoft update", StringComparison.Ordinal)
+               || normalizedText.Contains("missing updates", StringComparison.Ordinal)
+               || normalizedText.Contains("available updates", StringComparison.Ordinal)
+               || normalizedText.Contains("pending updates", StringComparison.Ordinal);
+    }
+
+    private static bool IsSoftwareInstallRelevantMemory(MemoryEntry memory)
+    {
+        var text = string.Join(' ', new[]
+        {
+            memory.Title,
+            memory.Summary,
+            memory.Content,
+            memory.Wing?.Name,
+            memory.Room?.Name,
+            string.Join(' ', memory.MemoryTags.Select(x => x.Tag?.Name))
+        });
+        var normalizedText = NormalizePhrase(text);
+        var tokens = Tokenize(text);
+        var hasInstallActionSignals =
+            tokens.Any(token => token is "download" or "install" or "installer" or "setup" or "msi" or "exe" or "package" or "packages")
+            || normalizedText.Contains("silent install", StringComparison.Ordinal)
+            || normalizedText.Contains("invoke webrequest", StringComparison.Ordinal)
+            || normalizedText.Contains("start process", StringComparison.Ordinal);
+        var hasInstallerDeliverySignals =
+            tokens.Any(token => token is "website" or "vendor" or "url" or "silent" or "quiet")
+            || normalizedText.Contains("vendor website", StringComparison.Ordinal)
+            || normalizedText.Contains("download url", StringComparison.Ordinal)
+            || normalizedText.Contains("quiet install", StringComparison.Ordinal);
+        var hasInternalProductSignals =
+            tokens.Any(token => token is "grey" or "canary" or "focus" or "endpoint" or "token" or "registration" or "callback" or "diagnostics" or "agent");
+        return hasInstallActionSignals && hasInstallerDeliverySignals && !hasInternalProductSignals && !tokens.Contains("uninstall");
+    }
+
+    private static bool IsSoftwareInstallRelevantSkill(SkillEntry skill)
+    {
+        var text = string.Join(' ', new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.WhenToUse,
+            skill.Flow,
+            skill.TriggerHintsText
+        });
+        var normalizedText = NormalizePhrase(text);
+        var tokens = Tokenize(text);
+        var hasInstallSignals =
+            tokens.Any(token => token is "download" or "install" or "installer" or "setup" or "msi" or "exe" or "package" or "packages" or "software" or "application" or "website" or "vendor")
+            || normalizedText.Contains("silent install", StringComparison.Ordinal)
+            || normalizedText.Contains("invoke webrequest", StringComparison.Ordinal)
+            || normalizedText.Contains("start process", StringComparison.Ordinal);
+        var hasInternalProductSignals =
+            tokens.Any(token => token is "grey" or "canary" or "focus" or "endpoint" or "token" or "registration" or "callback" or "diagnostics" or "agent");
+        return hasInstallSignals && !hasInternalProductSignals && !tokens.Contains("uninstall");
     }
 
     private static bool IsGenericAutomationRelevantSkill(SkillEntry skill, IReadOnlyCollection<string> queryTokens, string normalizedQuery)

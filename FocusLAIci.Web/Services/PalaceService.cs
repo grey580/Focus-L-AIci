@@ -86,7 +86,10 @@ public sealed class PalaceService
     }
 
     public Task<DashboardViewModel> GetDashboardAsync(CancellationToken cancellationToken)
-        => GetDashboardAsync((ContextBriefInput?)null, cancellationToken);
+        => GetDashboardAsync((ContextBriefInput?)null, buildContextPack: true, cancellationToken);
+
+    public Task<DashboardViewModel> GetDashboardShellAsync(CancellationToken cancellationToken)
+        => GetDashboardAsync((ContextBriefInput?)null, buildContextPack: false, cancellationToken);
 
     public async Task<DashboardViewModel> GetDashboardAsync(string? contextQuestion, CancellationToken cancellationToken)
         => await GetDashboardAsync(
@@ -96,9 +99,13 @@ public sealed class PalaceService
                 {
                     Question = contextQuestion.Trim()
                 },
+            buildContextPack: true,
             cancellationToken);
 
     public async Task<DashboardViewModel> GetDashboardAsync(ContextBriefInput? contextInput, CancellationToken cancellationToken)
+        => await GetDashboardAsync(contextInput, buildContextPack: true, cancellationToken);
+
+    private async Task<DashboardViewModel> GetDashboardAsync(ContextBriefInput? contextInput, bool buildContextPack, CancellationToken cancellationToken)
     {
         var effectiveContextInput = contextInput ?? new ContextBriefInput();
         var memories = await BuildMemoryQuery()
@@ -189,44 +196,18 @@ public sealed class PalaceService
             mappedPinnedMemories,
             mappedRecentMemories);
         var resolvedContextInput = ResolveDashboardContextInput(effectiveContextInput, fallbackContext);
-        var contextPack = await _contextService.BuildContextPackAsync(resolvedContextInput, cancellationToken);
-        if (contextPack is not null && _externalSkillSuggestionService is not null)
-        {
-            var externalSkillAlert = await _externalSkillSuggestionService.BuildAlertAsync(contextPack, cancellationToken);
-            if (_packBuildArchiveService is not null && contextPack.ArchivedBuildId.HasValue)
-            {
-                await _packBuildArchiveService.UpdateSuggestedExternalSkillCountAsync(
-                    contextPack.ArchivedBuildId.Value,
-                    externalSkillAlert.Suggestions.Count,
-                    cancellationToken);
-            }
+        var contextPack = default(ContextPackViewModel);
+        var recommendedAgents = Array.Empty<AgentCardViewModel>();
+        var recommendedSkills = Array.Empty<SkillCardViewModel>();
 
-            contextPack = new ContextPackViewModel
-            {
-                ArchivedBuildId = contextPack.ArchivedBuildId,
-                Question = contextPack.Question,
-                Summary = contextPack.Summary,
-                GoalLabel = contextPack.GoalLabel,
-                NeedsMoreContext = contextPack.NeedsMoreContext,
-                Input = contextPack.Input,
-                SearchTokens = contextPack.SearchTokens,
-                DetectedGapItems = contextPack.DetectedGapItems,
-                ClarifyingQuestions = contextPack.ClarifyingQuestions,
-                TopMatches = contextPack.TopMatches,
-                Memories = contextPack.Memories,
-                Todos = contextPack.Todos,
-                Tickets = contextPack.Tickets,
-                CodeGraphProjects = contextPack.CodeGraphProjects,
-                CodeGraphFiles = contextPack.CodeGraphFiles,
-                CodeGraphNodes = contextPack.CodeGraphNodes,
-                RecommendedSkills = contextPack.RecommendedSkills,
-                ExternalSkillAlert = externalSkillAlert,
-                ExportText = contextPack.ExportText
-            };
+        if (buildContextPack && !string.IsNullOrWhiteSpace(resolvedContextInput.Question))
+        {
+            var contextPanel = await BuildDashboardContextPanelAsync(resolvedContextInput, cancellationToken);
+            contextPack = contextPanel?.ContextPack;
+            recommendedAgents = contextPanel?.RecommendedAgents?.ToArray() ?? Array.Empty<AgentCardViewModel>();
+            recommendedSkills = contextPanel?.RecommendedSkills?.ToArray() ?? Array.Empty<SkillCardViewModel>();
         }
-        var recommendedAgents = _agentCatalogService.RecommendAgents(resolvedContextInput.Question, resolvedContextInput.PackGoal, 4);
-        var fallbackRecommendedSkills = await RecommendSkillsAsync(resolvedContextInput.Question, resolvedContextInput.WingId, null, 4, cancellationToken);
-        var recommendedSkills = MergeSkillCards(contextPack?.RecommendedSkills, fallbackRecommendedSkills, 4);
+
         var warningItems = BuildDashboardWarnings(
             effectiveContextInput,
             resolvedContextInput,
@@ -265,6 +246,68 @@ public sealed class PalaceService
                 "why did we choose local-first memory",
                 "frontend browse patterns"
             ]
+        };
+    }
+
+    public async Task<DashboardContextPanelViewModel?> BuildDashboardContextPanelAsync(ContextBriefInput contextInput, CancellationToken cancellationToken)
+    {
+        var normalizedInput = CloneContextBriefInput(contextInput);
+        if (string.IsNullOrWhiteSpace(normalizedInput.Question))
+        {
+            return null;
+        }
+
+        var contextPack = await _contextService.BuildContextPackAsync(normalizedInput, cancellationToken);
+        if (contextPack is null)
+        {
+            return null;
+        }
+
+        if (_externalSkillSuggestionService is not null)
+        {
+            var externalSkillAlert = await _externalSkillSuggestionService.BuildAlertAsync(contextPack, cancellationToken);
+            if (_packBuildArchiveService is not null && contextPack.ArchivedBuildId.HasValue)
+            {
+                await _packBuildArchiveService.UpdateSuggestedExternalSkillCountAsync(
+                    contextPack.ArchivedBuildId.Value,
+                    externalSkillAlert.Suggestions.Count,
+                    cancellationToken);
+            }
+
+            contextPack = new ContextPackViewModel
+            {
+                ArchivedBuildId = contextPack.ArchivedBuildId,
+                Question = contextPack.Question,
+                Summary = contextPack.Summary,
+                GoalLabel = contextPack.GoalLabel,
+                NeedsMoreContext = contextPack.NeedsMoreContext,
+                Input = contextPack.Input,
+                SearchTokens = contextPack.SearchTokens,
+                DetectedGapItems = contextPack.DetectedGapItems,
+                ClarifyingQuestions = contextPack.ClarifyingQuestions,
+                TopMatches = contextPack.TopMatches,
+                Memories = contextPack.Memories,
+                Todos = contextPack.Todos,
+                Tickets = contextPack.Tickets,
+                CodeGraphProjects = contextPack.CodeGraphProjects,
+                CodeGraphFiles = contextPack.CodeGraphFiles,
+                CodeGraphNodes = contextPack.CodeGraphNodes,
+                RecommendedSkills = contextPack.RecommendedSkills,
+                ExternalSkillAlert = externalSkillAlert,
+                ExportText = contextPack.ExportText
+            };
+        }
+
+        var recommendedAgents = _agentCatalogService.RecommendAgents(normalizedInput.Question, normalizedInput.PackGoal, 4);
+        var fallbackRecommendedSkills = await RecommendSkillsAsync(normalizedInput.Question, normalizedInput.WingId, null, 4, cancellationToken);
+
+        return new DashboardContextPanelViewModel
+        {
+            ContextInput = normalizedInput,
+            ContextPack = contextPack,
+            RecommendedAgents = recommendedAgents,
+            RecommendedSkills = MergeSkillCards(contextPack.RecommendedSkills, fallbackRecommendedSkills, 4),
+            ExtraCommandSuggestions = Array.Empty<string>()
         };
     }
 

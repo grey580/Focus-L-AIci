@@ -15,8 +15,16 @@ public sealed record PackIntentPrediction(
     decimal RepositoryArchitectureScore,
     string ModelId,
     bool IsProjectHistoryQuery = false,
+    bool IsFileComparisonQuery = false,
+    bool IsWmiDiagnosticQuery = false,
+    bool IsPortCheckQuery = false,
+    bool IsPasswordExpiryQuery = false,
+    bool IsSoftwareInstallQuery = false,
+    bool IsWindowsServicingQuery = false,
+    bool IsWindowsUpdateQuery = false,
     int ObservedTokenCount = 0,
     int InformativeTokenCount = 0,
+    int SpecificInformativeTokenCount = 0,
     bool HasTaskFrame = false,
     int FacetSignalCount = 0)
 {
@@ -50,7 +58,14 @@ public sealed record PackIntentPrediction(
         ObservedTokenCount <= 1
         || (InformativeTokenCount == 0 && FacetSignalCount == 0)
         || (IsAmbiguous && InformativeTokenCount < 2 && FacetSignalCount == 0)
-        || (!HasTaskFrame && IsAmbiguous && InformativeTokenCount == 0 && FacetSignalCount == 0);
+        || (!HasTaskFrame && IsAmbiguous && InformativeTokenCount == 0 && FacetSignalCount == 0)
+        || (SpecificInformativeTokenCount == 0
+            && ObservedTokenCount <= 3
+            && !IsFileComparisonQuery
+            && !IsWmiDiagnosticQuery
+            && !IsPortCheckQuery
+            && !IsPasswordExpiryQuery
+            && !IsProjectHistoryQuery);
 
     public bool IsExternalOperationsQuery => ExternalOperationsScore >= 0.54m;
 
@@ -71,6 +86,11 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         "a", "an", "app", "apps", "build", "create", "do", "does", "fix", "general", "help", "issue", "issues", "look",
         "make", "need", "problem", "problems", "project", "projects", "powershell", "repo", "repository", "script",
         "scripts", "show", "something", "stuff", "task", "thing", "things", "update", "use", "want", "work", "working", "write"
+    ];
+    private static readonly HashSet<string> LowSpecificityTokens =
+    [
+        "ad", "check", "compare", "deployment", "deployments", "diff", "difference", "differences", "integration",
+        "project", "projects", "review", "service", "services"
     ];
     private static readonly HashSet<string> TaskFrameTokens =
     [
@@ -285,11 +305,40 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         new("ports", 1.0m),
         new("tcp", 0.9m),
         new("udp", 0.8m),
+        new("download", 1.2m),
+        new("install", 1.2m),
+        new("installer", 1.1m),
+        new("setup", 0.9m),
+        new("msi", 1.0m),
+        new("exe", 0.8m),
+        new("package", 0.8m),
+        new("packages", 0.8m),
+        new("silent", 0.7m),
+        new("website", 0.6m),
+        new("invoke webrequest", 1.0m, true),
+        new("start process", 0.9m, true),
         new("listener", 0.8m),
         new("listeners", 0.8m),
         new("socket", 0.7m),
         new("sockets", 0.7m),
         new("test netconnection", 1.1m, true),
+        new("dism", 1.2m),
+        new("sfc", 0.9m),
+        new("scanhealth", 1.0m),
+        new("restorehealth", 1.0m),
+        new("checkhealth", 1.0m),
+        new("cleanup image", 1.0m, true),
+        new("component store", 0.9m, true),
+        new("image health", 0.9m, true),
+        new("command line", 0.7m, true),
+        new("windows update", 1.2m, true),
+        new("missing updates", 1.2m, true),
+        new("available updates", 1.0m, true),
+        new("pending updates", 1.0m, true),
+        new("pswindowsupdate", 1.0m),
+        new("wuapi", 0.9m),
+        new("hotfix", 0.7m),
+        new("kb", 0.6m),
         new("diff", 0.9m),
         new("folder", 0.9m),
         new("folders", 0.9m),
@@ -377,8 +426,16 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             ToProbability(repositoryArchitectureRaw),
             ModelId,
             facets.HasProjectHistoryIntent,
+            facets.HasFileComparisonIntent,
+            facets.HasWmiDiagnosticIntent,
+            facets.HasPortCheckIntent,
+            facets.HasPasswordExpiryIntent,
+            facets.HasSoftwareInstallIntent,
+            facets.HasWindowsServicingIntent,
+            facets.HasWindowsUpdateIntent,
             tokens.Count,
             CountInformativeTokens(tokens),
+            CountSpecificInformativeTokens(tokens),
             HasTaskFrame(normalized, tokens),
             CountFacetSignals(facets));
     }
@@ -465,11 +522,48 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
              || normalizedQuestion.Contains("password expiring", StringComparison.Ordinal)
              || normalizedQuestion.Contains("msds userpasswordexpirytimecomputed", StringComparison.Ordinal))
             && tokens.Any(token => token is "expiry" or "expiring" or "expires" or "expired" or "when" or "user" or "users" or "account" or "accounts");
+        var hasWmiDiagnosticIntent =
+            (tokens.Any(token => token is "wmi" or "cim" or "winmgmt" or "winrm")
+             || normalizedQuestion.Contains("get ciminstance", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("get wmiobject", StringComparison.Ordinal))
+            && tokens.Any(token => token is "pc" or "computer" or "computers" or "windows" or "local");
         var hasPortCheckIntent =
             (tokens.Any(token => token is "port" or "ports" or "tcp" or "udp" or "listener" or "listeners" or "socket" or "sockets")
              || normalizedQuestion.Contains("test netconnection", StringComparison.Ordinal)
              || normalizedQuestion.Contains("netstat", StringComparison.Ordinal))
             && tokens.Any(token => token is "open" or "check" or "listen" or "listening" or "reachable" or "reachability" or "connect" or "connection" or "test");
+        var hasSoftwareInstallAction =
+            tokens.Any(token => token is "download" or "install" or "installer" or "setup" or "msi" or "exe" or "package" or "packages" or "bootstrap" or "winget" or "choco" or "chocolatey")
+            || normalizedQuestion.Contains("invoke webrequest", StringComparison.Ordinal)
+            || normalizedQuestion.Contains("start process", StringComparison.Ordinal)
+            || normalizedQuestion.Contains("silent install", StringComparison.Ordinal)
+            || normalizedQuestion.Contains("silentinstall", StringComparison.Ordinal);
+        var hasSoftwareInstallTarget =
+            tokens.Any(token => token is "foxit" or "reader" or "software" or "application" or "app" or "pc" or "computer" or "computers" or "windows" or "local" or "website" or "url")
+            || normalizedQuestion.Contains("from their website", StringComparison.Ordinal)
+            || normalizedQuestion.Contains("vendor site", StringComparison.Ordinal)
+            || normalizedQuestion.Contains("local pc", StringComparison.Ordinal)
+            || normalizedQuestion.Contains("local computer", StringComparison.Ordinal);
+        var hasInternalInstallerSignals =
+            tokens.Any(token => token is "grey" or "canary" or "focus" or "endpoint" or "token" or "registration" or "diagnostics" or "callback" or "agent");
+        var hasSoftwareInstallIntent =
+            hasSoftwareInstallAction
+            && hasSoftwareInstallTarget
+            && !hasInternalInstallerSignals
+            && !tokens.Contains("uninstall");
+        var hasWindowsServicingIntent =
+            tokens.Any(token => token is "dism" or "sfc" or "scanhealth" or "restorehealth" or "checkhealth")
+            || normalizedQuestion.Contains("cleanup image", StringComparison.Ordinal)
+            || normalizedQuestion.Contains("component store", StringComparison.Ordinal)
+            || normalizedQuestion.Contains("image health", StringComparison.Ordinal);
+        var hasWindowsUpdateIntent =
+            (tokens.Any(token => token is "update" or "updates" or "kb" or "hotfix" or "hotfixes" or "patch" or "patches" or "wsus" or "pswindowsupdate" or "wuapi")
+             || normalizedQuestion.Contains("windows update", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("microsoft update", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("missing updates", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("available updates", StringComparison.Ordinal)
+             || normalizedQuestion.Contains("pending updates", StringComparison.Ordinal))
+            && tokens.Any(token => token is "windows" or "pc" or "computer" or "computers" or "local" or "missing" or "available" or "pending" or "check");
 
         return new FacetSignals(
             hasFileComparisonIntent,
@@ -478,7 +572,11 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             hasRepoCodeIntent,
             hasProjectHistoryIntent,
             hasPasswordExpiryIntent,
-            hasPortCheckIntent);
+            hasWmiDiagnosticIntent,
+            hasPortCheckIntent,
+            hasSoftwareInstallIntent,
+            hasWindowsServicingIntent,
+            hasWindowsUpdateIntent);
     }
 
     private static void ApplyFacetAdjustments(
@@ -549,10 +647,40 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             codeIntentRaw -= 0.8m;
             repositoryArchitectureRaw -= 0.7m;
         }
+
+        if (facets.HasSoftwareInstallIntent)
+        {
+            genericAutomationRaw += 1.3m;
+            externalOperationsRaw -= 0.9m;
+            directoryAdminRaw -= 1.0m;
+            codeIntentRaw -= 1.0m;
+            repositoryArchitectureRaw -= 0.8m;
+        }
+
+        if (facets.HasWindowsServicingIntent)
+        {
+            genericAutomationRaw += 1.2m;
+            externalOperationsRaw -= 0.8m;
+            directoryAdminRaw -= 1.0m;
+            codeIntentRaw -= 0.9m;
+            repositoryArchitectureRaw -= 0.8m;
+        }
+
+        if (facets.HasWindowsUpdateIntent)
+        {
+            genericAutomationRaw += 1.2m;
+            externalOperationsRaw -= 0.8m;
+            directoryAdminRaw -= 1.0m;
+            codeIntentRaw -= 0.9m;
+            repositoryArchitectureRaw -= 0.8m;
+        }
     }
 
     private static int CountInformativeTokens(IReadOnlyCollection<string> tokens)
         => tokens.Count(token => !LowInformationTokens.Contains(token));
+
+    private static int CountSpecificInformativeTokens(IReadOnlyCollection<string> tokens)
+        => tokens.Count(token => !LowInformationTokens.Contains(token) && !LowSpecificityTokens.Contains(token));
 
     private static bool HasTaskFrame(string normalizedQuestion, IReadOnlyCollection<string> tokens)
         => tokens.Any(TaskFrameTokens.Contains)
@@ -567,7 +695,11 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
             facets.HasRepoCodeIntent,
             facets.HasProjectHistoryIntent,
             facets.HasPasswordExpiryIntent,
-            facets.HasPortCheckIntent
+            facets.HasWmiDiagnosticIntent,
+            facets.HasPortCheckIntent,
+            facets.HasSoftwareInstallIntent,
+            facets.HasWindowsServicingIntent,
+            facets.HasWindowsUpdateIntent
         }.Count(value => value);
 
     private static string Normalize(string? question)
@@ -604,5 +736,9 @@ public sealed class TinyLocalPackIntentModel : IPackIntentModel
         bool HasRepoCodeIntent,
         bool HasProjectHistoryIntent,
         bool HasPasswordExpiryIntent,
-        bool HasPortCheckIntent);
+        bool HasWmiDiagnosticIntent,
+        bool HasPortCheckIntent,
+        bool HasSoftwareInstallIntent,
+        bool HasWindowsServicingIntent,
+        bool HasWindowsUpdateIntent);
 }

@@ -20,7 +20,7 @@ public sealed class HomeController : Controller
     [HttpGet]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
-        return View(ApplyMessages(await _palaceService.GetDashboardAsync(cancellationToken)));
+        return View(ApplyMessages(await _palaceService.GetDashboardShellAsync(cancellationToken)));
     }
 
     [HttpPost]
@@ -66,6 +66,19 @@ public sealed class HomeController : Controller
 
         var id = await _palaceService.QuickCaptureAsync(input, cancellationToken);
         return RedirectToAction("Memory", "Palace", new { id });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> DashboardPack([FromQuery] ContextBriefInput input, CancellationToken cancellationToken)
+    {
+        var normalizedInput = RequestInputPolicy.NormalizeBoundContextBriefInput(input);
+        var panel = await _palaceService.BuildDashboardContextPanelAsync(normalizedInput, cancellationToken);
+        if (panel is null)
+        {
+            return NoContent();
+        }
+
+        return PartialView("_DashboardContextPack", panel);
     }
 
     [HttpPost]

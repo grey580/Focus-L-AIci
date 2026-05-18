@@ -12,6 +12,7 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     ContentRootPath = ResolveContentRoot()
 });
 const string DefaultLocalUrl = "http://127.0.0.1:5191";
+var shouldUseHttpsRedirection = HasHttpsRedirectTarget(builder.Configuration);
 
 if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]))
 {
@@ -44,6 +45,8 @@ builder.Services.AddScoped<CodeGraphService>();
 builder.Services.AddScoped<PackBuildArchiveService>();
 builder.Services.AddHttpClient<ExternalSkillSuggestionService>();
 builder.Services.AddSingleton<IPackIntentModel, TinyLocalPackIntentModel>();
+builder.Services.AddSingleton<IPackDecisionEngine, PackDecisionEngine>();
+builder.Services.AddSingleton<IPackCriticEngine, PackCriticEngine>();
 builder.Services.AddScoped<ContextService>();
 builder.Services.AddSingleton<RepoSkillCatalogService>();
 builder.Services.AddSingleton<FocusAgentCatalogService>();
@@ -73,7 +76,15 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+if (shouldUseHttpsRedirection)
+{
+    app.UseHttpsRedirection();
+}
+else
+{
+    app.Logger.LogInformation("HTTPS redirection is disabled because no HTTPS port or URL is configured for this host.");
+}
+
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<ApiWriteOriginGuardMiddleware>();
 app.UseStaticFiles();
@@ -141,3 +152,32 @@ static IEnumerable<string> GetContentRootCandidates()
     yield return AppContext.BaseDirectory;
     yield return Path.Combine(AppContext.BaseDirectory, "..", "..", "..");
 }
+
+static bool HasHttpsRedirectTarget(IConfiguration configuration)
+{
+    return HasHttpsUrl(configuration["urls"])
+        || HasHttpsUrl(configuration["ASPNETCORE_URLS"])
+        || HasHttpsUrl(Environment.GetEnvironmentVariable("ASPNETCORE_URLS"))
+        || HasNumericValue(configuration["https_port"])
+        || HasNumericValue(configuration["HTTPS_PORT"])
+        || HasNumericValue(configuration["ASPNETCORE_HTTPS_PORT"])
+        || HasNumericValue(configuration["ANCM_HTTPS_PORT"])
+        || configuration.GetSection("Kestrel:Endpoints")
+            .GetChildren()
+            .Any(endpoint => HasHttpsUrl(endpoint["Url"]));
+}
+
+static bool HasHttpsUrl(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return false;
+    }
+
+    return value
+        .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Any(url => url.StartsWith("https://", StringComparison.OrdinalIgnoreCase));
+}
+
+static bool HasNumericValue(string? value)
+    => int.TryParse(value, out var port) && port > 0;

@@ -28,11 +28,26 @@ internal static class SkillRecommendationEngine
         var now = DateTime.UtcNow;
         var trimmedQuestion = question?.Trim() ?? string.Empty;
         var queryTokens = Tokenize(trimmedQuestion);
+        var hasConcreteTaskFacet =
+            intentPrediction?.IsFileComparisonQuery == true
+            || intentPrediction?.IsProjectHistoryQuery == true
+            || intentPrediction?.IsPasswordExpiryQuery == true
+            || intentPrediction?.IsWmiDiagnosticQuery == true
+            || intentPrediction?.IsPortCheckQuery == true
+            || intentPrediction?.IsSoftwareInstallQuery == true
+            || intentPrediction?.IsWindowsServicingQuery == true
+            || intentPrediction?.IsWindowsUpdateQuery == true;
+        if (intentPrediction?.NeedsMoreContext == true && queryTokens.Length > 0 && !hasConcreteTaskFacet)
+        {
+            return Array.Empty<SkillRecommendationMatch>();
+        }
         var substantiveQueryTokens = queryTokens.Where(token => !GenericQueryTokens.Contains(token)).ToArray();
         var externalOpsQuery = intentPrediction?.IsExternalOperationsQuery ?? substantiveQueryTokens.Count(token => ExternalOpsTokens.Contains(token)) >= 2;
         var explicitCodeQuery = intentPrediction?.HasExplicitCodeIntent ?? substantiveQueryTokens.Any(token => CodeIntentTokens.Contains(token));
         var directoryAdminQuery = intentPrediction?.IsDirectoryAdminQuery ?? substantiveQueryTokens.Count(token => DirectoryAdminTokens.Contains(token)) >= 2;
-        var genericAutomationQuery = intentPrediction?.IsGenericAutomationQuery ?? substantiveQueryTokens.Count(token => GenericAutomationTokens.Contains(token)) >= 2;
+        var genericAutomationQuery = intentPrediction?.IsWindowsServicingQuery == true || intentPrediction?.IsWindowsUpdateQuery == true
+            ? false
+            : intentPrediction?.IsGenericAutomationQuery ?? substantiveQueryTokens.Count(token => GenericAutomationTokens.Contains(token)) >= 2;
         var repositoryArchitectureQuery = intentPrediction?.IsRepositoryArchitectureQuery ?? substantiveQueryTokens.Count(token => RepositoryArchitectureTokens.Contains(token)) >= 2;
         var localSupportQuery = substantiveQueryTokens.Count(token => LocalSupportTokens.Contains(token)) >= 2;
         var webUiQuery = substantiveQueryTokens.Count(token => WebUiTokens.Contains(token)) >= 2;

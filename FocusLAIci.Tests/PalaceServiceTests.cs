@@ -368,6 +368,7 @@ public sealed class PalaceServiceTests
         Assert.Contains(skills, x => x.Slug == "audit-on-prem-active-directory-user-attributes");
         Assert.Contains(skills, x => x.Slug == "compare-folder-contents-with-powershell");
         Assert.Contains(skills, x => x.Slug == "check-wmi-health-on-a-windows-pc");
+        Assert.Contains(skills, x => x.Slug == "download-and-install-windows-software-with-powershell");
         Assert.Contains(skills, x => x.Slug == "get-exchange-online-mailbox-inventory");
         Assert.All(skills.Where(x =>
             x.Slug is "acquire-codebase-knowledge"
@@ -392,6 +393,7 @@ public sealed class PalaceServiceTests
                 or "audit-on-prem-active-directory-user-attributes"
                 or "compare-folder-contents-with-powershell"
                 or "check-wmi-health-on-a-windows-pc"
+                or "download-and-install-windows-software-with-powershell"
                 or "configure-codeql-scanning"
                 or "get-exchange-online-mailbox-inventory"), x => Assert.NotNull(x.ReviewAfterUtc));
     }
@@ -2122,6 +2124,7 @@ public sealed class PalaceServiceTests
         Assert.Equal("check-wmi-health-on-a-windows-pc", pack.RecommendedSkills.First().Slug);
         Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "get-exchange-online-mailbox-inventory");
         Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "audit-on-prem-active-directory-user-attributes");
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "check-missing-windows-updates-with-powershell");
         Assert.Empty(pack.Memories);
         Assert.Empty(pack.CodeGraphProjects);
         Assert.Empty(pack.CodeGraphFiles);
@@ -2158,6 +2161,106 @@ public sealed class PalaceServiceTests
         Assert.Empty(pack.Memories);
         Assert.Empty(pack.RecommendedSkills);
         Assert.Contains("fact-based pack", pack.Summary, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static TheoryData<string> ClarificationWorthyPackQueries => new()
+    {
+        "review service deployment",
+        "check ad",
+        "project diff"
+    };
+
+    [Theory]
+    [MemberData(nameof(ClarificationWorthyPackQueries))]
+    public async Task ContextService_AmbiguousQueries_AskForMoreContextInsteadOfForcingMatches(string question)
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(question, CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.True(pack!.NeedsMoreContext);
+        Assert.NotEmpty(pack.ClarifyingQuestions);
+        Assert.Empty(pack.TopMatches);
+        Assert.Empty(pack.RecommendedSkills);
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
+    public async Task ContextService_ConcreteButUnsupportedQueries_AskForMoreContextInsteadOfBluffing()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "check admt forest dns forwarder trust issue",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.True(pack!.NeedsMoreContext);
+        Assert.Contains(pack.DetectedGapItems, gap => gap.Code == "insufficient-grounding");
+        Assert.NotEmpty(pack.ClarifyingQuestions);
+        Assert.Empty(pack.TopMatches);
+        Assert.Empty(pack.RecommendedSkills);
+        Assert.Contains("grounded supporting context", pack.Summary, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ContextService_RemoteLoggedInUserQueries_AskDomainSpecificClarifyingQuestions()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "I need a powershell script that can be run on the network and see who is logged into a pc",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.True(pack!.NeedsMoreContext);
+        Assert.Contains(pack.DetectedGapItems, gap => gap.Code == "insufficient-grounding");
+        Assert.Contains(pack.ClarifyingQuestions, question => question.Contains("currently logged-in user", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(pack.ClarifyingQuestions, question => question.Contains("PowerShell remoting", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(pack.RecommendedSkills);
+        Assert.Empty(pack.Memories);
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
+    public async Task ContextService_NoisyBroadWindowsSupportQueries_FailClosedInsteadOfGuessing()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "make a powershell that will audit installed printer drivers on a pc",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.True(pack!.NeedsMoreContext);
+        Assert.Contains(pack.DetectedGapItems, gap => gap.Code == "insufficient-grounding");
+        Assert.NotEmpty(pack.ClarifyingQuestions);
+        Assert.Empty(pack.TopMatches);
+        Assert.Empty(pack.RecommendedSkills);
+        Assert.Empty(pack.Memories);
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+        Assert.Contains("grounded supporting context", pack.Summary, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -2211,6 +2314,161 @@ public sealed class PalaceServiceTests
         Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "audit-on-prem-active-directory-user-attributes");
         Assert.True(pack.Memories.Count == 0 || pack.Memories.First().Title == "Check whether TCP port 443 is listening with PowerShell");
         Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("trap ports", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("ADMT", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
+    public async Task ContextService_SoftwareInstallQueries_PreferInstallerSkillAndSuppressLocalSupportNoise()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+        dbContext.Memories.AddRange(
+            new MemoryEntry
+            {
+                Title = "Installer logs only exist after the installer EXE starts",
+                Summary = "Grey Canary installer diagnostics only appear after the product installer actually starts.",
+                Content = "Internal installer diagnostics for Grey Canary builds.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new MemoryEntry
+            {
+                Title = "ADMT plus USMT PC domain migration checklist",
+                Summary = "Migration guidance for moving PCs between domains.",
+                Content = "PC migration and domain membership checklist.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                UpdatedUtc = DateTime.UtcNow
+            });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "create a powershell script that will download foxit from their website and install on a local pc",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.RecommendedSkills);
+        Assert.Equal("download-and-install-windows-software-with-powershell", pack.RecommendedSkills.First().Slug);
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "check-wmi-health-on-a-windows-pc");
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "check-whether-a-port-is-open-with-powershell");
+        Assert.True(pack.Memories.Count == 0);
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
+    public async Task ContextService_WindowsServicingQueries_PreferDismSkillAndSuppressNoise()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+        dbContext.Memories.AddRange(
+            new MemoryEntry
+            {
+                Title = "ADMT cross-forest migration conditional forwarder fix",
+                Summary = "Active Directory troubleshooting guidance.",
+                Content = "Conditional forwarders and AD locator behavior.",
+                Kind = MemoryKind.Incident,
+                SourceKind = SourceKind.ManualNote,
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new MemoryEntry
+            {
+                Title = "Grey Canary endpoint bootstrap depends on PowerShell",
+                Summary = "Installer bootstrap guidance.",
+                Content = "Installer bootstrap and service prerequisites.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                UpdatedUtc = DateTime.UtcNow
+            });
+        dbContext.CodeGraphProjects.Add(new CodeGraphProject
+        {
+            Name = "Grey Canary",
+            RootPath = @"C:\Copilot\Grey Canary",
+            Description = "Unrelated product repo.",
+            Summary = "Endpoint code.",
+            UpdatedUtc = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "I need the command line command to check DISM",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.RecommendedSkills);
+        Assert.Equal("check-windows-image-health-with-dism", pack.RecommendedSkills.First().Slug);
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "check-when-an-active-directory-users-password-expires");
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "download-and-install-windows-software-with-powershell");
+        Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("ADMT", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("bootstrap", StringComparison.OrdinalIgnoreCase));
+        Assert.All(pack.Memories, memory => Assert.True(
+            memory.Title.Contains("DISM", StringComparison.OrdinalIgnoreCase)
+            || memory.Title.Contains("image health", StringComparison.OrdinalIgnoreCase)
+            || memory.MatchReason.Contains("dism", StringComparison.OrdinalIgnoreCase)
+            || memory.MatchReason.Contains("component store", StringComparison.OrdinalIgnoreCase)));
+        Assert.Empty(pack.CodeGraphProjects);
+        Assert.Empty(pack.CodeGraphFiles);
+        Assert.Empty(pack.CodeGraphNodes);
+    }
+
+    [Fact]
+    public async Task ContextService_WindowsUpdateQueries_PreferWindowsUpdateSkillAndSuppressNoise()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+        dbContext.Memories.AddRange(
+            new MemoryEntry
+            {
+                Title = "Grey Canary endpoint bootstrap depends on PowerShell",
+                Summary = "Installer bootstrap guidance.",
+                Content = "Installer bootstrap and service prerequisites.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                UpdatedUtc = DateTime.UtcNow
+            },
+            new MemoryEntry
+            {
+                Title = "ADMT plus USMT PC domain migration checklist",
+                Summary = "Migration guidance for moving PCs between domains.",
+                Content = "PC migration and domain membership checklist.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote,
+                UpdatedUtc = DateTime.UtcNow
+            });
+        dbContext.CodeGraphProjects.Add(new CodeGraphProject
+        {
+            Name = "Grey Canary",
+            RootPath = @"C:\Copilot\Grey Canary",
+            Description = "Unrelated product repo.",
+            Summary = "Endpoint code.",
+            UpdatedUtc = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "make a powershell that will check for missing windows updates on a pc",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.NotEmpty(pack!.RecommendedSkills);
+        Assert.Equal("check-missing-windows-updates-with-powershell", pack.RecommendedSkills.First().Slug);
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "check-wmi-health-on-a-windows-pc");
+        Assert.DoesNotContain(pack.RecommendedSkills, skill => skill.Slug == "check-windows-image-health-with-dism");
+        Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("bootstrap", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(pack.Memories, memory => memory.Title.Contains("ADMT", StringComparison.OrdinalIgnoreCase));
         Assert.Empty(pack.CodeGraphProjects);
         Assert.Empty(pack.CodeGraphFiles);
