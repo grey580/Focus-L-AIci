@@ -39,6 +39,17 @@
             ? Model.FallbackContext.SuggestedQuestion
             : string.Empty;
     var shouldLazyLoadContextPack = Model.ContextPack is null && !string.IsNullOrWhiteSpace(lazyPackQuestion);
+    var suggestedAgentReason = Model.SuggestedAgentDetail?.Agent.Slug switch
+    {
+        "execution-agent" => "Focus picked this because your prompt already looks like a concrete execution or scripting task.",
+        "triage-agent" => "Focus picked this because your prompt still looks like intake that needs routing or cleanup first.",
+        "context-agent" => "Focus picked this because the task looks like it needs more grounded context before action.",
+        "impact-agent" => "Focus picked this because the prompt sounds like a change that needs blast-radius analysis first.",
+        "research-agent" => "Focus picked this because the prompt sounds investigative rather than directly executable.",
+        "curation-agent" => "Focus picked this because the prompt is about capturing or refreshing durable knowledge.",
+        "review-agent" => "Focus picked this because the prompt sounds like a validation or risk-review task.",
+        _ => string.Empty
+    };
 
 }
 
@@ -235,10 +246,22 @@
     var runResult = suggestion.RunResult!;
     <section class="card shadow-sm border-0 mb-4">
         <div class="card-body">
+            <p class="eyebrow text-dark mb-2">Focus recommendation</p>
             <div class="section-heading">
-                <h2>Suggested agent: @suggestion.Agent.Name</h2>
-                <span class="text-secondary small">@runResult.ExecutionModeLabel</span>
+                <div>
+                    <h2 class="mb-1">@suggestion.Agent.Name</h2>
+                    <div class="text-secondary small">@suggestion.Agent.ScopeLabel • @runResult.ExecutionModeLabel</div>
+                </div>
+                <span class="badge @(suggestion.Agent.SupportsWriteActions ? "text-bg-primary" : "text-bg-secondary")">
+                    @(suggestion.Agent.SupportsWriteActions ? "Write-limited" : "Read-only")
+                </span>
             </div>
+            @if (!string.IsNullOrWhiteSpace(suggestedAgentReason))
+            {
+                <div class="alert alert-info py-2 px-3 small mb-3">
+                    <strong>Suggested agent:</strong> @suggestion.Agent.Name. @suggestedAgentReason
+                </div>
+            }
             <p class="memory-summary mb-2">@runResult.Summary</p>
             <div class="row g-3 mb-4">
                 @foreach (var output in runResult.ReusableOutputs)
@@ -271,7 +294,7 @@
                 <a class="btn btn-outline-secondary"
                    asp-controller="Agents"
                    asp-action="Agent"
-                   asp-route-slug="@suggestion.Agent.Slug">Open full agent</a>
+                   asp-route-slug="@suggestion.Agent.Slug">Open @suggestion.Agent.Name</a>
             </div>
         </div>
     </section>
