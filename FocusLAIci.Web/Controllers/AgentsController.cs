@@ -58,4 +58,17 @@ public sealed class AgentsController(PalaceService palaceService) : Controller
         var model = await palaceService.RunAgentAsync(slug, input, cancellationToken);
         return model is null ? NotFound() : View(model);
     }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Suggest(ContextBriefInput input, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid || string.IsNullOrWhiteSpace(input.Question))
+        {
+            return RedirectToAction("Index", "Home");
+        }
+
+        var model = await palaceService.SuggestAgentRunAsync(input, cancellationToken);
+        return model is null ? RedirectToAction("Index", "Home") : View("Agent", model);
+    }
 }

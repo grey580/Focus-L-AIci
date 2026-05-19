@@ -529,6 +529,7 @@ public sealed class PalaceServiceTests
         Assert.NotEmpty(detail.RunResult.NextActions);
         Assert.NotNull(detail.RunResult.ContextPack);
         Assert.NotEmpty(detail.RunResult.CompanionSkills);
+        Assert.NotEmpty(detail.RunResult.ReusableOutputs);
         Assert.Contains(detail.RunResult.CompanionSkills, x => x.Slug == "validate-release-checklist");
         Assert.Contains(detail.RunResult.FollowOnAgents, x => x.Slug == "review-agent");
     }
@@ -566,8 +567,51 @@ public sealed class PalaceServiceTests
         Assert.Contains(detail.RunResult.Steps, x => x.Title == "Pin down the exact attribute and scope");
         Assert.Contains(detail.RunResult.Steps, x => x.Title == "Write the Get-ADUser query");
         Assert.Contains(detail.RunResult.NextActions, x => x.Contains("OfficePhone/telephoneNumber", StringComparison.Ordinal));
+        Assert.True(
+            detail.RunResult.DashboardQuestion.Contains("OfficePhone", StringComparison.Ordinal)
+            || detail.RunResult.DashboardQuestion.Contains("telephoneNumber", StringComparison.Ordinal),
+            $"Expected the dashboard question to stay specific to the AD phone field, but got: {detail.RunResult.DashboardQuestion}");
         Assert.Contains("Deliverable: PowerShell script or report.", detail.RunResult.OperatorPrompt, StringComparison.Ordinal);
+        Assert.Contains(detail.RunResult.ReusableOutputs, x => x.Title == "Refined prompt" && x.Value.Contains("Get-ADUser", StringComparison.Ordinal));
+        Assert.Contains(
+            detail.RunResult.ReusableOutputs,
+            x => x.Title == "Suggested artifact"
+                 && (x.Value.Contains("OfficePhone", StringComparison.Ordinal)
+                     || x.Value.Contains("telephoneNumber", StringComparison.Ordinal)));
         Assert.Contains(detail.RunResult.CompanionSkills, x => x.Slug == "audit-on-prem-active-directory-user-attributes");
+    }
+
+    [Fact]
+    public async Task SuggestAgentRunAsync_PrefersExecutionAgentForScriptRequests()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var scope = harness.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<FocusMemoryContext>();
+        var repoSkillCatalogService = scope.ServiceProvider.GetRequiredService<RepoSkillCatalogService>();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        var service = new PalaceService(
+            dbContext,
+            new ContextService(dbContext),
+            NullFocusEventPublisher.Instance,
+            null,
+            new FocusAgentCatalogService(),
+            repoSkillCatalogService);
+
+        var detail = await service.SuggestAgentRunAsync(new ContextBriefInput
+        {
+            Question = "I need a powershell script to check if an active directory use has a officephone number in their profile",
+            PackGoal = ContextPackGoal.General,
+            ResultsPerSection = 4,
+            IncludeCompletedWork = true,
+            ExpandHistory = true
+        }, CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.Equal("execution-agent", detail!.Agent.Slug);
+        Assert.NotNull(detail.RunResult);
+        Assert.Contains("OfficePhone", detail.RunResult!.DashboardQuestion, StringComparison.Ordinal);
     }
 
     [Fact]

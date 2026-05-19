@@ -82,6 +82,26 @@
             </div>
             <p class="mb-2">@runResult.Summary</p>
             <p class="text-secondary small mb-3"><code>@runResult.OperatorPrompt</code></p>
+            @if (runResult.ReusableOutputs.Count > 0)
+            {
+                <div class="row g-3 mb-4">
+                    @foreach (var output in runResult.ReusableOutputs)
+                    {
+                        <div class="col-lg-6">
+                            <div class="border rounded-3 p-3 h-100">
+                                <div class="section-heading mb-2">
+                                    <h3 class="h6 mb-0">@output.Title</h3>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(output.Description))
+                                {
+                                    <p class="text-secondary small mb-2">@output.Description</p>
+                                }
+                                <textarea class="form-control form-control-sm" rows="6" readonly>@output.Value</textarea>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
             <div class="row g-4">
                 <div class="col-lg-7">
                     <h3 class="h6">Execution steps</h3>
@@ -114,6 +134,17 @@
                    asp-route-IncludeCompletedWork="@Model.RunInput.IncludeCompletedWork"
                    asp-route-ExpandHistory="@Model.RunInput.ExpandHistory"
                    asp-route-ResultsPerSection="@Model.RunInput.ResultsPerSection">Open Inspect for this task</a>
+                @if (!string.IsNullOrWhiteSpace(runResult.DashboardQuestion))
+                {
+                    <a class="btn btn-outline-primary"
+                       asp-controller="Home"
+                       asp-action="UseOnDashboard"
+                       asp-route-Question="@runResult.DashboardQuestion"
+                       asp-route-PackGoal="@Model.Agent.DefaultGoal"
+                       asp-route-IncludeCompletedWork="@Model.RunInput.IncludeCompletedWork"
+                       asp-route-ExpandHistory="@Model.RunInput.ExpandHistory"
+                       asp-route-ResultsPerSection="@Model.RunInput.ResultsPerSection">Use on dashboard</a>
+                }
                 <a class="btn btn-outline-secondary"
                    asp-controller="Home"
                    asp-action="Index">Back to dashboard</a>

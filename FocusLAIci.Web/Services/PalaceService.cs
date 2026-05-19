@@ -2,6 +2,7 @@ using System.Text;
 using System.Data;
 using FocusLAIci.Web.Data;
 using FocusLAIci.Web.Models;
+using FocusLAIci.Web.Security;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 
@@ -332,6 +333,28 @@ public sealed class PalaceService
 
     public async Task<AgentDetailViewModel?> RunAgentAsync(string slug, AgentRunInput input, CancellationToken cancellationToken)
         => await BuildAgentDetailAsync(slug, input, true, cancellationToken);
+
+    public async Task<AgentDetailViewModel?> SuggestAgentRunAsync(ContextBriefInput input, CancellationToken cancellationToken)
+    {
+        var normalizedInput = RequestInputPolicy.NormalizeBoundContextBriefInput(input);
+        if (string.IsNullOrWhiteSpace(normalizedInput.Question))
+        {
+            return null;
+        }
+
+        var suggestedSlug = SuggestBestAgentSlug(normalizedInput.Question, normalizedInput.PackGoal);
+        return await BuildAgentDetailAsync(
+            suggestedSlug,
+            new AgentRunInput
+            {
+                Question = normalizedInput.Question.Trim(),
+                IncludeCompletedWork = normalizedInput.IncludeCompletedWork,
+                ExpandHistory = normalizedInput.ExpandHistory,
+                ResultsPerSection = normalizedInput.ResultsPerSection
+            },
+            true,
+            cancellationToken);
+    }
 
     private async Task<AgentDetailViewModel?> BuildAgentDetailAsync(string slug, AgentRunInput? runInput, bool buildRun, CancellationToken cancellationToken)
     {
@@ -3675,6 +3698,22 @@ public sealed class PalaceService
             summary += $" Target deliverable: {taskProfile.DeliverableLabel}.";
         }
 
+        var dashboardQuestion = BuildDashboardQuestion(input.Question.Trim(), taskProfile);
+        var reusableOutputs = BuildReusableOutputs(detail.Agent.Slug, input.Question.Trim(), dashboardQuestion, taskProfile);
+
+        if (reusableOutputs.Count == 0)
+        {
+            reusableOutputs =
+            [
+                new AgentReusableOutputViewModel
+                {
+                    Title = "Refined prompt",
+                    Description = "Use this as the tightened version of the task when you build the pack or hand it to another AI workflow.",
+                    Value = dashboardQuestion
+                }
+            ];
+        }
+
         return new AgentRunViewModel
         {
             TaskQuestion = input.Question.Trim(),
@@ -3686,6 +3725,8 @@ public sealed class PalaceService
             SupportsWriteActions = detail.Agent.SupportsWriteActions,
             Steps = steps,
             NextActions = nextActions,
+            DashboardQuestion = dashboardQuestion,
+            ReusableOutputs = reusableOutputs,
             CompanionSkills = companionSkills,
             FollowOnAgents = followOnAgents,
             ContextPack = contextPack
@@ -3712,6 +3753,21 @@ public sealed class PalaceService
                           || normalizedQuestion.Contains("mobile", StringComparison.Ordinal)
                           || normalizedQuestion.Contains("officephone", StringComparison.Ordinal)
                           || normalizedQuestion.Contains("ipphone", StringComparison.Ordinal);
+        var directoryField = normalizedQuestion.Contains("officephone", StringComparison.Ordinal)
+            ? "OfficePhone"
+            : normalizedQuestion.Contains("mobile", StringComparison.Ordinal)
+                ? "Mobile"
+                : normalizedQuestion.Contains("ipphone", StringComparison.Ordinal)
+                    ? "ipPhone"
+                    : normalizedQuestion.Contains("telephone", StringComparison.Ordinal) || hasPhoneCue
+                        ? "telephoneNumber"
+                        : normalizedQuestion.Contains("title", StringComparison.Ordinal)
+                            ? "Title"
+                            : normalizedQuestion.Contains("department", StringComparison.Ordinal)
+                                ? "Department"
+                                : normalizedQuestion.Contains("mail", StringComparison.Ordinal)
+                                    ? "Mail"
+                                    : string.Empty;
         var hasAttributeAuditCue = normalizedQuestion.Contains("profile", StringComparison.Ordinal)
                                    || normalizedQuestion.Contains("attribute", StringComparison.Ordinal)
                                    || normalizedQuestion.Contains("missing", StringComparison.Ordinal)
@@ -3743,6 +3799,7 @@ public sealed class PalaceService
                     "Focus on the exact Active Directory phone attribute, query scope, output columns, and null/blank handling.",
                     "Prefer an implementation shape built around Get-ADUser and only the fields needed for cleanup."
                 ],
+                directoryField,
                 true,
                 true);
         }
@@ -3762,6 +3819,7 @@ public sealed class PalaceService
                     hasPowerShellCue ? "Deliverable: PowerShell script or command." : "Deliverable: automation script or command.",
                     "Focus on exact inputs, outputs, required module/tooling, and what the result should look like when it succeeds."
                 ],
+                string.Empty,
                 true,
                 false);
         }
@@ -3772,8 +3830,123 @@ public sealed class PalaceService
             string.Empty,
             Array.Empty<string>(),
             Array.Empty<string>(),
+            string.Empty,
             false,
             false);
+    }
+
+    private string SuggestBestAgentSlug(string question, ContextPackGoal goal)
+    {
+        var taskProfile = BuildAgentTaskProfile(question, Array.Empty<SkillCardViewModel>());
+        if (taskProfile.IsScriptRequest)
+        {
+            return "execution-agent";
+        }
+
+        return _agentCatalogService.RecommendAgents(question, goal, 1).FirstOrDefault()?.Slug
+               ?? "context-agent";
+    }
+
+    private static string BuildDashboardQuestion(string question, AgentTaskProfile taskProfile)
+    {
+        if (taskProfile.IsDirectoryAttributeAuditScript)
+        {
+            var attribute = ResolveDirectoryField(question, taskProfile.DirectoryField);
+            return $"Create a PowerShell script using Get-ADUser to report whether on-prem Active Directory users have {attribute} populated. Return SamAccountName, DisplayName, and {attribute}, treat null/blank/whitespace as missing, and make the output easy to export to CSV.";
+        }
+
+        if (taskProfile.IsScriptRequest)
+        {
+            return $"Create a PowerShell script or command for: {question.Trim()}. Make the required input, output fields, success condition, and validation steps explicit.";
+        }
+
+        return question.Trim();
+    }
+
+    private static IReadOnlyCollection<AgentReusableOutputViewModel> BuildReusableOutputs(
+        string agentSlug,
+        string taskQuestion,
+        string dashboardQuestion,
+        AgentTaskProfile taskProfile)
+    {
+        var outputs = new List<AgentReusableOutputViewModel>();
+        if (!string.IsNullOrWhiteSpace(dashboardQuestion))
+        {
+            outputs.Add(new AgentReusableOutputViewModel
+            {
+                Title = "Refined prompt",
+                Description = "Use this on the dashboard or in another AI tool instead of the rough original request.",
+                Value = dashboardQuestion
+            });
+        }
+
+        if (taskProfile.IsDirectoryAttributeAuditScript)
+        {
+            var attribute = ResolveDirectoryField(taskQuestion, taskProfile.DirectoryField);
+            outputs.Add(new AgentReusableOutputViewModel
+            {
+                Title = "Suggested artifact",
+                Description = "What the agent thinks you should actually produce from this task.",
+                Value = $"PowerShell script using Get-ADUser and -Properties {attribute} to report SamAccountName, DisplayName, and {attribute}, with null/blank/whitespace treated as missing and optional CSV export."
+            });
+            outputs.Add(new AgentReusableOutputViewModel
+            {
+                Title = "Validation checklist",
+                Description = "Quick checks to keep the first version useful instead of vague.",
+                Value = $"1. Confirm {attribute} is the exact AD field you want.\n2. Decide whether the scope is one user, one OU, or all enabled users.\n3. Verify the script flags null, blank, and whitespace values as missing.\n4. Confirm whether the result should stay on screen or export to CSV."
+            });
+        }
+        else if (taskProfile.IsScriptRequest)
+        {
+            outputs.Add(new AgentReusableOutputViewModel
+            {
+                Title = "Suggested artifact",
+                Description = "What to ask the downstream AI or operator to build.",
+                Value = "Concrete script or command with explicit inputs, outputs, success condition, and validation expectations."
+            });
+        }
+        else if (string.Equals(agentSlug, "triage-agent", StringComparison.OrdinalIgnoreCase))
+        {
+            outputs.Add(new AgentReusableOutputViewModel
+            {
+                Title = "Suggested next move",
+                Description = "How to use the triage result instead of leaving it as advice only.",
+                Value = "Use the refined prompt on the dashboard, then hand the task to the recommended execution or context path."
+            });
+        }
+
+        return outputs;
+    }
+
+    private static string ResolveDirectoryField(string question, string fallbackField)
+    {
+        var normalizedQuestion = question.Trim().ToLowerInvariant();
+        if (normalizedQuestion.Contains("officephone", StringComparison.Ordinal))
+        {
+            return "OfficePhone";
+        }
+
+        if (normalizedQuestion.Contains("mobile", StringComparison.Ordinal))
+        {
+            return "Mobile";
+        }
+
+        if (normalizedQuestion.Contains("ipphone", StringComparison.Ordinal))
+        {
+            return "ipPhone";
+        }
+
+        if (normalizedQuestion.Contains("telephone", StringComparison.Ordinal))
+        {
+            return "telephoneNumber";
+        }
+
+        if (!string.IsNullOrWhiteSpace(fallbackField))
+        {
+            return fallbackField;
+        }
+
+        return "telephoneNumber";
     }
 
     private static string BuildAgentOperatorPrompt(
@@ -3801,6 +3974,7 @@ public sealed class PalaceService
         string SummaryLabel,
         IReadOnlyCollection<string> NextActions,
         IReadOnlyCollection<string> PromptFocus,
+        string DirectoryField,
         bool IsScriptRequest,
         bool IsDirectoryAttributeAuditScript);
 

@@ -130,6 +130,10 @@
             <span class="input-group-text dashboard-command-prefix">focus://</span>
             <input id="Question" name="Question" value="@Model.ContextInput.Question" class="form-control form-control-lg dashboard-question-input" placeholder="fix auth token refresh, investigate installer reliability, find prior deployment lessons" />
             <button type="submit" class="btn btn-primary dashboard-command-submit">Build pack</button>
+            <button type="submit"
+                    class="btn btn-outline-secondary dashboard-command-submit"
+                    formaction="@Url.Action("Suggest", "Agents")"
+                    formmethod="post">Suggest agent</button>
         </div>
         <div class="dashboard-hero-config-row">
             <div class="dashboard-command-snapshot">

@@ -808,9 +808,18 @@ public sealed class AgentRunViewModel
     public bool SupportsWriteActions { get; init; }
     public IReadOnlyCollection<AgentExecutionStepViewModel> Steps { get; init; } = Array.Empty<AgentExecutionStepViewModel>();
     public IReadOnlyCollection<string> NextActions { get; init; } = Array.Empty<string>();
+    public string DashboardQuestion { get; init; } = string.Empty;
+    public IReadOnlyCollection<AgentReusableOutputViewModel> ReusableOutputs { get; init; } = Array.Empty<AgentReusableOutputViewModel>();
     public IReadOnlyCollection<SkillCardViewModel> CompanionSkills { get; init; } = Array.Empty<SkillCardViewModel>();
     public IReadOnlyCollection<AgentCardViewModel> FollowOnAgents { get; init; } = Array.Empty<AgentCardViewModel>();
     public ContextPackViewModel? ContextPack { get; init; }
+}
+
+public sealed class AgentReusableOutputViewModel
+{
+    public string Title { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public string Value { get; init; } = string.Empty;
 }
 
 public sealed class AgentExecutionStepViewModel

@@ -23,6 +23,12 @@ public sealed class HomeController : Controller
         return View(ApplyMessages(await _palaceService.GetDashboardShellAsync(cancellationToken)));
     }
 
+    [HttpGet]
+    public async Task<IActionResult> UseOnDashboard([FromQuery] ContextBriefInput input, CancellationToken cancellationToken)
+    {
+        return View("Index", ApplyMessages(await RebuildDashboardShellAsync(input, cancellationToken)));
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Index(ContextBriefInput input, CancellationToken cancellationToken)
@@ -117,6 +123,33 @@ public sealed class HomeController : Controller
         {
             Stats = dashboard.Stats,
             ContextInput = input,
+            ContextPack = dashboard.ContextPack,
+            FallbackContext = dashboard.FallbackContext,
+            QuickCaptureInput = dashboard.QuickCaptureInput,
+            ActiveTickets = dashboard.ActiveTickets,
+            RecentActivity = dashboard.RecentActivity,
+            Wings = dashboard.Wings,
+            RecentMemories = dashboard.RecentMemories,
+            PinnedMemories = dashboard.PinnedMemories,
+            ResurfacingMemories = dashboard.ResurfacingMemories,
+            RecommendedAgents = dashboard.RecommendedAgents,
+            FeaturedAgents = dashboard.FeaturedAgents,
+            RecommendedSkills = dashboard.RecommendedSkills,
+            FeaturedSkills = dashboard.FeaturedSkills,
+            CurrentTodos = dashboard.CurrentTodos,
+            MissingContextWarnings = dashboard.MissingContextWarnings,
+            MissingContextWarningItems = dashboard.MissingContextWarningItems,
+            SearchExamples = dashboard.SearchExamples
+        };
+    }
+
+    private async Task<DashboardViewModel> RebuildDashboardShellAsync(ContextBriefInput input, CancellationToken cancellationToken)
+    {
+        var dashboard = await _palaceService.GetDashboardShellAsync(cancellationToken);
+        return new DashboardViewModel
+        {
+            Stats = dashboard.Stats,
+            ContextInput = RequestInputPolicy.NormalizeBoundContextBriefInput(input),
             ContextPack = dashboard.ContextPack,
             FallbackContext = dashboard.FallbackContext,
             QuickCaptureInput = dashboard.QuickCaptureInput,

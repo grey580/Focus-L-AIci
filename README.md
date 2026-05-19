@@ -56,6 +56,8 @@ These screenshots were captured from the current hosted Focus L-AIci build.
 
 - **Pack refinement loop** - every built context pack can now be archived into SQLite with counts, export text, and review fields so later ranking/tuning work has durable raw material.
 - **Decision-aware context packs** - context packs now record the routing/retrieval decision that produced them, including explicit causes, evidence, and nearby memory fallbacks when Focus needs clarification or lacks grounded support.
+- **Agent output blocks** - agent runs now produce reusable outputs such as refined prompts, suggested artifacts, and validation checklists instead of only generic workflow narration.
+- **Dashboard Suggest agent** - the build-pack bar can now send a rough task directly into the best matching agent so you can improve the prompt before building the pack.
 - **External skill sourcing** - Focus can check configured external skill websites, suggest matching skills when a pack has gaps, and import a selected skill back into the local catalog.
 - **Admin-managed skill websites** - the source website list now lives on **Admin -> Settings** instead of being hard-coded.
 
