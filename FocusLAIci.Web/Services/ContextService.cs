@@ -331,6 +331,7 @@ public sealed partial class ContextService
                 softwareInstallQuery,
                 windowsServicingQuery,
                 windowsUpdateQuery,
+                intentPrediction.IsGenericAutomationQuery,
                 localSupportQuery,
                 wmiDiagnosticQuery,
                 portCheckQuery,
@@ -1004,6 +1005,7 @@ public sealed partial class ContextService
                 softwareInstallQuery,
                 windowsServicingQuery,
                 windowsUpdateQuery,
+                intentPrediction.IsGenericAutomationQuery,
                 localSupportQuery,
                 wmiDiagnosticQuery,
                 portCheckQuery,
@@ -1019,6 +1021,7 @@ public sealed partial class ContextService
             Summary = BuildSummary(memoryResults, todoResults, ticketResults, projectResults, fileResults, nodeResults),
             GoalLabel = GetPackGoalLabel(effectiveInput.PackGoal),
             NeedsMoreContext = false,
+            Decision = BuildDecisionViewModel(retrievalDecision),
             Input = new ContextBriefInput
             {
                 Question = normalizedQuestion,
@@ -1047,6 +1050,7 @@ public sealed partial class ContextService
             ExportText = BuildExportText(
                 normalizedQuestion,
                 effectiveInput.PackGoal,
+                BuildDecisionViewModel(retrievalDecision),
                 recommendedSkills,
                 memoryResults,
                 todoResults,
@@ -1440,6 +1444,7 @@ public sealed partial class ContextService
     private static string BuildExportText(
         string question,
         ContextPackGoal goal,
+        ContextPackDecisionViewModel decision,
         IReadOnlyCollection<SkillCardViewModel> recommendedSkills,
         IReadOnlyCollection<ContextRecordViewModel> memories,
         IReadOnlyCollection<ContextRecordViewModel> todos,
@@ -1464,6 +1469,34 @@ public sealed partial class ContextService
             .AppendLine($"Context pack: {question}")
             .AppendLine($"Goal: {GetPackGoalLabel(goal)}")
             .AppendLine();
+
+        if (!string.IsNullOrWhiteSpace(decision.Kind))
+        {
+            builder.AppendLine("Decision");
+            builder.AppendLine("--------");
+            builder.Append("- Outcome: ").AppendLine(decision.Kind);
+            if (!string.IsNullOrWhiteSpace(decision.PrimaryCause))
+            {
+                builder.Append("- Primary cause: ").AppendLine(decision.PrimaryCause);
+            }
+
+            if (decision.Causes.Count > 0)
+            {
+                builder.Append("- Causes: ").AppendLine(string.Join(", ", decision.Causes));
+            }
+
+            foreach (var evidenceLine in decision.Evidence)
+            {
+                builder.Append("- Evidence: ").AppendLine(evidenceLine);
+            }
+
+            foreach (var reason in decision.Reasons)
+            {
+                builder.Append("- Reason: ").AppendLine(reason);
+            }
+
+            builder.AppendLine();
+        }
 
         if (detectedGapItems.Count > 0)
         {
@@ -1567,6 +1600,57 @@ public sealed partial class ContextService
         return builder.ToString().TrimEnd();
     }
 
+    private static ContextPackDecisionViewModel BuildDecisionViewModel(PackDecision decision)
+    {
+        var causes = decision.Scorecard.EffectiveCauses
+            .Select(FormatDecisionCause)
+            .ToArray();
+        return new ContextPackDecisionViewModel
+        {
+            Kind = decision.Kind.ToString(),
+            PrimaryCause = causes.FirstOrDefault() ?? string.Empty,
+            Causes = causes,
+            Reasons = decision.Scorecard.EffectiveReasons.ToArray(),
+            Evidence = BuildDecisionEvidence(decision.Scorecard)
+        };
+    }
+
+    private static IReadOnlyCollection<string> BuildDecisionEvidence(PackDecisionScorecard scorecard)
+    {
+        var evidence = new List<string>
+        {
+            $"Top route score {scorecard.TopScore:0.00} with margin {scorecard.TopMargin:0.00}.",
+            $"Informative tokens: {scorecard.InformativeTokenCount}; specific informative tokens: {scorecard.SpecificInformativeTokenCount}; facet signals: {scorecard.FacetSignalCount}."
+        };
+
+        if (scorecard.RetrievalYield > 0 || scorecard.TopMatchCount > 0 || scorecard.RecommendedSkillCount > 0)
+        {
+            evidence.Add($"Grounded retrieval items: {scorecard.TopMatchCount} top matches, {scorecard.RecommendedSkillCount} skills, total yield {scorecard.RetrievalYield}.");
+        }
+
+        if (scorecard.RetrievalAgreementRatio.HasValue)
+        {
+            evidence.Add($"Retrieval agreement ratio: {scorecard.RetrievalAgreementRatio.Value:0.00}.");
+        }
+
+        if (scorecard.SpecificGroundingRatio.HasValue)
+        {
+            evidence.Add($"Specific grounding ratio: {scorecard.SpecificGroundingRatio.Value:0.00}.");
+        }
+
+        return evidence;
+    }
+
+    private static string FormatDecisionCause(PackDecisionCause cause)
+        => cause switch
+        {
+            PackDecisionCause.InsufficientContext => "insufficient-context",
+            PackDecisionCause.MissingFamily => "missing-family",
+            PackDecisionCause.NearNeighborCollision => "near-neighbor-collision",
+            PackDecisionCause.RetrievalPollution => "retrieval-pollution",
+            _ => cause.ToString()
+        };
+
     private static SkillCardViewModel MapRecommendedSkill(SkillRecommendationMatch match)
     {
         var now = DateTime.UtcNow;
@@ -1611,6 +1695,7 @@ public sealed partial class ContextService
             Summary = pack.Summary,
             GoalLabel = pack.GoalLabel,
             NeedsMoreContext = pack.NeedsMoreContext,
+            Decision = pack.Decision,
             Input = pack.Input,
             SearchTokens = pack.SearchTokens,
             DetectedGapItems = pack.DetectedGapItems,
@@ -1696,6 +1781,9 @@ public sealed partial class ContextService
                     InformativeTokenCount: intentPrediction.InformativeTokenCount,
                     SpecificInformativeTokenCount: intentPrediction.SpecificInformativeTokenCount,
                     FacetSignalCount: intentPrediction.FacetSignalCount,
+                    Causes: critique.Issues.Any(issue => issue.Code is "ungrounded-skills" or "ungrounded-memories" or "unexpected-codegraph" or "generic-overlap-only")
+                        ? new[] { PackDecisionCause.RetrievalPollution }
+                        : Array.Empty<PackDecisionCause>(),
                     Reasons: critique.Issues.Select(issue => issue.Message).ToArray()));
             var unsupportedPack = await BuildDecisionPackAsync(
                 unsupportedDecision,
@@ -1711,6 +1799,7 @@ public sealed partial class ContextService
                 softwareInstallQuery,
                 windowsServicingQuery,
                 windowsUpdateQuery,
+                intentPrediction.IsGenericAutomationQuery,
                 localSupportQuery,
                 wmiDiagnosticQuery,
                 portCheckQuery,
@@ -1762,6 +1851,7 @@ public sealed partial class ContextService
             Summary = BuildSummary(memories, pack.Todos, pack.Tickets, codeGraphProjects, codeGraphFiles, codeGraphNodes),
             GoalLabel = pack.GoalLabel,
             NeedsMoreContext = pack.NeedsMoreContext,
+            Decision = pack.Decision,
             Input = pack.Input,
             SearchTokens = pack.SearchTokens,
             DetectedGapItems = pack.DetectedGapItems,
@@ -1778,6 +1868,7 @@ public sealed partial class ContextService
             ExportText = BuildExportText(
                 normalizedQuestion,
                 goal,
+                pack.Decision,
                 recommendedSkills,
                 memories,
                 pack.Todos,
@@ -1804,6 +1895,7 @@ public sealed partial class ContextService
         bool softwareInstallQuery,
         bool windowsServicingQuery,
         bool windowsUpdateQuery,
+        bool genericAutomationQuery,
         bool localSupportQuery,
         bool wmiDiagnosticQuery,
         bool portCheckQuery,
@@ -1812,6 +1904,29 @@ public sealed partial class ContextService
         bool desktopAppQuery,
         CancellationToken cancellationToken)
     {
+        var nearbyMemories = decision.Kind == PackDecisionKind.Unsupported
+                             || decision.Scorecard.SpecificInformativeTokenCount >= 2
+            ? await BuildNearbyMemoryMatchesAsync(
+                normalizedQuestion,
+                effectiveInput,
+                resultsPerSection,
+                tokens,
+                normalizedQuestionPhrase,
+                projectHistoryQuery,
+                fileComparisonQuery,
+                softwareInstallQuery,
+                windowsServicingQuery,
+                windowsUpdateQuery,
+                genericAutomationQuery,
+                localSupportQuery,
+                wmiDiagnosticQuery,
+                portCheckQuery,
+                webUiQuery,
+                cloudOpsQuery,
+                desktopAppQuery,
+                explicitCodeQuery,
+                cancellationToken)
+            : Array.Empty<ContextRecordViewModel>();
         var gapItems = decision.Kind == PackDecisionKind.Unsupported
             ? BuildUnsupportedGroundingGapItems()
             : BuildLowContextGapItems();
@@ -1832,14 +1947,28 @@ public sealed partial class ContextService
             cloudOpsQuery,
             desktopAppQuery);
         var summary = decision.Kind == PackDecisionKind.Unsupported
-            ? "Focus found a likely lane, but it does not have enough grounded supporting context to answer safely yet."
-            : "Need more context before Focus can build a fact-based pack.";
+            ? nearbyMemories.Count > 0
+                ? "Focus found a likely lane but not enough grounded support to answer safely yet; nearby memories may help you refine the request."
+                : "Focus found a likely lane, but it does not have enough grounded supporting context to answer safely yet."
+            : nearbyMemories.Count > 0
+                ? "Need more context before Focus can build a fact-based pack, but nearby memories may help narrow the request."
+                : "Need more context before Focus can build a fact-based pack.";
+        var topMatches = BuildTopMatches(
+            nearbyMemories,
+            Array.Empty<ContextRecordViewModel>(),
+            Array.Empty<ContextRecordViewModel>(),
+            Array.Empty<ContextRecordViewModel>(),
+            Array.Empty<ContextRecordViewModel>(),
+            Array.Empty<ContextRecordViewModel>(),
+            resultsPerSection,
+            ShouldPreferDurableMemoryLead(normalizedQuestion, effectiveInput));
         return await ArchivePackIfNeededAsync(new ContextPackViewModel
         {
             Question = normalizedQuestion,
             Summary = summary,
             GoalLabel = GetPackGoalLabel(effectiveInput.PackGoal),
             NeedsMoreContext = true,
+            Decision = BuildDecisionViewModel(decision),
             Input = new ContextBriefInput
             {
                 Question = normalizedQuestion,
@@ -1857,11 +1986,14 @@ public sealed partial class ContextService
             SearchTokens = tokens.OrderBy(x => x).ToArray(),
             DetectedGapItems = gapItems,
             ClarifyingQuestions = clarifyingQuestions,
+            TopMatches = topMatches,
+            Memories = nearbyMemories,
             ExportText = BuildExportText(
                 normalizedQuestion,
                 effectiveInput.PackGoal,
+                BuildDecisionViewModel(decision),
                 Array.Empty<SkillCardViewModel>(),
-                Array.Empty<ContextRecordViewModel>(),
+                nearbyMemories,
                 Array.Empty<ContextRecordViewModel>(),
                 Array.Empty<ContextRecordViewModel>(),
                 Array.Empty<ContextRecordViewModel>(),
@@ -1870,6 +2002,142 @@ public sealed partial class ContextService
                 gapItems,
                 clarifyingQuestions)
         }, cancellationToken);
+    }
+
+    private async Task<IReadOnlyCollection<ContextRecordViewModel>> BuildNearbyMemoryMatchesAsync(
+        string normalizedQuestion,
+        ContextBriefInput effectiveInput,
+        int resultsPerSection,
+        IReadOnlyCollection<string> tokens,
+        string normalizedQuestionPhrase,
+        bool projectHistoryQuery,
+        bool fileComparisonQuery,
+        bool softwareInstallQuery,
+        bool windowsServicingQuery,
+        bool windowsUpdateQuery,
+        bool genericAutomationQuery,
+        bool localSupportQuery,
+        bool wmiDiagnosticQuery,
+        bool portCheckQuery,
+        bool webUiQuery,
+        bool cloudOpsQuery,
+        bool desktopAppQuery,
+        bool explicitCodeQuery,
+        CancellationToken cancellationToken)
+    {
+        if (tokens.Count == 0)
+        {
+            return Array.Empty<ContextRecordViewModel>();
+        }
+
+        var semanticTokens = ExpandSemanticTokens(tokens);
+        var semanticProfile = BuildSemanticQueryProfile(normalizedQuestion, tokens, semanticTokens);
+        var preferDurableMemoryLead = ShouldPreferDurableMemoryLead(normalizedQuestion, effectiveInput);
+        var repositoryArchitectureQuery = IsRepositoryArchitectureQuery(tokens, normalizedQuestionPhrase);
+        var currentProjectCodeQuery = explicitCodeQuery && HasCurrentProjectHint(tokens);
+        var directoryAdminQuery = IsDirectoryAdminQuery(tokens);
+
+        var memories = await _dbContext.Memories
+            .AsNoTracking()
+            .Include(x => x.Wing)
+            .Include(x => x.Room)
+            .Include(x => x.MemoryTags)
+                .ThenInclude(x => x.Tag)
+            .ToListAsync(cancellationToken);
+
+        if (!effectiveInput.IncludeRetired)
+        {
+            memories = memories.Where(x => x.LifecycleState == MemoryLifecycleState.Active).ToList();
+        }
+
+        if (effectiveInput.WingId.HasValue)
+        {
+            memories = memories.Where(x => x.WingId == effectiveInput.WingId.Value).ToList();
+        }
+
+        if (effectiveInput.RoomId.HasValue)
+        {
+            memories = memories.Where(x => x.RoomId == effectiveInput.RoomId.Value).ToList();
+        }
+
+        if (effectiveInput.Kind.HasValue)
+        {
+            memories = memories.Where(x => x.Kind == effectiveInput.Kind.Value).ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(effectiveInput.Tag))
+        {
+            var tagSlug = SlugUtility.CreateSlug(effectiveInput.Tag);
+            var tagMatchedMemories = memories.Where(x => x.MemoryTags.Any(tag => tag.Tag!.Slug == tagSlug)).ToList();
+            if (tagMatchedMemories.Count > 0)
+            {
+                memories = tagMatchedMemories;
+            }
+        }
+
+        return memories
+            .Select(memory =>
+            {
+                var trust = MemoryTrustHelper.Build(memory);
+                var score = ScoreFields(
+                    normalizedQuestion,
+                    tokens,
+                    semanticTokens,
+                    semanticProfile,
+                    BuildMemorySemanticPolicy(effectiveInput.PackGoal, preferDurableMemoryLead, repositoryArchitectureQuery, projectHistoryQuery),
+                    MemoryTrustHelper.GetEffectiveTimestamp(memory.UpdatedUtc, memory.LastVerifiedUtc),
+                    new WeightedField(memory.Title, "title", "Title", 20m, "Title matches your question closely.", "Title shares your search terms."),
+                    new WeightedField(memory.Summary, "summary", "Summary", 12m, "Summary closely matches the request.", "Summary reinforces the match."),
+                    new WeightedField(TrimPreview(memory.Content, 2000), "content", "Content", 7m, "Memory content contains the full request.", "Memory content covers the same terms."),
+                    new WeightedField($"{memory.Wing?.Name} {memory.Room?.Name}", "location", "Wing/room", 8m, "Wing or room naming matches the request.", "Wing or room naming overlaps the request."),
+                    new WeightedField(string.Join(' ', memory.MemoryTags.Select(x => x.Tag!.Name)), "tags", "Tags", 10m, "Tags line up with the request.", "Tags overlap the request."));
+
+                score = ApplyBoost(score, memory.IsPinned ? 4m : 0m, "Pinned memory");
+                score = ApplyBoost(score, Math.Max(memory.Importance - 3, 0), "High importance");
+                score = ApplyBoost(score, trust.RetrievalAdjustment, trust.RetrievalAdjustmentLabel);
+                score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.Memory, memory.SourceKind, memory.Kind), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.Memory));
+                score = ApplyBoost(score, BuildScopedMemoryBoost(memory, effectiveInput), BuildScopedMemoryBoostLabel(effectiveInput));
+                score = ApplyBoost(score, preferDurableMemoryLead ? DurableMemoryQuestionBoost(memory) : 0m, "Durable memory lead");
+                score = ApplyBoost(score, directoryAdminQuery ? BuildDirectoryAdminMismatchPenalty(memory) : 0m, directoryAdminQuery ? "Directory domain mismatch" : string.Empty);
+
+                return new { Memory = memory, Match = score, Trust = trust };
+            })
+            .Where(x => x.Match.Score >= 18m)
+            .Where(x => !directoryAdminQuery || explicitCodeQuery || IsDirectoryAdminRelevantMemory(x.Memory, tokens, normalizedQuestionPhrase))
+            .Where(x => !fileComparisonQuery || IsFileComparisonRelevantMemory(x.Memory))
+            .Where(x => !projectHistoryQuery || IsProjectHistoryRelevantMemory(x.Memory, tokens))
+            .Where(x => !wmiDiagnosticQuery || IsWmiDiagnosticRelevantMemory(x.Memory))
+            .Where(x => !portCheckQuery || IsPortCheckRelevantMemory(x.Memory))
+            .Where(x => !softwareInstallQuery || IsSoftwareInstallRelevantMemory(x.Memory))
+            .Where(x => !windowsServicingQuery || IsWindowsServicingRelevantMemory(x.Memory))
+            .Where(x => !windowsUpdateQuery || IsWindowsUpdateRelevantMemory(x.Memory))
+            .Where(x => !genericAutomationQuery || IsGenericAutomationRelevantMemory(x.Memory))
+            .Where(x => !localSupportQuery || IsLocalSupportRelevantMemory(x.Memory))
+            .Where(x => !webUiQuery || currentProjectCodeQuery || IsWebUiRelevantMemory(x.Memory))
+            .Where(x => !cloudOpsQuery || IsCloudOpsRelevantMemory(x.Memory))
+            .Where(x => !desktopAppQuery || currentProjectCodeQuery || IsDesktopAppRelevantMemory(x.Memory))
+            .Where(x => !repositoryArchitectureQuery || IsRepositoryArchitectureRelevantMemory(x.Memory) || IsCurrentProjectRelevantMemory(x.Memory))
+            .Where(x => !currentProjectCodeQuery || IsCurrentProjectRelevantMemory(x.Memory) || IsCodeRelevantMemory(x.Memory))
+            .OrderByDescending(x => x.Match.Score)
+            .ThenByDescending(x => x.Memory.UpdatedUtc)
+            .Take(Math.Min(resultsPerSection, 3))
+            .Select(x => new ContextRecordViewModel
+            {
+                Kind = ContextRecordKind.Memory,
+                Id = x.Memory.Id,
+                KindLabel = "Memory",
+                Title = x.Memory.Title,
+                Subtitle = $"{x.Memory.Kind} • {x.Memory.Wing?.Name ?? "Unsorted"} / {x.Memory.Room?.Name ?? "General"}",
+                Preview = x.Memory.Summary,
+                Url = $"/Palace/Memory/{x.Memory.Id}",
+                Score = x.Match.Score,
+                SemanticScore = x.Match.SemanticScore,
+                ScoreLabel = FormatScore(x.Match.Score),
+                MatchReason = x.Match.Reason,
+                FreshnessWarning = x.Trust.FreshnessWarning,
+                Provenance = MapProvenance(x.Match)
+            })
+            .ToArray();
     }
 
     private static IReadOnlyCollection<DashboardWarningViewModel> BuildLowContextGapItems()

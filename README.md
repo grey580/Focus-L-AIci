@@ -55,6 +55,7 @@ These screenshots were captured from the current hosted Focus L-AIci build.
 ## What changed recently
 
 - **Pack refinement loop** - every built context pack can now be archived into SQLite with counts, export text, and review fields so later ranking/tuning work has durable raw material.
+- **Decision-aware context packs** - context packs now record the routing/retrieval decision that produced them, including explicit causes, evidence, and nearby memory fallbacks when Focus needs clarification or lacks grounded support.
 - **External skill sourcing** - Focus can check configured external skill websites, suggest matching skills when a pack has gaps, and import a selected skill back into the local catalog.
 - **Admin-managed skill websites** - the source website list now lives on **Admin -> Settings** instead of being hard-coded.
 

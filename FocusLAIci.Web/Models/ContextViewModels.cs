@@ -5,7 +5,7 @@ namespace FocusLAIci.Web.Models;
 public sealed class ContextBriefInput
 {
     [Required]
-    [StringLength(400)]
+    [StringLength(800)]
     [Display(Name = "What are you trying to do?")]
     public string Question { get; set; } = string.Empty;
 
@@ -49,6 +49,7 @@ public sealed class ContextPackViewModel
     public string Summary { get; init; } = string.Empty;
     public string GoalLabel { get; init; } = string.Empty;
     public bool NeedsMoreContext { get; init; }
+    public ContextPackDecisionViewModel Decision { get; init; } = new();
     public ContextBriefInput Input { get; init; } = new();
     public IReadOnlyCollection<string> SearchTokens { get; init; } = Array.Empty<string>();
     public IReadOnlyCollection<DashboardWarningViewModel> DetectedGapItems { get; init; } = Array.Empty<DashboardWarningViewModel>();
@@ -63,6 +64,15 @@ public sealed class ContextPackViewModel
     public IReadOnlyCollection<SkillCardViewModel> RecommendedSkills { get; init; } = Array.Empty<SkillCardViewModel>();
     public ExternalSkillAlertViewModel ExternalSkillAlert { get; init; } = new();
     public string ExportText { get; init; } = string.Empty;
+}
+
+public sealed class ContextPackDecisionViewModel
+{
+    public string Kind { get; init; } = string.Empty;
+    public string PrimaryCause { get; init; } = string.Empty;
+    public IReadOnlyCollection<string> Causes { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<string> Reasons { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<string> Evidence { get; init; } = Array.Empty<string>();
 }
 
 public enum ContextPackGoal

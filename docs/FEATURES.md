@@ -116,9 +116,11 @@ The intended operator flow is:
 Recent pack-refinement additions extend that flow:
 
 1. every built pack can now be archived into SQLite for later review and ranking
-2. Focus can inspect configured external skill websites when the pack looks skill-thin
-3. the dashboard can raise an external skill alert and open a right-side slideout with suggested imports
-4. importing a suggested skill rebuilds the current pack against the updated skill catalog
+2. each pack now includes the routing/retrieval decision, its causes, and concrete evidence so clarify/unsupported outcomes are inspectable instead of opaque
+3. when Focus cannot safely ground an answer yet, it can surface a small set of nearby memories to help narrow the next query
+4. Focus can inspect configured external skill websites when the pack looks skill-thin
+5. the dashboard can raise an external skill alert and open a right-side slideout with suggested imports
+6. importing a suggested skill rebuilds the current pack against the updated skill catalog
 
 It also exposes:
 

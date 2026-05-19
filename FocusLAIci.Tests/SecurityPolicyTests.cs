@@ -69,6 +69,25 @@ public sealed class SecurityPolicyTests
     }
 
     [Fact]
+    public void TryCreateOptionalContextBriefInput_AcceptsQuestionsUpToConfiguredMaximum()
+    {
+        var question = new string('q', RequestInputPolicy.MaxQuestionLength);
+
+        var success = RequestInputPolicy.TryCreateOptionalContextBriefInput(
+            question: question,
+            includeCompletedWork: false,
+            expandHistory: true,
+            resultsPerSection: null,
+            input: out var input,
+            error: out var error);
+
+        Assert.True(success);
+        Assert.NotNull(input);
+        Assert.Equal(question, input!.Question);
+        Assert.Null(error);
+    }
+
+    [Fact]
     public void LocalPathPolicy_AllowsApprovedDescendantPaths()
     {
         var policy = new LocalPathPolicy(

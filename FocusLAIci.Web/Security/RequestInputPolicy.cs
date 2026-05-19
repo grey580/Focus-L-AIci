@@ -7,7 +7,7 @@ public static class RequestInputPolicy
     public const int MinResultsPerSection = 3;
     public const int MaxResultsPerSection = 10;
     public const int DefaultResultsPerSection = 6;
-    public const int MaxQuestionLength = 400;
+    public const int MaxQuestionLength = 800;
 
     public static ContextBriefInput NormalizeBoundContextBriefInput(ContextBriefInput input)
     {

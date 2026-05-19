@@ -15,6 +15,7 @@ public sealed class PackDecisionEngineTests
 
         Assert.Equal(PackDecisionKind.Clarify, decision.Kind);
         Assert.True(decision.Scorecard.QueryNeedsMoreContext);
+        Assert.Contains(PackDecisionCause.InsufficientContext, decision.Scorecard.EffectiveCauses);
     }
 
     [Fact]
@@ -32,6 +33,7 @@ public sealed class PackDecisionEngineTests
 
         Assert.Equal(PackDecisionKind.Unsupported, decision.Kind);
         Assert.Equal(0, decision.Scorecard.RetrievalYield);
+        Assert.Contains(PackDecisionCause.MissingFamily, decision.Scorecard.EffectiveCauses);
     }
 
     [Fact]
@@ -59,6 +61,7 @@ public sealed class PackDecisionEngineTests
             hasFacetRoute: false);
 
         Assert.Equal(PackDecisionKind.Clarify, decision.Kind);
+        Assert.Contains(PackDecisionCause.NearNeighborCollision, decision.Scorecard.EffectiveCauses);
     }
 
     [Fact]
@@ -75,5 +78,6 @@ public sealed class PackDecisionEngineTests
             hasFacetRoute: false);
 
         Assert.Equal(PackDecisionKind.Unsupported, decision.Kind);
+        Assert.Contains(PackDecisionCause.RetrievalPollution, decision.Scorecard.EffectiveCauses);
     }
 }
