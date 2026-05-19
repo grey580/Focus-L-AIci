@@ -227,6 +227,8 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        const submitter = event.submitter instanceof HTMLElement ? event.submitter : null;
+
         const jquery = window.jQuery;
         if (jquery && jquery.validator && !jquery(form).valid()) {
             return;
@@ -245,17 +247,26 @@ document.addEventListener("DOMContentLoaded", () => {
         event.preventDefault();
 
         try {
-            const method = (form.method || "get").toUpperCase();
+            const requestMethod = submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement
+                ? (submitter.getAttribute("formmethod") || form.method || "get")
+                : (form.method || "get");
+            const method = requestMethod.toUpperCase();
+            const requestUrl = submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement
+                ? (submitter.getAttribute("formaction") || form.action || window.location.href)
+                : (form.action || window.location.href);
             const formData = new FormData(form);
+            if (submitter && "name" in submitter && submitter.name) {
+                formData.append(submitter.name, "value" in submitter ? submitter.value : "");
+            }
             if (method === "GET") {
-                const url = new URL(form.action || window.location.href, window.location.origin);
+                const url = new URL(requestUrl, window.location.origin);
                 url.search = new URLSearchParams(formData).toString();
                 await swapAjaxTarget(url, { method }, targetSelector);
                 return;
             }
 
             await swapAjaxTarget(
-                new URL(form.action || window.location.href, window.location.origin),
+                new URL(requestUrl, window.location.origin),
                 {
                     method,
                     body: formData
@@ -263,7 +274,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 targetSelector);
         } catch {
             clearSubmittingState(submitButton);
-            window.location.assign(form.action || window.location.href);
+            const fallbackUrl = submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement
+                ? (submitter.getAttribute("formaction") || form.action || window.location.href)
+                : (form.action || window.location.href);
+            window.location.assign(fallbackUrl);
         }
     });
 
