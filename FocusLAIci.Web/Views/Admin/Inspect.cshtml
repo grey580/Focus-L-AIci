@@ -47,34 +47,34 @@
                             }
                         </select>
                     </div>
-                    <div class="col-md-4 d-flex align-items-end">
-                        <div class="form-check">
+                     <div class="col-md-4 d-flex align-items-end">
+                         <div class="form-check">
+                             @if (Model.Diagnostics.ContextInput.IncludeCompletedWork)
+                             {
+                                 <input id="IncludeCompletedWork" name="IncludeCompletedWork" value="true" checked class="form-check-input" type="checkbox" />
+                             }
+                             else
+                             {
+                                 <input id="IncludeCompletedWork" name="IncludeCompletedWork" value="true" class="form-check-input" type="checkbox" />
+                             }
                             <input type="hidden" name="IncludeCompletedWork" value="false" />
-                            @if (Model.Diagnostics.ContextInput.IncludeCompletedWork)
-                            {
-                                <input id="IncludeCompletedWork" name="IncludeCompletedWork" value="true" checked class="form-check-input" type="checkbox" />
-                            }
-                            else
-                            {
-                                <input id="IncludeCompletedWork" name="IncludeCompletedWork" value="true" class="form-check-input" type="checkbox" />
-                            }
-                            <label for="IncludeCompletedWork" class="form-check-label">Include completed todos and tickets</label>
-                        </div>
-                    </div>
-                    <div class="col-md-4 d-flex align-items-end">
-                        <div class="form-check">
+                             <label for="IncludeCompletedWork" class="form-check-label">Include completed todos and tickets</label>
+                         </div>
+                     </div>
+                     <div class="col-md-4 d-flex align-items-end">
+                         <div class="form-check">
+                             @if (Model.Diagnostics.ContextInput.ExpandHistory)
+                             {
+                                 <input id="ExpandHistory" name="ExpandHistory" value="true" checked class="form-check-input" type="checkbox" />
+                             }
+                             else
+                             {
+                                 <input id="ExpandHistory" name="ExpandHistory" value="true" class="form-check-input" type="checkbox" />
+                             }
                             <input type="hidden" name="ExpandHistory" value="false" />
-                            @if (Model.Diagnostics.ContextInput.ExpandHistory)
-                            {
-                                <input id="ExpandHistory" name="ExpandHistory" value="true" checked class="form-check-input" type="checkbox" />
-                            }
-                            else
-                            {
-                                <input id="ExpandHistory" name="ExpandHistory" value="true" class="form-check-input" type="checkbox" />
-                            }
-                            <label for="ExpandHistory" class="form-check-label">Include ticket notes, activity, and time logs</label>
-                        </div>
-                    </div>
+                             <label for="ExpandHistory" class="form-check-label">Include ticket notes, activity, and time logs</label>
+                         </div>
+                     </div>
                     <div class="col-12 d-flex gap-2 flex-wrap">
                         <button type="submit" class="btn btn-primary">Run inspection</button>
                         <a class="btn btn-outline-secondary" asp-action="Inspect">Reset</a>

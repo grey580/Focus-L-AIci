@@ -184,34 +184,34 @@
                             }
                         </select>
                     </div>
-                    <div class="col-md-6 col-xl-2 d-flex align-items-end">
-                        <div class="form-check">
+                     <div class="col-md-6 col-xl-2 d-flex align-items-end">
+                         <div class="form-check">
+                             @if (Model.ContextInput.IncludeCompletedWork)
+                             {
+                                 <input id="IncludeCompletedWork" name="IncludeCompletedWork" value="true" checked class="form-check-input" type="checkbox" />
+                             }
+                             else
+                             {
+                                 <input id="IncludeCompletedWork" name="IncludeCompletedWork" value="true" class="form-check-input" type="checkbox" />
+                             }
                             <input type="hidden" name="IncludeCompletedWork" value="false" />
-                            @if (Model.ContextInput.IncludeCompletedWork)
-                            {
-                                <input id="IncludeCompletedWork" name="IncludeCompletedWork" value="true" checked class="form-check-input" type="checkbox" />
-                            }
-                            else
-                            {
-                                <input id="IncludeCompletedWork" name="IncludeCompletedWork" value="true" class="form-check-input" type="checkbox" />
-                            }
-                            <label for="IncludeCompletedWork" class="form-check-label">@Html.DisplayNameFor(x => x.ContextInput.IncludeCompletedWork)</label>
-                        </div>
-                    </div>
-                    <div class="col-md-6 col-xl-2 d-flex align-items-end">
-                        <div class="form-check">
+                             <label for="IncludeCompletedWork" class="form-check-label">@Html.DisplayNameFor(x => x.ContextInput.IncludeCompletedWork)</label>
+                         </div>
+                     </div>
+                     <div class="col-md-6 col-xl-2 d-flex align-items-end">
+                         <div class="form-check">
+                             @if (Model.ContextInput.ExpandHistory)
+                             {
+                                 <input id="ExpandHistory" name="ExpandHistory" value="true" checked class="form-check-input" type="checkbox" />
+                             }
+                             else
+                             {
+                                 <input id="ExpandHistory" name="ExpandHistory" value="true" class="form-check-input" type="checkbox" />
+                             }
                             <input type="hidden" name="ExpandHistory" value="false" />
-                            @if (Model.ContextInput.ExpandHistory)
-                            {
-                                <input id="ExpandHistory" name="ExpandHistory" value="true" checked class="form-check-input" type="checkbox" />
-                            }
-                            else
-                            {
-                                <input id="ExpandHistory" name="ExpandHistory" value="true" class="form-check-input" type="checkbox" />
-                            }
-                            <label for="ExpandHistory" class="form-check-label">@Html.DisplayNameFor(x => x.ContextInput.ExpandHistory)</label>
-                        </div>
-                    </div>
+                             <label for="ExpandHistory" class="form-check-label">@Html.DisplayNameFor(x => x.ContextInput.ExpandHistory)</label>
+                         </div>
+                     </div>
                 </div>
             </details>
         </div>

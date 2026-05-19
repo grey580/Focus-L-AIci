@@ -10,7 +10,7 @@ public sealed class ContextBriefInput
     public string Question { get; set; } = string.Empty;
 
     [Display(Name = "Include completed todos and tickets")]
-    public bool IncludeCompletedWork { get; set; }
+    public bool IncludeCompletedWork { get; set; } = true;
 
     [Display(Name = "Wing")]
     public Guid? WingId { get; set; }

@@ -36,7 +36,22 @@ public sealed partial class ContextService
         ["architecture"] = ["design", "system", "structure"],
         ["delivery"] = ["release", "ship", "handoff"],
         ["debug"] = ["troubleshoot", "diagnose", "fix"],
-        ["code"] = ["symbol", "file", "project", "implementation"]
+        ["code"] = ["symbol", "file", "project", "implementation"],
+        ["snare"] = ["canary"],
+        ["canary"] = ["snare"],
+        ["platform"] = ["product", "app", "system"],
+        ["product"] = ["platform", "app", "solution"],
+        ["blueprint"] = ["architecture", "design", "topology"],
+        ["topology"] = ["architecture", "structure", "blueprint"],
+        ["screen"] = ["view", "page", "ui", "form"],
+        ["view"] = ["screen", "page", "ui"],
+        ["customer"] = ["client", "account", "company"],
+        ["client"] = ["customer", "account", "company"],
+        ["headquarters"] = ["address", "location", "office"],
+        ["address"] = ["location", "headquarters", "site"],
+        ["autofill"] = ["copy", "populate", "automatic"],
+        ["copy"] = ["clone", "populate", "autofill"],
+        ["workspace"] = ["context", "project", "repo"]
     };
     private static readonly HashSet<string> ExternalOpsTokens =
     [
@@ -120,6 +135,15 @@ public sealed partial class ContextService
     [
         "website", "web", "ui", "layout", "homepage", "spacing", "css", "frontend"
     ];
+    private static readonly HashSet<string> ProductUiChangeTokens =
+    [
+        "page", "pages", "view", "views", "form", "forms", "field", "fields", "checkbox", "dropdown", "button", "buttons",
+        "slider", "panel", "address", "location", "locations", "company", "client", "clients", "region", "country", "city", "state"
+    ];
+    private static readonly HashSet<string> StaticSiteTokens =
+    [
+        "homepage", "landing", "marketing", "css", "javascript", "js", "asset", "assets", "static", "site"
+    ];
     private static readonly HashSet<string> CloudOpsTokens =
     [
         "azure", "cloud", "deployment", "entra", "identity", "tenant", "subscription", "app", "insights", "appinsights"
@@ -163,6 +187,7 @@ public sealed partial class ContextService
     private readonly IPackDecisionEngine _packDecisionEngine;
     private readonly IPackCriticEngine _packCriticEngine;
     private readonly PackBuildArchiveService? _packBuildArchiveService;
+    private readonly IContextEmbeddingService? _contextEmbeddingService;
 
     public ContextService(
         FocusMemoryContext dbContext,
@@ -170,7 +195,8 @@ public sealed partial class ContextService
         IPackIntentModel? packIntentModel = null,
         IPackDecisionEngine? packDecisionEngine = null,
         IPackCriticEngine? packCriticEngine = null,
-        PackBuildArchiveService? packBuildArchiveService = null)
+        PackBuildArchiveService? packBuildArchiveService = null,
+        IContextEmbeddingService? contextEmbeddingService = null)
     {
         _dbContext = dbContext;
         _currentProjectContext = ResolveCurrentProjectContext(hostEnvironment?.ContentRootPath);
@@ -178,6 +204,7 @@ public sealed partial class ContextService
         _packDecisionEngine = packDecisionEngine ?? new PackDecisionEngine();
         _packCriticEngine = packCriticEngine ?? new PackCriticEngine();
         _packBuildArchiveService = packBuildArchiveService;
+        _contextEmbeddingService = contextEmbeddingService;
     }
 
     public async Task<ContextPackViewModel?> BuildContextPackAsync(string? question, CancellationToken cancellationToken)
@@ -193,6 +220,7 @@ public sealed partial class ContextService
         var normalizedQuestionPhrase = NormalizePhrase(normalizedQuestion);
         var tokens = Tokenize(normalizedQuestion);
         var semanticTokens = ExpandSemanticTokens(tokens);
+        var semanticProfile = BuildSemanticQueryProfile(normalizedQuestion, tokens, semanticTokens);
         var intentPrediction = _packIntentModel.Predict(normalizedQuestion);
         var preferDurableMemoryLead = ShouldPreferDurableMemoryLead(normalizedQuestion, effectiveInput);
         var fileComparisonQuery = intentPrediction.IsFileComparisonQuery;
@@ -234,6 +262,12 @@ public sealed partial class ContextService
             preferDurableMemoryLead = true;
         }
 
+        var projectCatalog = await _dbContext.CodeGraphProjects
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+        var hasNamedProjectReference = projectCatalog.Any(project => BuildProjectQueryBoost(project, tokens, semanticTokens, normalizedQuestion) >= 5m);
+        var productUiChangeQuery = hasNamedProjectReference && IsProductUiChangeQuery(tokens, normalizedQuestionPhrase);
+
         var webUiQuery = IsWebUiQuery(tokens);
         var cloudOpsQuery = IsCloudOpsQuery(tokens);
         var desktopAppQuery = IsDesktopAppQuery(tokens, normalizedQuestionPhrase);
@@ -262,7 +296,19 @@ public sealed partial class ContextService
                                 || windowsUpdateQuery
                                 || localSupportQuery
                                 || (cloudOpsQuery && !explicitCodeQuery)
-                                || ((webUiQuery || desktopAppQuery) && !currentProjectCodeQuery && !repositoryArchitectureQuery);
+                                || ((webUiQuery || desktopAppQuery) && !currentProjectCodeQuery && !repositoryArchitectureQuery && !hasNamedProjectReference);
+        var allowSemanticHybrid = ShouldEnableSemanticHybrid(
+            normalizedQuestion,
+            fileComparisonQuery,
+            projectHistoryQuery,
+            externalAdminQuery && !explicitCodeQuery,
+            directoryAdminQuery && !explicitCodeQuery,
+            wmiDiagnosticQuery,
+            portCheckQuery,
+            softwareInstallQuery,
+            windowsServicingQuery,
+            windowsUpdateQuery,
+            genericAutomationQuery);
         if (tokens.Count == 0)
         {
             return null;
@@ -399,9 +445,7 @@ public sealed partial class ContextService
         List<CodeGraphNode> nodes = [];
         if (!suppressCodeGraph)
         {
-            projects = await _dbContext.CodeGraphProjects
-                .AsNoTracking()
-                .ToListAsync(cancellationToken);
+            projects = projectCatalog;
             files = await _dbContext.CodeGraphFiles
                 .AsNoTracking()
                 .Include(x => x.Project)
@@ -455,7 +499,7 @@ public sealed partial class ContextService
             ? new Dictionary<Guid, ProjectPreference>()
             : projects.ToDictionary(
                 project => project.Id,
-                project => BuildProjectPreference(project, tokens, normalizedQuestion));
+                project => BuildProjectPreference(project, tokens, semanticTokens, normalizedQuestion));
         var projectHistoryFocusProject = suppressCodeGraph || !projectHistoryQuery
             ? null
             : projects
@@ -476,6 +520,8 @@ public sealed partial class ContextService
                     normalizedQuestion,
                     tokens,
                     semanticTokens,
+                    semanticProfile,
+                    BuildMemorySemanticPolicy(effectiveInput.PackGoal, preferDurableMemoryLead, repositoryArchitectureQuery, projectHistoryQuery),
                     MemoryTrustHelper.GetEffectiveTimestamp(memory.UpdatedUtc, memory.LastVerifiedUtc),
                     new WeightedField(memory.Title, "title", "Title", 20m, "Title matches your question closely.", "Title shares your search terms."),
                     new WeightedField(memory.Summary, "summary", "Summary", 12m, "Summary closely matches the request.", "Summary reinforces the match."),
@@ -544,6 +590,8 @@ public sealed partial class ContextService
                     normalizedQuestion,
                     tokens,
                     semanticTokens,
+                    semanticProfile,
+                    ConservativeSemanticPolicy,
                     todo.UpdatedUtc,
                     new WeightedField(todo.Title, "title", "Title", 20m, "Todo title matches your question closely.", "Todo title shares your search terms."),
                     new WeightedField(todo.Details, "details", "Details", 8m, "Todo details contain the full request.", "Todo details reinforce the match."));
@@ -582,6 +630,8 @@ public sealed partial class ContextService
                     normalizedQuestion,
                     tokens,
                     semanticTokens,
+                    semanticProfile,
+                    ConservativeSemanticPolicy,
                     ticket.UpdatedUtc,
                     new WeightedField($"{ticket.TicketNumber} {ticket.Title}", "title", "Title/number", 20m, "Ticket title or number matches your request closely.", "Ticket title or number overlaps the request."),
                     new WeightedField(ticket.Description, "description", "Description", 8m, "Ticket description contains the full request.", "Ticket description reinforces the match."),
@@ -629,6 +679,8 @@ public sealed partial class ContextService
                     normalizedQuestion,
                     tokens,
                     semanticTokens,
+                    semanticProfile,
+                    BuildProjectSemanticPolicy(projectPreferences[project.Id].HasStrongAffinity && (repositoryArchitectureQuery || currentProjectCodeQuery || hasNamedProjectReference)),
                     project.UpdatedUtc,
                     new WeightedField(project.Name, "name", "Project name", 22m, "Project name matches your request closely.", "Project name overlaps the request."),
                     new WeightedField(project.RootPath, "path", "Project path", 18m, "Project path matches the request.", "Project path overlaps the request."),
@@ -674,10 +726,15 @@ public sealed partial class ContextService
             : files
             .Select(file =>
             {
+                projectPreferences.TryGetValue(file.ProjectId, out var fileProjectPreference);
                 var score = ScoreFields(
                     normalizedQuestion,
                     tokens,
                     semanticTokens,
+                    semanticProfile,
+                    BuildProjectSemanticPolicy(
+                        fileProjectPreference?.HasStrongAffinity == true
+                        && (repositoryArchitectureQuery || currentProjectCodeQuery || hasNamedProjectReference)),
                     file.ScannedUtc,
                     new WeightedField(file.RelativePath, "path", "File path", 20m, "File path matches your request closely.", "File path overlaps the request."),
                     new WeightedField(file.Language, "language", "Language", 5m, "File language matches your request.", "File language reinforces the request."),
@@ -686,14 +743,18 @@ public sealed partial class ContextService
                 score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.CodeGraphFile), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.CodeGraphFile));
                 score = ApplyBoost(score, effectiveInput.PreferRecentChanges && recentFileIds.Contains(file.Id) ? 1.5m : 0m, "Recent change");
                 score = ApplyBoost(score, preferDurableMemoryLead ? 0.25m : 0m, "Supporting file context");
-                if (projectPreferences.TryGetValue(file.ProjectId, out var projectPreference))
+                if (fileProjectPreference is not null)
                 {
-                    score = ApplyBoost(score, projectPreference.ProjectQueryBoost, projectPreference.ProjectQueryBoostLabel);
-                    score = ApplyBoost(score, projectPreference.RepoAffinityBoost, projectPreference.RepoAffinityBoostLabel);
+                    score = ApplyBoost(score, fileProjectPreference.ProjectQueryBoost, fileProjectPreference.ProjectQueryBoostLabel);
+                    score = ApplyBoost(score, fileProjectPreference.RepoAffinityBoost, fileProjectPreference.RepoAffinityBoostLabel);
                     score = ApplyBoost(
                         score,
-                        externalOpsQuery && !projectPreference.HasStrongAffinity ? -8m : 0m,
-                        externalOpsQuery && !projectPreference.HasStrongAffinity ? "Non-code admin query" : string.Empty);
+                        productUiChangeQuery ? BuildProductUiFileBoost(file, nodes, fileProjectPreference.HasStrongAffinity, tokens) : 0m,
+                        productUiChangeQuery ? "Product UI change" : string.Empty);
+                    score = ApplyBoost(
+                        score,
+                        externalOpsQuery && !fileProjectPreference.HasStrongAffinity ? -8m : 0m,
+                        externalOpsQuery && !fileProjectPreference.HasStrongAffinity ? "Non-code admin query" : string.Empty);
                 }
 
                 return new { File = file, Match = score };
@@ -724,10 +785,15 @@ public sealed partial class ContextService
             : nodes
             .Select(node =>
             {
+                projectPreferences.TryGetValue(node.ProjectId, out var nodeProjectPreference);
                 var score = ScoreFields(
                     normalizedQuestion,
                     tokens,
                     semanticTokens,
+                    semanticProfile,
+                    BuildProjectSemanticPolicy(
+                        nodeProjectPreference?.HasStrongAffinity == true
+                        && (repositoryArchitectureQuery || currentProjectCodeQuery || hasNamedProjectReference)),
                     null,
                     new WeightedField(node.Label, "name", "Symbol name", 24m, "Symbol name matches your request closely.", "Symbol name overlaps the request."),
                     new WeightedField(node.File?.RelativePath, "path", "File path", 20m, "File path matches the request.", "File path overlaps the request."),
@@ -737,14 +803,18 @@ public sealed partial class ContextService
                 score = ApplyBoost(score, GoalBoost(effectiveInput.PackGoal, ContextRecordKind.CodeGraphNode), GoalBoostLabel(effectiveInput.PackGoal, ContextRecordKind.CodeGraphNode));
                 score = ApplyBoost(score, effectiveInput.PreferRecentChanges && recentNodeIds.Contains(node.Id) ? 1.5m : 0m, "Recent change");
                 score = ApplyBoost(score, preferDurableMemoryLead ? 0.25m : 0m, "Supporting symbol context");
-                if (projectPreferences.TryGetValue(node.ProjectId, out var projectPreference))
+                if (nodeProjectPreference is not null)
                 {
-                    score = ApplyBoost(score, projectPreference.ProjectQueryBoost, projectPreference.ProjectQueryBoostLabel);
-                    score = ApplyBoost(score, projectPreference.RepoAffinityBoost, projectPreference.RepoAffinityBoostLabel);
+                    score = ApplyBoost(score, nodeProjectPreference.ProjectQueryBoost, nodeProjectPreference.ProjectQueryBoostLabel);
+                    score = ApplyBoost(score, nodeProjectPreference.RepoAffinityBoost, nodeProjectPreference.RepoAffinityBoostLabel);
                     score = ApplyBoost(
                         score,
-                        externalOpsQuery && !projectPreference.HasStrongAffinity ? -8m : 0m,
-                        externalOpsQuery && !projectPreference.HasStrongAffinity ? "Non-code admin query" : string.Empty);
+                        productUiChangeQuery ? BuildProductUiNodeBoost(node, nodeProjectPreference.HasStrongAffinity, tokens) : 0m,
+                        productUiChangeQuery ? "Product UI change" : string.Empty);
+                    score = ApplyBoost(
+                        score,
+                        externalOpsQuery && !nodeProjectPreference.HasStrongAffinity ? -8m : 0m,
+                        externalOpsQuery && !nodeProjectPreference.HasStrongAffinity ? "Non-code admin query" : string.Empty);
                 }
 
                 return new { Node = node, Match = score };
@@ -786,6 +856,12 @@ public sealed partial class ContextService
         projectResults = ApplyLinkBoost(projectResults, linkedKeys);
         fileResults = ApplyLinkBoost(fileResults, linkedKeys);
         nodeResults = ApplyLinkBoost(nodeResults, linkedKeys);
+        if (allowSemanticHybrid)
+        {
+            memoryResults = await ApplySemanticHybridAsync(memoryResults, EmbeddingTargetKind.Memory, normalizedQuestion, cancellationToken);
+            todoResults = await ApplySemanticHybridAsync(todoResults, EmbeddingTargetKind.Todo, normalizedQuestion, cancellationToken);
+            ticketResults = await ApplySemanticHybridAsync(ticketResults, EmbeddingTargetKind.Ticket, normalizedQuestion, cancellationToken);
+        }
 
         var topMatches = BuildTopMatches(
             memoryResults,
@@ -858,6 +934,12 @@ public sealed partial class ContextService
                 .Where(match => IsGenericAutomationRelevantSkill(match.Skill, tokens, normalizedQuestionPhrase))
                 .ToArray();
         }
+        else if (productUiChangeQuery)
+        {
+            recommendedSkillMatches = recommendedSkillMatches
+                .Where(match => IsProductUiRelevantSkill(match.Skill))
+                .ToArray();
+        }
         else if (webUiQuery)
         {
             recommendedSkillMatches = recommendedSkillMatches
@@ -881,6 +963,10 @@ public sealed partial class ContextService
             recommendedSkillMatches = recommendedSkillMatches
                 .Where(match => IsRepositoryArchitectureRelevantSkill(match.Skill))
                 .ToArray();
+        }
+        if (allowSemanticHybrid)
+        {
+            recommendedSkillMatches = await ApplySkillSemanticHybridAsync(recommendedSkillMatches, normalizedQuestion, cancellationToken);
         }
 
         var recommendedSkills = recommendedSkillMatches
@@ -971,7 +1057,7 @@ public sealed partial class ContextService
                 Array.Empty<DashboardWarningViewModel>(),
                 Array.Empty<string>())
         };
-        var allowCodeGraph = explicitCodeQuery || repositoryArchitectureQuery || projectHistoryQuery || currentProjectHint;
+        var allowCodeGraph = explicitCodeQuery || repositoryArchitectureQuery || projectHistoryQuery || currentProjectHint || hasNamedProjectReference;
         var (finalPack, alreadyArchived) = await RunCriticLoopAsync(
             candidatePack,
             normalizedQuestion,
@@ -2208,6 +2294,160 @@ public sealed partial class ContextService
             .ToArray();
     }
 
+    private bool ShouldEnableSemanticHybrid(
+        string normalizedQuestion,
+        bool fileComparisonQuery,
+        bool projectHistoryQuery,
+        bool externalAdminQuery,
+        bool directoryAdminQuery,
+        bool wmiDiagnosticQuery,
+        bool portCheckQuery,
+        bool softwareInstallQuery,
+        bool windowsServicingQuery,
+        bool windowsUpdateQuery,
+        bool genericAutomationQuery)
+        => _contextEmbeddingService?.IsEnabled == true
+           && !string.IsNullOrWhiteSpace(normalizedQuestion)
+           && !fileComparisonQuery
+           && !projectHistoryQuery
+           && !externalAdminQuery
+           && !directoryAdminQuery
+           && !wmiDiagnosticQuery
+           && !portCheckQuery
+           && !softwareInstallQuery
+           && !windowsServicingQuery
+           && !windowsUpdateQuery
+           && !genericAutomationQuery;
+
+    private async Task<ContextRecordViewModel[]> ApplySemanticHybridAsync(
+        ContextRecordViewModel[] items,
+        EmbeddingTargetKind targetKind,
+        string question,
+        CancellationToken cancellationToken)
+    {
+        if (_contextEmbeddingService is null || items.Length == 0)
+        {
+            return items;
+        }
+
+        var candidateTexts = items.ToDictionary(
+            item => item.Id,
+            BuildSemanticCandidateText);
+        var semanticScores = await _contextEmbeddingService.ScoreAsync(targetKind, question, candidateTexts, cancellationToken);
+        if (semanticScores.Count == 0)
+        {
+            return items;
+        }
+
+        return items
+            .Select(item => semanticScores.TryGetValue(item.Id, out var semanticScore)
+                ? ApplySemanticBoost(item, semanticScore)
+                : item)
+            .OrderByDescending(item => item.Score)
+            .ThenBy(item => item.Title)
+            .ToArray();
+    }
+
+    private async Task<SkillRecommendationMatch[]> ApplySkillSemanticHybridAsync(
+        IReadOnlyCollection<SkillRecommendationMatch> matches,
+        string question,
+        CancellationToken cancellationToken)
+    {
+        if (_contextEmbeddingService is null || matches.Count == 0)
+        {
+            return matches.ToArray();
+        }
+
+        var candidateTexts = matches.ToDictionary(
+            match => match.Skill.Id,
+            match => BuildSemanticCandidateText(match.Skill));
+        var semanticScores = await _contextEmbeddingService.ScoreAsync(EmbeddingTargetKind.Skill, question, candidateTexts, cancellationToken);
+        if (semanticScores.Count == 0)
+        {
+            return matches.ToArray();
+        }
+
+        return matches
+            .Select(match =>
+            {
+                if (!semanticScores.TryGetValue(match.Skill.Id, out var semanticScore))
+                {
+                    return match;
+                }
+
+                var reason = string.IsNullOrWhiteSpace(match.Reason)
+                    ? $"{semanticScore.Label} complements the lexical match."
+                    : $"{match.Reason} {semanticScore.Label} reinforces the match.";
+                return match with
+                {
+                    Score = match.Score + semanticScore.Boost,
+                    Reason = reason
+                };
+            })
+            .OrderByDescending(match => match.Score)
+            .ThenByDescending(match => match.Skill.IsPinned)
+            .ThenByDescending(match => match.Skill.UseCount)
+            .ThenByDescending(match => match.Skill.LastUsedUtc ?? DateTime.MinValue)
+            .ThenBy(match => match.Skill.Name)
+            .ToArray();
+    }
+
+    private static ContextRecordViewModel ApplySemanticBoost(ContextRecordViewModel item, SemanticCandidateScore semanticScore)
+    {
+        var boostedScore = item.Score + semanticScore.Boost;
+        var provenance = item.Provenance is null
+            ? null
+            : new ContextMatchDetailViewModel
+            {
+                MatchedTokens = item.Provenance.MatchedTokens,
+                FieldHits = item.Provenance.FieldHits,
+                ExactPhraseMatched = item.Provenance.ExactPhraseMatched,
+                Boosts = item.Provenance.Boosts.Concat(new[]
+                {
+                    new ContextMatchBoostViewModel
+                    {
+                        Label = semanticScore.Label,
+                        Value = semanticScore.Boost
+                    }
+                }).ToArray()
+            };
+
+        return new ContextRecordViewModel
+        {
+            Kind = item.Kind,
+            Id = item.Id,
+            KindLabel = item.KindLabel,
+            Title = item.Title,
+            Subtitle = item.Subtitle,
+            Preview = item.Preview,
+            Url = item.Url,
+            Score = boostedScore,
+            SemanticScore = item.SemanticScore + semanticScore.Boost,
+            ScoreLabel = FormatScore(boostedScore),
+            MatchReason = string.IsNullOrWhiteSpace(item.MatchReason)
+                ? $"{semanticScore.Label} complements the lexical match."
+                : $"{item.MatchReason} {semanticScore.Label} reinforces the match.",
+            FreshnessWarning = item.FreshnessWarning,
+            DuplicateWarning = item.DuplicateWarning,
+            DuplicateCandidateId = item.DuplicateCandidateId,
+            IsLinked = item.IsLinked,
+            Provenance = provenance
+        };
+    }
+
+    private static string BuildSemanticCandidateText(ContextRecordViewModel item)
+        => string.Join(" ", new[] { item.Title, item.Subtitle, item.Preview }.Where(value => !string.IsNullOrWhiteSpace(value)));
+
+    private static string BuildSemanticCandidateText(SkillEntry skill)
+        => string.Join(" ", new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.TriggerHintsText,
+            skill.WhenToUse,
+            skill.Flow
+        }.Where(value => !string.IsNullOrWhiteSpace(value)));
+
     private async Task TouchMemoryReferencesAsync(IReadOnlyCollection<Guid> memoryIds, CancellationToken cancellationToken)
     {
         if (memoryIds.Count == 0)
@@ -2234,6 +2474,8 @@ public sealed partial class ContextService
         string question,
         IReadOnlyCollection<string> tokens,
         IReadOnlyCollection<string> semanticTokens,
+        SemanticQueryProfile semanticProfile,
+        SemanticScoringPolicy semanticPolicy,
         DateTime? updatedUtc,
         params WeightedField[] fields)
     {
@@ -2312,11 +2554,51 @@ public sealed partial class ContextService
                 var semanticBoost = Math.Min(semanticOverlap.Length, 3) * Math.Max(field.PerTokenWeight / 4m, 1m);
                 score += semanticBoost;
                 semanticScore += semanticBoost;
+                if (overlap.Length > 0 || matchedTokens.Count > 0)
+                {
+                    foreach (var semanticToken in semanticOverlap)
+                    {
+                        matchedTokens.Add(semanticToken);
+                    }
+                }
                 boosts.Add(new ContextMatchBoostViewModel
                 {
                     Label = $"{field.Label} semantic similarity",
                     Value = semanticBoost
                 });
+            }
+
+            var semanticSignal = ScoreSemanticField(normalizedField, fieldTokens, fieldSemanticTokens, semanticProfile);
+            if (semanticSignal.SharedQueryTerms.Count >= semanticPolicy.MinimumSharedTerms
+                && semanticSignal.Similarity >= semanticPolicy.MinimumSimilarity)
+            {
+                var denseBoost = Math.Min(
+                    semanticPolicy.MaxBoost,
+                    Math.Round(
+                        semanticSignal.Similarity
+                        * Math.Max(field.PerTokenWeight * semanticPolicy.BoostMultiplier, 1m),
+                        2));
+
+                if (denseBoost > 0m)
+                {
+                    score += denseBoost;
+                    semanticScore += denseBoost;
+                    boosts.Add(new ContextMatchBoostViewModel
+                    {
+                        Label = $"{field.Label} hybrid semantic match",
+                        Value = denseBoost
+                    });
+                }
+
+                if (overlap.Length == 0)
+                {
+                    fieldHits.Add(new ContextMatchFieldHitViewModel
+                    {
+                        FieldKey = field.Key,
+                        Label = $"{field.Label} semantic",
+                        Tokens = semanticSignal.SharedQueryTerms
+                    });
+                }
             }
 
             var phraseSimilarity = ScorePhraseSimilarity(normalizedQuestion, normalizedField);
@@ -2359,7 +2641,8 @@ public sealed partial class ContextService
             return ContextScoreOutcome.None;
         }
 
-        var tokenCoverageBoost = (decimal)matchedTokens.Count / tokens.Count * 20m;
+        var matchedTokenCount = Math.Min(matchedTokens.Count, tokens.Count);
+        var tokenCoverageBoost = (decimal)matchedTokenCount / tokens.Count * 20m;
         score += tokenCoverageBoost;
         boosts.Add(new ContextMatchBoostViewModel
         {
@@ -2380,11 +2663,11 @@ public sealed partial class ContextService
 
         if (string.IsNullOrWhiteSpace(reason))
         {
-            reason = matchedTokens.Count == tokens.Count
+            reason = matchedTokenCount == tokens.Count
                 ? "All search terms matched."
-                : matchedTokens.Count == 1
+                : matchedTokenCount == 1
                     ? $"Matched \"{matchedTokens.First()}\"."
-                    : $"Matched {matchedTokens.Count} search terms.";
+                    : $"Matched {matchedTokenCount} search terms.";
         }
 
         return new ContextScoreOutcome(
@@ -2612,9 +2895,13 @@ public sealed partial class ContextService
             : string.Empty;
     }
 
-    private ProjectPreference BuildProjectPreference(CodeGraphProject project, IReadOnlyCollection<string> tokens, string normalizedQuestion)
+    private ProjectPreference BuildProjectPreference(
+        CodeGraphProject project,
+        IReadOnlyCollection<string> tokens,
+        IReadOnlyCollection<string> semanticTokens,
+        string normalizedQuestion)
     {
-        var projectQueryBoost = BuildProjectQueryBoost(project, tokens, normalizedQuestion);
+        var projectQueryBoost = BuildProjectQueryBoost(project, tokens, semanticTokens, normalizedQuestion);
         var repoAffinityBoost = BuildProjectRepoAffinityBoost(project, tokens, projectQueryBoost > 0m);
         return new ProjectPreference(
             projectQueryBoost,
@@ -2624,11 +2911,17 @@ public sealed partial class ContextService
             projectQueryBoost >= 5m || repoAffinityBoost > 0m);
     }
 
-    private static decimal BuildProjectQueryBoost(CodeGraphProject project, IReadOnlyCollection<string> tokens, string normalizedQuestion)
+    private static decimal BuildProjectQueryBoost(
+        CodeGraphProject project,
+        IReadOnlyCollection<string> tokens,
+        IReadOnlyCollection<string> semanticTokens,
+        string normalizedQuestion)
     {
         var projectTokens = Tokenize($"{project.Name} {Path.GetFileName(project.RootPath)}");
         var directMatches = tokens.Intersect(projectTokens, StringComparer.OrdinalIgnoreCase).Count();
-        if (directMatches >= 2)
+        var semanticProjectTokens = ExpandSemanticTokens(projectTokens);
+        var semanticMatches = semanticTokens.Intersect(semanticProjectTokens, StringComparer.OrdinalIgnoreCase).Count();
+        if (directMatches >= 2 || semanticMatches >= 2)
         {
             return 5m;
         }
@@ -2641,7 +2934,7 @@ public sealed partial class ContextService
             return 5m;
         }
 
-        return directMatches == 1 ? 2.5m : 0m;
+        return directMatches == 1 || semanticMatches == 1 ? 2.5m : 0m;
     }
 
     private decimal BuildProjectRepoAffinityBoost(CodeGraphProject project, IReadOnlyCollection<string> tokens, bool explicitProjectMatch)
@@ -2742,6 +3035,13 @@ public sealed partial class ContextService
     private static bool IsWebUiQuery(IReadOnlyCollection<string> tokens)
         => tokens.Count(token => WebUiTokens.Contains(token)) >= 2;
 
+    private static bool IsProductUiChangeQuery(IReadOnlyCollection<string> tokens, string normalizedQuery)
+        => tokens.Count(token => ProductUiChangeTokens.Contains(token)) >= 2
+           || normalizedQuery.Contains("company address", StringComparison.Ordinal)
+           || normalizedQuery.Contains("add location", StringComparison.Ordinal)
+           || normalizedQuery.Contains("single location", StringComparison.Ordinal)
+           || normalizedQuery.Contains("create new location", StringComparison.Ordinal);
+
     private static bool IsCloudOpsQuery(IReadOnlyCollection<string> tokens)
         => tokens.Count(token => CloudOpsTokens.Contains(token)) >= 2;
 
@@ -2792,6 +3092,182 @@ public sealed partial class ContextService
         return productTokens.Contains("grey", StringComparer.OrdinalIgnoreCase) || productTokens.Contains("canary", StringComparer.OrdinalIgnoreCase)
             ? -48m
             : -18m;
+    }
+
+    private static decimal BuildProductUiFileBoost(CodeGraphFile file, IReadOnlyCollection<CodeGraphNode> nodes, bool strongProjectAffinity, IReadOnlyCollection<string> tokens)
+    {
+        if (!strongProjectAffinity)
+        {
+            return 0m;
+        }
+
+        var relativePath = file.RelativePath ?? string.Empty;
+        var normalizedPath = NormalizePhrase(relativePath);
+        var boost = 0m;
+        var hasBusinessFormSignals = tokens.Any(token => token is "location" or "company" or "address" or "client" or "checkbox" or "slider");
+        var explicitStaticSiteQuery = tokens.Any(token => token is "website" or "web" or "site" or "homepage" or "css" or "frontend" or "landing");
+        var explicitBusinessFormPath =
+            normalizedPath.Contains("clients", StringComparison.Ordinal)
+            || normalizedPath.Contains("clientmanagement", StringComparison.Ordinal)
+            || normalizedPath.Contains("customization", StringComparison.Ordinal)
+            || normalizedPath.Contains("edit", StringComparison.Ordinal)
+            || normalizedPath.Contains("location", StringComparison.Ordinal);
+
+        if (relativePath.StartsWith("src/GreyCanary.Platform/", StringComparison.OrdinalIgnoreCase))
+        {
+            boost += 4m;
+        }
+
+        if (hasBusinessFormSignals && normalizedPath.Contains("client", StringComparison.Ordinal))
+        {
+            boost += 6m;
+        }
+
+        if (hasBusinessFormSignals && explicitBusinessFormPath)
+        {
+            boost += 10m;
+        }
+
+        if (hasBusinessFormSignals && normalizedPath.Contains("controller", StringComparison.Ordinal))
+        {
+            boost += 3m;
+        }
+
+        if (hasBusinessFormSignals
+            && (normalizedPath.Contains("clientscontroller", StringComparison.Ordinal)
+                || normalizedPath.Contains("locationscontroller", StringComparison.Ordinal)))
+        {
+            boost += 6m;
+        }
+
+        if (hasBusinessFormSignals
+            && ((normalizedPath.Contains("clients", StringComparison.Ordinal) && normalizedPath.Contains("edit", StringComparison.Ordinal))
+                || normalizedPath.Contains("location", StringComparison.Ordinal)))
+        {
+            boost += 4m;
+        }
+
+        if (hasBusinessFormSignals && normalizedPath.Contains("test", StringComparison.Ordinal))
+        {
+            boost += 4m;
+        }
+
+        if (normalizedPath.Contains("viewmodel", StringComparison.Ordinal)
+            || normalizedPath.Contains("client", StringComparison.Ordinal)
+            || normalizedPath.Contains("controller", StringComparison.Ordinal))
+        {
+            boost += 2m;
+        }
+
+        var relatedNodeText = string.Join(' ',
+            nodes.Where(node => node.FileId == file.Id)
+                .Take(20)
+                .Select(node => $"{node.Label} {node.SecondaryLabel} {node.Metadata}"));
+        var relatedNodeTokens = Tokenize(relatedNodeText);
+        boost += Math.Min(tokens.Intersect(relatedNodeTokens, StringComparer.OrdinalIgnoreCase).Count() * 0.8m, 4m);
+
+        if (relativePath.StartsWith("website/", StringComparison.OrdinalIgnoreCase))
+        {
+            boost -= hasBusinessFormSignals && !explicitStaticSiteQuery ? 18m : hasBusinessFormSignals ? 10m : 4m;
+
+            if (hasBusinessFormSignals
+                && !explicitStaticSiteQuery
+                && (normalizedPath.Contains("assets", StringComparison.Ordinal)
+                    || normalizedPath.Contains("site js", StringComparison.Ordinal)
+                    || normalizedPath.Contains("package site", StringComparison.Ordinal)))
+            {
+                boost -= 6m;
+            }
+        }
+
+        if (relativePath.StartsWith("deploy/", StringComparison.OrdinalIgnoreCase)
+            || relativePath.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase)
+            || relativePath.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
+        {
+            boost -= hasBusinessFormSignals && !explicitStaticSiteQuery ? 20m : hasBusinessFormSignals ? 12m : 6m;
+        }
+
+        return boost;
+    }
+
+    private static decimal BuildProductUiNodeBoost(CodeGraphNode node, bool strongProjectAffinity, IReadOnlyCollection<string> tokens)
+    {
+        if (!strongProjectAffinity)
+        {
+            return 0m;
+        }
+
+        var path = node.File?.RelativePath ?? string.Empty;
+        var searchableText = NormalizePhrase($"{node.Label} {node.SecondaryLabel} {node.Metadata} {path}");
+        var boost = 0m;
+        var hasBusinessFormSignals = tokens.Any(token => token is "location" or "company" or "address" or "client" or "checkbox" or "slider");
+        var explicitStaticSiteQuery = tokens.Any(token => token is "website" or "web" or "site" or "homepage" or "css" or "frontend" or "landing");
+        var explicitBusinessFormPath =
+            searchableText.Contains("clients", StringComparison.Ordinal)
+            || searchableText.Contains("clientmanagement", StringComparison.Ordinal)
+            || searchableText.Contains("customization", StringComparison.Ordinal)
+            || searchableText.Contains("edit", StringComparison.Ordinal)
+            || searchableText.Contains("location", StringComparison.Ordinal);
+
+        if (path.StartsWith("src/GreyCanary.Platform/", StringComparison.OrdinalIgnoreCase))
+        {
+            boost += 4m;
+        }
+
+        boost += Math.Min(tokens.Count(token => searchableText.Contains(token, StringComparison.Ordinal)) * 0.8m, 5m);
+
+        if (hasBusinessFormSignals && explicitBusinessFormPath)
+        {
+            boost += 8m;
+        }
+
+        if (hasBusinessFormSignals
+            && (searchableText.Contains("client", StringComparison.Ordinal)
+                || searchableText.Contains("location", StringComparison.Ordinal)
+                || searchableText.Contains("address", StringComparison.Ordinal)
+                || searchableText.Contains("checkbox", StringComparison.Ordinal)))
+        {
+            boost += 5m;
+        }
+
+        if (hasBusinessFormSignals
+            && (searchableText.Contains("clientscontroller", StringComparison.Ordinal)
+                || searchableText.Contains("locationscontroller", StringComparison.Ordinal)))
+        {
+            boost += 6m;
+        }
+
+        if (node.NodeType is CodeGraphNodeType.Type or CodeGraphNodeType.Method or CodeGraphNodeType.Property)
+        {
+            boost += 1.5m;
+        }
+
+        if (node.NodeType == CodeGraphNodeType.File)
+        {
+            boost -= 2m;
+        }
+
+        if (path.StartsWith("website/", StringComparison.OrdinalIgnoreCase))
+        {
+            boost -= hasBusinessFormSignals && !explicitStaticSiteQuery ? 22m : hasBusinessFormSignals ? 10m : 4m;
+
+            if (hasBusinessFormSignals
+                && !explicitStaticSiteQuery
+                && (searchableText.Contains("assets", StringComparison.Ordinal)
+                    || searchableText.Contains("site js", StringComparison.Ordinal)
+                    || searchableText.Contains("render", StringComparison.Ordinal)))
+            {
+                boost -= 6m;
+            }
+        }
+
+        if (path.StartsWith("deploy/", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase))
+        {
+            boost -= hasBusinessFormSignals && !explicitStaticSiteQuery ? 20m : hasBusinessFormSignals ? 12m : 6m;
+        }
+
+        return boost;
     }
 
     private static int GetDirectoryAdminDomainMatchCount(MemoryEntry memory)
@@ -3284,6 +3760,25 @@ public sealed partial class ContextService
         return tokens.Count(token => WebUiHighSignalTokens.Contains(token)) >= 2;
     }
 
+    private static bool IsProductUiRelevantSkill(SkillEntry skill)
+    {
+        var text = string.Join(' ', new[]
+        {
+            skill.Name,
+            skill.Summary,
+            skill.WhenToUse,
+            skill.Flow,
+            skill.TriggerHintsText
+        });
+        var tokens = Tokenize(text);
+        var normalizedText = NormalizePhrase(text);
+        var hasUiSignals = tokens.Count(token => WebUiHighSignalTokens.Contains(token)) >= 1
+                           || tokens.Count(token => ProductUiChangeTokens.Contains(token)) >= 2
+                           || normalizedText.Contains("web application", StringComparison.Ordinal);
+        var hasOpsNoise = tokens.Any(token => token is "install" or "installer" or "windows" or "update" or "updates" or "telemetry" or "azure" or "cloud");
+        return hasUiSignals && !hasOpsNoise;
+    }
+
     private static bool IsCloudOpsRelevantMemory(MemoryEntry memory)
     {
         var text = string.Join(' ', new[]
@@ -3539,6 +4034,193 @@ public sealed partial class ContextService
         return expanded;
     }
 
+    private static SemanticQueryProfile BuildSemanticQueryProfile(
+        string question,
+        IReadOnlyCollection<string> tokens,
+        IReadOnlyCollection<string> semanticTokens)
+    {
+        var normalizedQuestion = NormalizePhrase(question);
+        var conceptTokens = BuildSemanticConceptTokens(normalizedQuestion, semanticTokens);
+        var features = BuildSemanticFeatureVector(normalizedQuestion, tokens, semanticTokens, conceptTokens);
+        return new SemanticQueryProfile(
+            normalizedQuestion,
+            conceptTokens,
+            features,
+            ComputeVectorMagnitude(features));
+    }
+
+    private static SemanticFieldSignal ScoreSemanticField(
+        string normalizedField,
+        IReadOnlyCollection<string> fieldTokens,
+        IReadOnlyCollection<string> fieldSemanticTokens,
+        SemanticQueryProfile semanticProfile)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedField))
+        {
+            return SemanticFieldSignal.None;
+        }
+
+        var fieldConceptTokens = BuildSemanticConceptTokens(normalizedField, fieldSemanticTokens);
+        var sharedQueryTerms = semanticProfile.ConceptTokens
+            .Intersect(fieldConceptTokens, StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .Take(4)
+            .ToArray();
+
+        var features = BuildSemanticFeatureVector(normalizedField, fieldTokens, fieldSemanticTokens, fieldConceptTokens);
+        var magnitude = ComputeVectorMagnitude(features);
+        if (magnitude <= 0d)
+        {
+            return sharedQueryTerms.Length == 0
+                ? SemanticFieldSignal.None
+                : new SemanticFieldSignal(0m, sharedQueryTerms);
+        }
+
+        var cosineSimilarity = ComputeCosineSimilarity(semanticProfile.Features, semanticProfile.Magnitude, features, magnitude);
+        var conceptCoverage = semanticProfile.ConceptTokens.Count == 0
+            ? 0d
+            : (double)sharedQueryTerms.Length / Math.Min(6, semanticProfile.ConceptTokens.Count);
+        var phrasing = (double)ScorePhraseSimilarity(semanticProfile.NormalizedQuestion, normalizedField);
+        var similarity = Math.Round((decimal)Math.Min(1d, (cosineSimilarity * 0.65d) + (conceptCoverage * 0.20d) + (phrasing * 0.15d)), 4);
+        return similarity <= 0m && sharedQueryTerms.Length == 0
+            ? SemanticFieldSignal.None
+            : new SemanticFieldSignal(similarity, sharedQueryTerms);
+    }
+
+    private static IReadOnlyCollection<string> BuildSemanticConceptTokens(string normalizedText, IEnumerable<string> semanticTokens)
+    {
+        var concepts = new HashSet<string>(semanticTokens.Select(StemToken), StringComparer.OrdinalIgnoreCase);
+        foreach (var bigram in EnumerateSemanticBigrams(normalizedText))
+        {
+            concepts.Add(bigram);
+        }
+
+        return concepts;
+    }
+
+    private static IReadOnlyDictionary<int, double> BuildSemanticFeatureVector(
+        string normalizedText,
+        IEnumerable<string> tokens,
+        IEnumerable<string> semanticTokens,
+        IReadOnlyCollection<string> conceptTokens)
+    {
+        var features = new Dictionary<int, double>();
+        foreach (var token in tokens.Select(StemToken))
+        {
+            AddSemanticFeature(features, $"tok:{token}", 1d);
+        }
+
+        foreach (var token in semanticTokens.Select(StemToken))
+        {
+            AddSemanticFeature(features, $"sem:{token}", 0.65d);
+        }
+
+        foreach (var concept in conceptTokens)
+        {
+            AddSemanticFeature(features, $"concept:{concept}", 0.55d);
+        }
+
+        foreach (var trigram in EnumerateCharacterTrigrams(normalizedText))
+        {
+            AddSemanticFeature(features, $"tri:{trigram}", 0.14d);
+        }
+
+        return features;
+    }
+
+    private static void AddSemanticFeature(IDictionary<int, double> features, string value, double weight)
+    {
+        if (string.IsNullOrWhiteSpace(value) || weight == 0d)
+        {
+            return;
+        }
+
+        var key = (int)((uint)GetStableHash(value) % 384u);
+        features[key] = features.TryGetValue(key, out var existing)
+            ? existing + weight
+            : weight;
+    }
+
+    private static double ComputeVectorMagnitude(IReadOnlyDictionary<int, double> vector)
+        => Math.Sqrt(vector.Values.Sum(value => value * value));
+
+    private static double ComputeCosineSimilarity(
+        IReadOnlyDictionary<int, double> left,
+        double leftMagnitude,
+        IReadOnlyDictionary<int, double> right,
+        double rightMagnitude)
+    {
+        if (leftMagnitude <= 0d || rightMagnitude <= 0d)
+        {
+            return 0d;
+        }
+
+        var dotProduct = 0d;
+        var (smaller, larger) = left.Count <= right.Count ? (left, right) : (right, left);
+        foreach (var pair in smaller)
+        {
+            if (larger.TryGetValue(pair.Key, out var other))
+            {
+                dotProduct += pair.Value * other;
+            }
+        }
+
+        return dotProduct / (leftMagnitude * rightMagnitude);
+    }
+
+    private static IEnumerable<string> EnumerateSemanticBigrams(string normalizedText)
+    {
+        var terms = normalizedText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        for (var index = 0; index < terms.Length - 1; index++)
+        {
+            yield return $"{StemToken(terms[index])}_{StemToken(terms[index + 1])}";
+        }
+    }
+
+    private static IEnumerable<string> EnumerateCharacterTrigrams(string normalizedText)
+    {
+        var compactText = normalizedText.Replace(" ", string.Empty, StringComparison.Ordinal);
+        for (var index = 0; index <= compactText.Length - 3; index++)
+        {
+            yield return compactText.Substring(index, 3);
+        }
+    }
+
+    private static int GetStableHash(string value)
+    {
+        unchecked
+        {
+            var hash = (int)2166136261;
+            foreach (var character in value)
+            {
+                hash ^= character;
+                hash *= 16777619;
+            }
+
+            return hash;
+        }
+    }
+
+    private static SemanticScoringPolicy BuildMemorySemanticPolicy(
+        ContextPackGoal packGoal,
+        bool preferDurableMemoryLead,
+        bool repositoryArchitectureQuery,
+        bool projectHistoryQuery)
+    {
+        var preferBroaderSemanticBoost = packGoal is ContextPackGoal.Architecture or ContextPackGoal.Research
+            || preferDurableMemoryLead
+            || repositoryArchitectureQuery
+            || projectHistoryQuery;
+        return preferBroaderSemanticBoost
+            ? PreferMemorySemanticPolicy
+            : ConservativeSemanticPolicy;
+    }
+
+    private static SemanticScoringPolicy BuildProjectSemanticPolicy(bool strongAffinity)
+        => strongAffinity
+            ? StrongAffinitySemanticPolicy
+            : ConservativeSemanticPolicy;
+
     private static string StemToken(string token)
     {
         var normalized = token.Trim().ToLowerInvariant();
@@ -3591,9 +4273,27 @@ public sealed partial class ContextService
     [GeneratedRegex("[a-z0-9]+", RegexOptions.Compiled)]
     private static partial Regex WordRegex();
 
+    private static readonly SemanticScoringPolicy ConservativeSemanticPolicy = new(0.68m, 0.45m, 10m, 2);
+    private static readonly SemanticScoringPolicy PreferMemorySemanticPolicy = new(0.66m, 0.50m, 12m, 2);
+    private static readonly SemanticScoringPolicy StrongAffinitySemanticPolicy = new(0.70m, 0.55m, 12m, 2);
+
     private sealed record WeightedField(string? Text, string Key, string Label, decimal PerTokenWeight, string ExactReason, string PartialReason);
     private sealed record CurrentProjectContext(string RootPath, IReadOnlyCollection<string> Tokens);
     private sealed record ProjectPreference(decimal ProjectQueryBoost, string ProjectQueryBoostLabel, decimal RepoAffinityBoost, string RepoAffinityBoostLabel, bool HasStrongAffinity);
+    private sealed record SemanticQueryProfile(
+        string NormalizedQuestion,
+        IReadOnlyCollection<string> ConceptTokens,
+        IReadOnlyDictionary<int, double> Features,
+        double Magnitude);
+    private sealed record SemanticFieldSignal(decimal Similarity, IReadOnlyCollection<string> SharedQueryTerms)
+    {
+        public static SemanticFieldSignal None { get; } = new(0m, Array.Empty<string>());
+    }
+    private sealed record SemanticScoringPolicy(
+        decimal MinimumSimilarity,
+        decimal BoostMultiplier,
+        decimal MaxBoost,
+        int MinimumSharedTerms);
     private sealed record ContextScoreOutcome(
         decimal Score,
         decimal SemanticScore,

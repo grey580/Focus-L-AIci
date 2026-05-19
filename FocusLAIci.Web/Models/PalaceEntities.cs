@@ -285,6 +285,20 @@ public sealed class ContextLinkEntry
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
 }
 
+public sealed class EmbeddingEntry
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public EmbeddingTargetKind TargetKind { get; set; }
+    public Guid TargetId { get; set; }
+
+    [MaxLength(128)]
+    public string ContentHash { get; set; } = string.Empty;
+
+    public int VectorSize { get; set; }
+    public byte[] VectorBlob { get; set; } = Array.Empty<byte>();
+    public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
+}
+
 public enum MemoryKind
 {
     Decision = 1,
@@ -377,6 +391,14 @@ public enum ContextRecordKind
     CodeGraphProject = 4,
     CodeGraphNode = 5,
     CodeGraphFile = 6
+}
+
+public enum EmbeddingTargetKind
+{
+    Memory = 1,
+    Todo = 2,
+    Ticket = 3,
+    Skill = 4
 }
 
 public enum SkillCategory

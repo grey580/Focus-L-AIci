@@ -210,6 +210,19 @@ public static class MemorySeeder
             cancellationToken);
         await dbContext.Database.ExecuteSqlRawAsync(
             """
+            CREATE TABLE IF NOT EXISTS Embeddings (
+                Id TEXT NOT NULL CONSTRAINT PK_Embeddings PRIMARY KEY,
+                TargetKind INTEGER NOT NULL,
+                TargetId TEXT NOT NULL,
+                ContentHash TEXT NOT NULL,
+                VectorSize INTEGER NOT NULL,
+                VectorBlob BLOB NOT NULL,
+                UpdatedUtc TEXT NOT NULL
+            );
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
             CREATE TABLE IF NOT EXISTS PackBuildRecords (
                 Id TEXT NOT NULL CONSTRAINT PK_PackBuildRecords PRIMARY KEY,
                 Question TEXT NOT NULL,
@@ -388,6 +401,18 @@ public static class MemorySeeder
             """
             CREATE UNIQUE INDEX IF NOT EXISTS IX_ContextLinks_SourceKind_SourceId_TargetKind_TargetId
             ON ContextLinks(SourceKind, SourceId, TargetKind, TargetId);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_Embeddings_TargetKind_TargetId
+            ON Embeddings(TargetKind, TargetId);
+            """,
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            CREATE INDEX IF NOT EXISTS IX_Embeddings_UpdatedUtc
+            ON Embeddings(UpdatedUtc);
             """,
             cancellationToken);
         await EnsureColumnExistsAsync(dbContext, "Memories", "VerificationStatus", "INTEGER NOT NULL DEFAULT 1", cancellationToken);

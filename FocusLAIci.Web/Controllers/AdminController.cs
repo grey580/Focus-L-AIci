@@ -68,7 +68,7 @@ public sealed class AdminController : Controller
         }
 
         var model = await _palaceService.GetInspectorAsync(
-            input is not null && string.IsNullOrWhiteSpace(input.Question) && !input.IncludeCompletedWork && input.ExpandHistory && input.ResultsPerSection == 6
+            input is not null && string.IsNullOrWhiteSpace(input.Question) && input.IncludeCompletedWork && input.ExpandHistory && input.ResultsPerSection == 6
                 ? null
                 : input,
             cancellationToken);

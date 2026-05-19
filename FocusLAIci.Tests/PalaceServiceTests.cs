@@ -1654,6 +1654,165 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task ContextService_NamedProductWebUiQueries_SurfaceAliasedCodeGraphMatches()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        var greyCanaryProject = new CodeGraphProject
+        {
+            Name = "Grey Canary",
+            RootPath = @"C:\Copilot\Grey Canary",
+            Description = "Grey Snare platform, installer, and UI code.",
+            Summary = "Client management and location workflows.",
+            UpdatedUtc = DateTime.UtcNow
+        };
+        var unrelatedProject = new CodeGraphProject
+        {
+            Name = "Simple SMB Tester",
+            RootPath = @"C:\Copilot\Simple SMB Tester",
+            Description = "Desktop SMB diagnostics.",
+            Summary = "Unrelated utility source.",
+            UpdatedUtc = DateTime.UtcNow
+        };
+
+        dbContext.CodeGraphProjects.AddRange(greyCanaryProject, unrelatedProject);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var greyCanaryFile = new CodeGraphFile
+        {
+            ProjectId = greyCanaryProject.Id,
+            RelativePath = "src/GreyCanary.Platform/Models/ViewModels.cs",
+            Language = "C#",
+            LineCount = 240,
+            ScannedUtc = DateTime.UtcNow
+        };
+        var greyCanaryClientFile = new CodeGraphFile
+        {
+            ProjectId = greyCanaryProject.Id,
+            RelativePath = "src/GreyCanary.Platform/Controllers/ClientsController.cs",
+            Language = "C#",
+            LineCount = 343,
+            ScannedUtc = DateTime.UtcNow
+        };
+        var greyCanaryStaticSiteFile = new CodeGraphFile
+        {
+            ProjectId = greyCanaryProject.Id,
+            RelativePath = "website/www.grey-snare.com/site/assets/js/site.js",
+            Language = "JavaScript",
+            LineCount = 58,
+            ScannedUtc = DateTime.UtcNow
+        };
+        var greyCanaryInstallerFile = new CodeGraphFile
+        {
+            ProjectId = greyCanaryProject.Id,
+            RelativePath = "deploy/install-agent.ps1",
+            Language = "PowerShell",
+            LineCount = 82,
+            ScannedUtc = DateTime.UtcNow
+        };
+        var unrelatedFile = new CodeGraphFile
+        {
+            ProjectId = unrelatedProject.Id,
+            RelativePath = "src/SmbClient/MainWindow.cs",
+            Language = "C#",
+            LineCount = 180,
+            ScannedUtc = DateTime.UtcNow
+        };
+        dbContext.CodeGraphFiles.AddRange(greyCanaryFile, greyCanaryClientFile, greyCanaryStaticSiteFile, greyCanaryInstallerFile, unrelatedFile);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        dbContext.CodeGraphNodes.AddRange(
+            new CodeGraphNode
+            {
+                ProjectId = greyCanaryProject.Id,
+                FileId = greyCanaryFile.Id,
+                NodeKey = "grey-canary-createlocationinput",
+                Label = "CreateLocationInput",
+                SecondaryLabel = "Location form company address copy helper",
+                NodeType = CodeGraphNodeType.Type,
+                Language = "C#",
+                StartLine = 1,
+                EndLine = 40,
+                Metadata = "location company address state region"
+            },
+            new CodeGraphNode
+            {
+                ProjectId = greyCanaryProject.Id,
+                FileId = greyCanaryClientFile.Id,
+                NodeKey = "grey-canary-clientscontroller",
+                Label = "ClientsController",
+                SecondaryLabel = "Client and location editing workflow",
+                NodeType = CodeGraphNodeType.Type,
+                Language = "C#",
+                StartLine = 1,
+                EndLine = 40,
+                Metadata = "client location company address checkbox"
+            },
+            new CodeGraphNode
+            {
+                ProjectId = greyCanaryProject.Id,
+                FileId = greyCanaryStaticSiteFile.Id,
+                NodeKey = "grey-canary-static-render",
+                Label = "render",
+                SecondaryLabel = "Static site render helper",
+                NodeType = CodeGraphNodeType.Method,
+                Language = "JavaScript",
+                StartLine = 1,
+                EndLine = 20,
+                Metadata = "site javascript render"
+            },
+            new CodeGraphNode
+            {
+                ProjectId = greyCanaryProject.Id,
+                FileId = greyCanaryInstallerFile.Id,
+                NodeKey = "grey-canary-install-agent",
+                Label = "Install-Agent",
+                SecondaryLabel = "Installer staging script",
+                NodeType = CodeGraphNodeType.Method,
+                Language = "PowerShell",
+                StartLine = 1,
+                EndLine = 20,
+                Metadata = "installer powershell package"
+            },
+            new CodeGraphNode
+            {
+                ProjectId = unrelatedProject.Id,
+                FileId = unrelatedFile.Id,
+                NodeKey = "unrelated-smb-diagnostics-window",
+                Label = "SmbDiagnosticsWindow",
+                SecondaryLabel = "Desktop troubleshooting form",
+                NodeType = CodeGraphNodeType.Type,
+                Language = "C#",
+                StartLine = 1,
+                EndLine = 40,
+                Metadata = "smb diagnostics"
+            });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+        var pack = await service.BuildContextPackAsync(
+            "Grey Snare update the add location slider so it copies the company address for single location companies.",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.Contains(pack!.CodeGraphProjects, project => project.Title == greyCanaryProject.Name);
+        Assert.Contains(pack.CodeGraphFiles, file => file.Title.Contains("ViewModels.cs", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(pack.CodeGraphFiles, file => file.Title.Contains("ClientsController.cs", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(pack.CodeGraphNodes, node => node.Title == "CreateLocationInput");
+        Assert.Contains(pack.CodeGraphNodes, node => node.Title == "ClientsController");
+        Assert.True(
+            pack.CodeGraphFiles.ToList().FindIndex(file => file.Title.Contains("ClientsController.cs", StringComparison.OrdinalIgnoreCase))
+            < pack.CodeGraphFiles.ToList().FindIndex(file => file.Title.Contains("site.js", StringComparison.OrdinalIgnoreCase)));
+        Assert.True(
+            pack.CodeGraphNodes.ToList().FindIndex(node => node.Title == "ClientsController")
+            < pack.CodeGraphNodes.ToList().FindIndex(node => node.Title == "render"));
+        Assert.DoesNotContain(pack.CodeGraphProjects, project => project.Title == unrelatedProject.Name && project.Score >= pack.CodeGraphProjects.First(x => x.Title == greyCanaryProject.Name).Score);
+    }
+
+    [Fact]
     public async Task ContextService_SuppressesUnrelatedCodeGraphNoiseForExternalOpsQueries()
     {
         await using var harness = await TestHarness.CreateAsync();
@@ -2851,6 +3010,18 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task Dashboard_DefaultContextInput_IncludesCompletedWork()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var dashboard = await service.GetDashboardAsync(CancellationToken.None);
+
+        Assert.True(dashboard.ContextInput.IncludeCompletedWork);
+    }
+
+    [Fact]
     public async Task SearchMemoriesAsync_CanFilterByUpdatedSince()
     {
         await using var harness = await TestHarness.CreateAsync();
@@ -3161,6 +3332,88 @@ public sealed class PalaceServiceTests
         Assert.Contains("Unverified export memory [Unverified]", export.ExportText);
     }
 
+    [Fact]
+    public async Task ContextService_HybridSemanticBoost_ReordersRelevantMemoryMatches()
+    {
+        var semanticMemoryId = Guid.NewGuid();
+        var lexicalMemoryId = Guid.NewGuid();
+        var embeddingService = new StubContextEmbeddingService(new Dictionary<EmbeddingTargetKind, IReadOnlyDictionary<Guid, SemanticCandidateScore>>
+        {
+            [EmbeddingTargetKind.Memory] = new Dictionary<Guid, SemanticCandidateScore>
+            {
+                [semanticMemoryId] = new(0.74m, 9m, "Semantic similarity (0.74)")
+            }
+        });
+
+        await using var harness = await TestHarness.CreateAsync(contextEmbeddingService: embeddingService);
+        await using var dbContext = harness.CreateDbContext();
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        dbContext.Memories.AddRange(
+            new MemoryEntry
+            {
+                Id = lexicalMemoryId,
+                Title = "Grey Snare location address website",
+                Summary = "Website copy and location text for Grey Snare.",
+                Content = "Grey Snare location address website copy update.",
+                Kind = MemoryKind.Decision,
+                SourceKind = SourceKind.ManualNote,
+                Importance = 3
+            },
+            new MemoryEntry
+            {
+                Id = semanticMemoryId,
+                Title = "Grey Canary location autofill",
+                Summary = "Single-location companies can reuse the company address in the new location form.",
+                Content = "The create-location flow adds a checkbox that copies the company address into the location fields.",
+                Kind = MemoryKind.Decision,
+                SourceKind = SourceKind.ManualNote,
+                Importance = 3
+            });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new ContextService(serviceContext, contextEmbeddingService: embeddingService);
+
+        var pack = await service.BuildContextPackAsync(
+            "copy company address into location for single-location companies",
+            CancellationToken.None);
+
+        Assert.NotNull(pack);
+        Assert.Equal(semanticMemoryId, pack!.Memories.First().Id);
+        Assert.True(pack.Memories.First().SemanticScore > 0m);
+        Assert.Contains("Semantic similarity", pack.Memories.First().MatchReason);
+        Assert.True(embeddingService.CallCount > 0);
+    }
+
+    [Fact]
+    public async Task ContextService_FileComparisonRoute_SkipsSemanticHybrid()
+    {
+        var embeddingService = new StubContextEmbeddingService(new Dictionary<EmbeddingTargetKind, IReadOnlyDictionary<Guid, SemanticCandidateScore>>());
+
+        await using var harness = await TestHarness.CreateAsync(contextEmbeddingService: embeddingService);
+        await using var dbContext = harness.CreateDbContext();
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        dbContext.Memories.Add(new MemoryEntry
+        {
+            Title = "File comparison helper",
+            Summary = "Compare two files in the repo.",
+            Content = "Compare two files and review the differences.",
+            Kind = MemoryKind.Reference,
+            SourceKind = SourceKind.ManualNote,
+            Importance = 3
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new ContextService(serviceContext, contextEmbeddingService: embeddingService);
+
+        _ = await service.BuildContextPackAsync("compare these two files in the repo", CancellationToken.None);
+
+        Assert.Equal(0, embeddingService.CallCount);
+    }
+
     private sealed class TestHarness : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;
@@ -3173,7 +3426,7 @@ public sealed class PalaceServiceTests
 
         public ServiceProvider Services { get; }
 
-        public static async Task<TestHarness> CreateAsync(string? contentRootPath = null)
+        public static async Task<TestHarness> CreateAsync(string? contentRootPath = null, IContextEmbeddingService? contextEmbeddingService = null)
         {
             var connection = new SqliteConnection("Data Source=:memory:");
             await connection.OpenAsync();
@@ -3195,6 +3448,11 @@ public sealed class PalaceServiceTests
             serviceCollection.AddSingleton<FocusDatabaseTargetService>();
             serviceCollection.AddSingleton<FocusAgentCatalogService>();
             serviceCollection.AddSingleton<RepoSkillCatalogService>();
+            if (contextEmbeddingService is not null)
+            {
+                serviceCollection.AddSingleton(contextEmbeddingService);
+                serviceCollection.AddSingleton<IContextEmbeddingService>(contextEmbeddingService);
+            }
             serviceCollection.AddDbContext<FocusMemoryContext>(options => options.UseSqlite(connection));
             serviceCollection.AddScoped<IFocusEventPublisher>(_ => NullFocusEventPublisher.Instance);
             serviceCollection.AddScoped<ContextService>();
@@ -3233,6 +3491,32 @@ public sealed class PalaceServiceTests
         public string ApplicationName { get; set; } = "FocusLAIci.Tests";
         public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
         public IFileProvider ContentRootFileProvider { get; set; } = new PhysicalFileProvider(AppContext.BaseDirectory);
+    }
+
+    private sealed class StubContextEmbeddingService(
+        IReadOnlyDictionary<EmbeddingTargetKind, IReadOnlyDictionary<Guid, SemanticCandidateScore>> scores) : IContextEmbeddingService
+    {
+        public int CallCount { get; private set; }
+
+        public bool IsEnabled => true;
+
+        public Task<IReadOnlyDictionary<Guid, SemanticCandidateScore>> ScoreAsync(
+            EmbeddingTargetKind targetKind,
+            string query,
+            IReadOnlyDictionary<Guid, string> candidates,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            if (!scores.TryGetValue(targetKind, out var targetScores))
+            {
+                return Task.FromResult<IReadOnlyDictionary<Guid, SemanticCandidateScore>>(new Dictionary<Guid, SemanticCandidateScore>());
+            }
+
+            var filtered = targetScores
+                .Where(entry => candidates.ContainsKey(entry.Key))
+                .ToDictionary(entry => entry.Key, entry => entry.Value);
+            return Task.FromResult<IReadOnlyDictionary<Guid, SemanticCandidateScore>>(filtered);
+        }
     }
 
     [Fact]

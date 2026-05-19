@@ -28,6 +28,7 @@ public sealed class FocusMemoryContext : DbContext
     public DbSet<CodeGraphNode> CodeGraphNodes => Set<CodeGraphNode>();
     public DbSet<CodeGraphEdge> CodeGraphEdges => Set<CodeGraphEdge>();
     public DbSet<ContextLinkEntry> ContextLinks => Set<ContextLinkEntry>();
+    public DbSet<EmbeddingEntry> Embeddings => Set<EmbeddingEntry>();
     public DbSet<PackBuildRecord> PackBuildRecords => Set<PackBuildRecord>();
     public DbSet<ExternalSkillSource> ExternalSkillSources => Set<ExternalSkillSource>();
 
@@ -208,6 +209,14 @@ public sealed class FocusMemoryContext : DbContext
             entity.HasIndex(x => new { x.SourceKind, x.SourceId });
             entity.HasIndex(x => new { x.TargetKind, x.TargetId });
             entity.HasIndex(x => new { x.SourceKind, x.SourceId, x.TargetKind, x.TargetId }).IsUnique();
+        });
+
+        builder.Entity<EmbeddingEntry>(entity =>
+        {
+            entity.HasIndex(x => new { x.TargetKind, x.TargetId }).IsUnique();
+            entity.HasIndex(x => x.UpdatedUtc);
+            entity.Property(x => x.ContentHash).HasMaxLength(128);
+            entity.Property(x => x.VectorBlob).HasColumnType("BLOB");
         });
 
         builder.Entity<PackBuildRecord>(entity =>

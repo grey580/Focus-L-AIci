@@ -47,6 +47,7 @@ builder.Services.AddHttpClient<ExternalSkillSuggestionService>();
 builder.Services.AddSingleton<IPackIntentModel, TinyLocalPackIntentModel>();
 builder.Services.AddSingleton<IPackDecisionEngine, PackDecisionEngine>();
 builder.Services.AddSingleton<IPackCriticEngine, PackCriticEngine>();
+builder.Services.AddScoped<IContextEmbeddingService, ContextEmbeddingService>();
 builder.Services.AddScoped<ContextService>();
 builder.Services.AddSingleton<RepoSkillCatalogService>();
 builder.Services.AddSingleton<FocusAgentCatalogService>();
