@@ -534,6 +534,43 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task RunAgentAsync_TailorsExecutionBriefForActiveDirectoryPhoneAuditScripts()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var scope = harness.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<FocusMemoryContext>();
+        var repoSkillCatalogService = scope.ServiceProvider.GetRequiredService<RepoSkillCatalogService>();
+
+        await MemorySeeder.EnsureDatabaseAsync(dbContext, CancellationToken.None);
+
+        var service = new PalaceService(
+            dbContext,
+            new ContextService(dbContext),
+            NullFocusEventPublisher.Instance,
+            null,
+            new FocusAgentCatalogService(),
+            repoSkillCatalogService);
+
+        var detail = await service.RunAgentAsync("execution-agent", new AgentRunInput
+        {
+            Question = "I need a PowerShell script to check if an Active Directory user has a phone number in their profile.",
+            ResultsPerSection = 4,
+            IncludeCompletedWork = true,
+            ExpandHistory = true
+        }, CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.NotNull(detail!.RunResult);
+        Assert.Equal("Write-limited execution • AD attribute audit", detail.RunResult!.ExecutionModeLabel);
+        Assert.Contains("PowerShell script or report for checking whether Active Directory users have a phone value populated", detail.RunResult.Summary, StringComparison.Ordinal);
+        Assert.Contains(detail.RunResult.Steps, x => x.Title == "Pin down the exact attribute and scope");
+        Assert.Contains(detail.RunResult.Steps, x => x.Title == "Write the Get-ADUser query");
+        Assert.Contains(detail.RunResult.NextActions, x => x.Contains("OfficePhone/telephoneNumber", StringComparison.Ordinal));
+        Assert.Contains("Deliverable: PowerShell script or report.", detail.RunResult.OperatorPrompt, StringComparison.Ordinal);
+        Assert.Contains(detail.RunResult.CompanionSkills, x => x.Slug == "audit-on-prem-active-directory-user-attributes");
+    }
+
+    [Fact]
     public async Task RunAgentAsync_SupportsConsensusTriageImpactAndCurationAgents()
     {
         await using var harness = await TestHarness.CreateAsync();

@@ -3415,8 +3415,30 @@ public sealed class PalaceService
         IReadOnlyCollection<SkillCardViewModel> companionSkills,
         IReadOnlyCollection<AgentCardViewModel> followOnAgents)
     {
+        var taskProfile = BuildAgentTaskProfile(input.Question, companionSkills);
         AgentExecutionStepViewModel[] steps = detail.Agent.Slug switch
         {
+            "context-agent" when taskProfile.IsScriptRequest =>
+            [
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Identify the exact automation target",
+                    Detail = "Confirm the system, module, and exact field the script needs to inspect so the workflow does not stay at a vague 'PowerShell script' level.",
+                    Outcome = "The request is narrowed to a concrete script target and deliverable."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Pull matching automation patterns",
+                    Detail = "Read the strongest matching skills, memories, and recent changes for similar scripts or commands before writing anything new.",
+                    Outcome = "The script can reuse proven cmdlets, output fields, and patterns."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Route to the build path",
+                    Detail = "Hand the task to execution with the exact deliverable, validation expectations, and any missing assumptions called out.",
+                    Outcome = "Execution starts with a script-ready plan instead of a generic task brief."
+                }
+            ],
             "context-agent" =>
             [
                 new AgentExecutionStepViewModel
@@ -3501,6 +3523,48 @@ public sealed class PalaceService
                     Outcome = "The next phase is chosen from evidence instead of guesswork."
                 }
             ],
+            "execution-agent" when taskProfile.IsDirectoryAttributeAuditScript =>
+            [
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Pin down the exact attribute and scope",
+                    Detail = "Decide whether \"phone number\" means OfficePhone/telephoneNumber, Mobile/mobile, or another AD field, and whether the script should check one user, an OU, or all enabled users.",
+                    Outcome = "The script target is specific enough to implement without guesswork."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Write the Get-ADUser query",
+                    Detail = "Use the ActiveDirectory module, request the exact phone-related properties you need, and return only the cleanup fields that matter such as SamAccountName, DisplayName, and the chosen phone field.",
+                    Outcome = "A concrete PowerShell query/report shape is ready to build."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Validate the empty-value logic",
+                    Detail = "Check how the script treats null, blank, and whitespace values, then decide whether the result should stay on screen or export to CSV for follow-up cleanup.",
+                    Outcome = "The script output is trustworthy and ready for handoff."
+                }
+            ],
+            "execution-agent" when taskProfile.IsScriptRequest =>
+            [
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Pin down the deliverable",
+                    Detail = "Confirm whether the task needs a script, a one-liner command, or a reusable report and name the exact inputs and outputs up front.",
+                    Outcome = "The requested automation artifact is explicit."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Build the command or script shape",
+                    Detail = "Choose the exact module or tool, the required parameters, and the output fields before treating the task as ready to execute.",
+                    Outcome = "The implementation path is concrete instead of generic."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Validate the result format",
+                    Detail = "Check examples, edge cases, and whether the result should be printed, returned, or exported so the workflow ends with something usable.",
+                    Outcome = "The script can be handed off or run with confidence."
+                }
+            ],
             "execution-agent" =>
             [
                 new AgentExecutionStepViewModel
@@ -3567,6 +3631,11 @@ public sealed class PalaceService
         };
 
         var nextActions = new List<string>();
+        foreach (var action in taskProfile.NextActions)
+        {
+            nextActions.Add(action);
+        }
+
         if (contextPack?.TopMatches.Count > 0)
         {
             nextActions.Add($"Read the top {Math.Min(3, contextPack.TopMatches.Count)} context matches first.");
@@ -3592,18 +3661,28 @@ public sealed class PalaceService
             nextActions.Add("Read the context pack, follow the agent steps, and record the durable outcome.");
         }
 
-        var summary = $"{detail.Agent.Name} prepared a {detail.Agent.DefaultGoalLabel.ToLowerInvariant()} task brief for \"{input.Question.Trim()}\".";
+        var summaryLabel = string.IsNullOrWhiteSpace(taskProfile.SummaryLabel)
+            ? detail.Agent.DefaultGoalLabel.ToLowerInvariant()
+            : taskProfile.SummaryLabel;
+        var summary = $"{detail.Agent.Name} prepared a {summaryLabel} brief for \"{input.Question.Trim()}\".";
         if (contextPack is not null)
         {
             summary += $" It surfaced {contextPack.TopMatches.Count} top matches and {companionSkills.Count} companion skills.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(taskProfile.DeliverableLabel))
+        {
+            summary += $" Target deliverable: {taskProfile.DeliverableLabel}.";
         }
 
         return new AgentRunViewModel
         {
             TaskQuestion = input.Question.Trim(),
             Summary = summary,
-            OperatorPrompt = $"{detail.SuggestedPrompt} Task: {input.Question.Trim()}",
-            ExecutionModeLabel = detail.Agent.ScopeLabel,
+            OperatorPrompt = BuildAgentOperatorPrompt(detail, input.Question.Trim(), taskProfile),
+            ExecutionModeLabel = string.IsNullOrWhiteSpace(taskProfile.ModeLabel)
+                ? detail.Agent.ScopeLabel
+                : $"{detail.Agent.ScopeLabel} • {taskProfile.ModeLabel}",
             SupportsWriteActions = detail.Agent.SupportsWriteActions,
             Steps = steps,
             NextActions = nextActions,
@@ -3612,6 +3691,118 @@ public sealed class PalaceService
             ContextPack = contextPack
         };
     }
+
+    private static AgentTaskProfile BuildAgentTaskProfile(
+        string question,
+        IReadOnlyCollection<SkillCardViewModel> companionSkills)
+    {
+        var normalizedQuestion = question.Trim().ToLowerInvariant();
+        var hasPowerShellCue = normalizedQuestion.Contains("powershell", StringComparison.Ordinal)
+                              || normalizedQuestion.Contains("pwsh", StringComparison.Ordinal);
+        var hasScriptCue = normalizedQuestion.Contains("script", StringComparison.Ordinal)
+                           || normalizedQuestion.Contains("command", StringComparison.Ordinal)
+                           || normalizedQuestion.Contains("one-liner", StringComparison.Ordinal)
+                           || normalizedQuestion.Contains("oneliner", StringComparison.Ordinal);
+        var hasActiveDirectoryCue = normalizedQuestion.Contains("active directory", StringComparison.Ordinal)
+                                    || normalizedQuestion.Contains("get-aduser", StringComparison.Ordinal)
+                                    || normalizedQuestion.Contains("domain user", StringComparison.Ordinal)
+                                    || normalizedQuestion.Contains("ad user", StringComparison.Ordinal);
+        var hasPhoneCue = normalizedQuestion.Contains("phone", StringComparison.Ordinal)
+                          || normalizedQuestion.Contains("telephone", StringComparison.Ordinal)
+                          || normalizedQuestion.Contains("mobile", StringComparison.Ordinal)
+                          || normalizedQuestion.Contains("officephone", StringComparison.Ordinal)
+                          || normalizedQuestion.Contains("ipphone", StringComparison.Ordinal);
+        var hasAttributeAuditCue = normalizedQuestion.Contains("profile", StringComparison.Ordinal)
+                                   || normalizedQuestion.Contains("attribute", StringComparison.Ordinal)
+                                   || normalizedQuestion.Contains("missing", StringComparison.Ordinal)
+                                   || normalizedQuestion.Contains("blank", StringComparison.Ordinal)
+                                   || normalizedQuestion.Contains("check if", StringComparison.Ordinal)
+                                   || normalizedQuestion.Contains("has a", StringComparison.Ordinal);
+        var hasMatchingAdSkill = companionSkills.Any(skill => string.Equals(
+            skill.Slug,
+            "audit-on-prem-active-directory-user-attributes",
+            StringComparison.OrdinalIgnoreCase));
+        var isScriptRequest = hasPowerShellCue || hasScriptCue;
+        var isDirectoryAttributeAuditScript = isScriptRequest
+                                              && (hasActiveDirectoryCue || hasMatchingAdSkill)
+                                              && (hasPhoneCue || hasAttributeAuditCue);
+
+        if (isDirectoryAttributeAuditScript)
+        {
+            return new AgentTaskProfile(
+                "AD attribute audit",
+                "a PowerShell script or report for checking whether Active Directory users have a phone value populated",
+                "script-building",
+                [
+                    "Decide which AD phone field you mean first: OfficePhone/telephoneNumber, Mobile/mobile, or another property.",
+                    "Limit the first version to the right scope: one user, one OU, or all enabled users.",
+                    "Start from the companion skill for auditing on-prem Active Directory user attributes if it matches this task."
+                ],
+                [
+                    "Deliverable: PowerShell script or report.",
+                    "Focus on the exact Active Directory phone attribute, query scope, output columns, and null/blank handling.",
+                    "Prefer an implementation shape built around Get-ADUser and only the fields needed for cleanup."
+                ],
+                true,
+                true);
+        }
+
+        if (isScriptRequest)
+        {
+            return new AgentTaskProfile(
+                "script request",
+                hasPowerShellCue ? "a PowerShell script or command" : "a concrete automation script or command",
+                "task-specific",
+                [
+                    "Decide whether the deliverable should be a script, a one-liner, or an exported report.",
+                    "Name the exact input source, output fields, and success condition before writing the automation.",
+                    "Use the strongest matching companion skill as the starting workflow instead of treating the task as generic execution."
+                ],
+                [
+                    hasPowerShellCue ? "Deliverable: PowerShell script or command." : "Deliverable: automation script or command.",
+                    "Focus on exact inputs, outputs, required module/tooling, and what the result should look like when it succeeds."
+                ],
+                true,
+                false);
+        }
+
+        return new AgentTaskProfile(
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            Array.Empty<string>(),
+            Array.Empty<string>(),
+            false,
+            false);
+    }
+
+    private static string BuildAgentOperatorPrompt(
+        AgentDetailViewModel detail,
+        string question,
+        AgentTaskProfile taskProfile)
+    {
+        var builder = new StringBuilder();
+        builder.Append(detail.SuggestedPrompt)
+            .Append(' ')
+            .Append("Task: ")
+            .Append(question);
+
+        foreach (var focus in taskProfile.PromptFocus)
+        {
+            builder.Append(' ').Append(focus);
+        }
+
+        return builder.ToString().Trim();
+    }
+
+    private sealed record AgentTaskProfile(
+        string ModeLabel,
+        string DeliverableLabel,
+        string SummaryLabel,
+        IReadOnlyCollection<string> NextActions,
+        IReadOnlyCollection<string> PromptFocus,
+        bool IsScriptRequest,
+        bool IsDirectoryAttributeAuditScript);
 
     private static string BuildWorkspaceBootstrapSummary(
         WorkspaceExportViewModel workspace,
