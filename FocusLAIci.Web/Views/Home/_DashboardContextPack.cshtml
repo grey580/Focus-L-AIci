@@ -68,6 +68,20 @@
                     </div>
                 </div>
                 <strong>@Model.ContextPack.Summary</strong>
+                @if (!string.IsNullOrWhiteSpace(Model.ContextPack.Decision.Kind))
+                {
+                    <div class="dashboard-feature-workflow-meta mt-2">
+                        <span>Decision @Model.ContextPack.Decision.Kind</span>
+                        @if (!string.IsNullOrWhiteSpace(Model.ContextPack.Decision.PrimaryCause))
+                        {
+                            <span>@Model.ContextPack.Decision.PrimaryCause</span>
+                        }
+                        @foreach (var cause in Model.ContextPack.Decision.Causes.Skip(1))
+                        {
+                            <span>@cause</span>
+                        }
+                    </div>
+                }
                 <div class="dashboard-feature-workflow-meta">
                     <span>Built from your question</span>
                     <span>@Model.ContextPack.TopMatches.Count prioritized matches</span>
@@ -112,6 +126,18 @@
                                     <input type="hidden" name="ExpandHistory" value="@Model.ContextInput.ExpandHistory.ToString().ToLowerInvariant()" />
                                     <button type="submit" class="dashboard-suggestion-pill" title="@clarification">@clarification</button>
                                 </form>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (Model.ContextPack.Decision.Reasons.Count > 0)
+                {
+                    <div class="dashboard-command-followups mt-3">
+                        <span class="dashboard-suggestion-label">Decision reasons</span>
+                        <div class="dashboard-command-shortcut-list">
+                            @foreach (var reason in Model.ContextPack.Decision.Reasons)
+                            {
+                                <span class="dashboard-suggestion-pill">@reason</span>
                             }
                         </div>
                     </div>

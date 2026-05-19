@@ -21,6 +21,7 @@
 - API diagnostics for checking the active database target and homepage backing content
 - read/write APIs for todos and tickets
 - workspace export API and Inspect-page export panel for cold-start AI sessions
+- scoped-agent browsing with goal and write-mode filters, runnable task briefs, related context, and companion skill recommendations
 - recent-changes feed plus structured context provenance for inspectable retrieval reasoning
 - local-first MCP server endpoints with Focus-native tools, resources, sessions, and SSE event streaming
 - external skill-source registry managed from Admin settings
@@ -187,6 +188,8 @@ Recent MCP additions make Focus more automation-safe and more agent-friendly:
 - `focus.memory.duplicates`, `focus.memory.merge`, and `focus.memory.resolve-canonical` help clients avoid duplicate sprawl and follow supersession chains cleanly
 - `focus.memory.governance-queue` exposes review/archive/restore backlog state directly through MCP
 - `focus.context.inspect` now supports tighter memory scoping and recent-change biasing for more surgical retrieval
+- Focus now ships seven built-in agents (`triage-agent`, `context-agent`, `research-agent`, `impact-agent`, `execution-agent`, `curation-agent`, and `review-agent`) so intake, analysis, blast-radius checks, delivery, and write-back each have a distinct in-app workflow
+- `focus.agent.list` now supports goal and write-action filtering, `focus.agent.get` returns richer routing detail with suggested task framing, companion skills, and related context, and `focus.agent.run` builds an actionable task brief with steps, next actions, and context
 - labeled API keys can now be configured as read-only so non-loopback MCP clients do not automatically get write access
 
 For brand-new projects, Focus becomes more valuable as soon as a small set of foundation memories exists: repo path, startup command, database location, architecture notes, and major decisions.

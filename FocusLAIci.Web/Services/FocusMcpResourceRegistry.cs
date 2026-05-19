@@ -25,7 +25,7 @@ public sealed class FocusMcpResourceRegistry(
         new() { Uri = "focus://rooms/{wingSlug}", Description = "Directory of rooms for a single wing slug.", SupportsSubscription = true },
         new() { Uri = "focus://skills", Description = "Directory of Focus skills and runbook-style workflows.", SupportsSubscription = true },
         new() { Uri = "focus://skills/{slug}", Description = "A single Focus skill resolved by slug.", SupportsSubscription = true },
-        new() { Uri = "focus://agents", Description = "Directory of Focus scoped agents for context, research, execution, and review.", SupportsSubscription = false },
+        new() { Uri = "focus://agents", Description = "Directory of Focus scoped agents for intake, context, research, impact, execution, curation, and review.", SupportsSubscription = false },
         new() { Uri = "focus://agents/{slug}", Description = "A single Focus agent resolved by slug.", SupportsSubscription = false },
         new() { Uri = "focus://memories/governance", Description = "Memory governance queue for review, archive, restore, and supersession work.", SupportsSubscription = true },
         new() { Uri = "focus://recent-changes", Description = "Recent Focus changes across memories, todos, tickets, and code graph.", SupportsSubscription = true },
@@ -200,7 +200,7 @@ public sealed class FocusMcpResourceRegistry(
         if (resourceUri.StartsWith("focus://agents/", StringComparison.OrdinalIgnoreCase))
         {
             var slug = resourceUri["focus://agents/".Length..];
-            var agent = agentCatalogService.GetAgent(slug)
+            var agent = await palaceService.GetAgentAsync(slug, cancellationToken)
                 ?? throw new InvalidOperationException("That agent resource no longer exists.");
             return new FocusMcpResourceContent { Uri = resourceUri, Data = agent };
         }

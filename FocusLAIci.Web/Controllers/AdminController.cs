@@ -123,6 +123,8 @@ public sealed class AdminController : Controller
                 DatabaseTarget = _databaseTargetService.GetCurrentTarget(),
                 Stats = workspace.Stats,
                 ExportText = workspace.ExportText,
+                RecommendedAgents = workspace.RecommendedAgents,
+                RecommendedSkills = workspace.RecommendedSkills,
                 PinnedMemories = workspace.PinnedMemories,
                 ActiveTodos = workspace.ActiveTodos,
                 ActiveTickets = workspace.ActiveTickets,

@@ -32,7 +32,7 @@ Focus L-AIci turns that lost context into a searchable, browsable, persistent kn
 
 - a structured memory palace built around wings, rooms, memories, tags, and links
 - a dashboard context workspace for task-specific retrieval, export, archival, and refinement
-- four built-in scoped agents for context, research, bounded execution, and review
+- seven built-in scoped agents for triage, context, research, impact, bounded execution, curation, and review, with filtered browse/detail pages, runnable task briefs, related context, companion skills, and MCP routing
 - todo and ticket tracking for active implementation work
 - a persistent code graph with repository browsing and symbol relationships
 - a **3D palace graph** / visualizer for wings, rooms, memories, and active work

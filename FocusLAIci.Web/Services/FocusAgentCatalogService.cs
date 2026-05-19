@@ -19,8 +19,25 @@ public sealed class FocusAgentCatalogService
             ["Current task or question", "Optional wing, room, or goal hint"],
             ["Ranked context pack", "Suggested questions", "Recommended downstream agents and skills"],
             "Start with Focus. Build a context pack for this task before making changes.",
+            "What context should I gather in Focus before I start this task?",
             ContextPackGoal.General,
             ["context", "memory", "bootstrap", "question", "cold start", "tickets", "todos", "recent changes"]),
+        new(
+            "triage-agent",
+            "Triage Agent",
+            "Turns raw asks, notes, and backlog noise into routed, deduped, prioritized Focus work before execution begins.",
+            "Give Focus a front door that normalizes intake and routes work into the right system-of-record path.",
+            "Write-limited intake",
+            "Canonical work statements, duplicate flags, and priority-backed next steps",
+            true,
+            ["routing a new request", "deduping overlapping work", "prioritizing backlog intake", "turning raw notes into tickets or todos"],
+            ["Preserves the original input instead of rewriting history.", "Flags duplicates and priority with explicit rationale.", "Does not auto-close or silently re-route work."],
+            ["Raw request, note, or issue summary", "Optional target wing, room, or urgency hint"],
+            ["Canonical problem statement", "Duplicate candidates and routing hints", "Suggested tickets, todos, or next agent"],
+            "Triage this raw work item in Focus, route it to the right place, and produce the next bounded actions.",
+            "How should I triage, route, and prioritize this new work inside Focus?",
+            ContextPackGoal.General,
+            ["triage", "intake", "prioritize", "route", "dedupe", "backlog", "inbox", "request"]),
         new(
             "research-agent",
             "Research Agent",
@@ -34,8 +51,25 @@ public sealed class FocusAgentCatalogService
             ["Target question or subsystem", "Optional date, wing, or room scope"],
             ["Summarized findings", "Relevant evidence list", "Suggested next checks"],
             "Research this issue using Focus memories, recent changes, tickets, and related code graph context.",
+            "What does Focus already know about this issue, subsystem, or investigation?",
             ContextPackGoal.Research,
             ["research", "investigate", "analyze", "docs", "history", "incident", "architecture"]),
+        new(
+            "impact-agent",
+            "Impact Agent",
+            "Maps likely blast radius, dependencies, and validation targets before a change, fix, or migration starts.",
+            "Use Focus code graph and recent work to name what a task could touch before execution begins.",
+            "Read-only impact analysis",
+            "Blast-radius maps, risk checklists, and validation targets",
+            false,
+            ["pre-change risk mapping", "finding affected files or rooms", "validation planning", "dependency-aware scoping"],
+            ["Shows evidence and confidence instead of pretending the graph is complete.", "Calls out unknowns when coverage is thin.", "Does not mutate Focus state or run changes."],
+            ["Proposed change, fix, or subsystem", "Optional file, wing, or room scope"],
+            ["Likely impact map", "Risk-ranked validation checklist", "Suggested follow-on agents or skills"],
+            "Analyze the likely impact of this change using Focus context, code graph signals, and recent changes before execution.",
+            "What is the likely blast radius, risk, and validation plan for this change?",
+            ContextPackGoal.Architecture,
+            ["impact", "blast-radius", "dependencies", "validation", "risk", "graph", "touchpoints", "migration"]),
         new(
             "execution-agent",
             "Execution Agent",
@@ -49,8 +83,25 @@ public sealed class FocusAgentCatalogService
             ["Approved task or checklist", "Boundaries for what may change"],
             ["Completed step log", "Result summary", "Escalations when blocked"],
             "Execute this bounded task using Focus context, then report the outcome and any blockers.",
+            "What bounded delivery steps should I execute once the Focus context is clear?",
             ContextPackGoal.Delivery,
             ["execute", "run", "apply", "ship", "deliver", "build", "test", "maintenance"]),
+        new(
+            "curation-agent",
+            "Curation Agent",
+            "Turns finished work into durable Focus knowledge and keeps memories from drifting, duplicating, or going stale.",
+            "Keep Focus trustworthy by capturing durable outcomes, proposing merges, and refreshing stale context after work ships.",
+            "Write-limited curation",
+            "Memory candidates, merge suggestions, and freshness updates",
+            true,
+            ["capturing shipped decisions", "refreshing bootstrap context", "deduping overlapping memories", "turning task outcomes into durable knowledge"],
+            ["Only promotes durable facts, not transient chatter.", "Proposes merges or retirements with evidence.", "Avoids broad cleanup without a bounded source task."],
+            ["Completed task summary or outcome", "Optional related ticket, todo, or memory scope"],
+            ["Durable memory candidates", "Merge or retire suggestions", "Updated knowledge follow-up plan"],
+            "Curate the durable outcome of this work into Focus memories, merges, and freshness updates.",
+            "What durable knowledge should I write back into Focus after this work is done?",
+            ContextPackGoal.Delivery,
+            ["curation", "memory", "merge", "canonical", "bootstrap", "durable", "freshness", "supersede"]),
         new(
             "review-agent",
             "Review Agent",
@@ -64,14 +115,25 @@ public sealed class FocusAgentCatalogService
             ["Change summary, diff, or task plan", "Optional target files or subsystem"],
             ["Risk list", "Missing-wiring notes", "Suggested follow-up checks"],
             "Review this work for material regressions, missing wiring, and unsafe assumptions before finalizing it.",
+            "What should I review for risk, missing wiring, or unsafe assumptions before this work is done?",
             ContextPackGoal.Debugging,
             ["review", "regression", "risk", "validate", "check", "qa", "audit"])
     ];
 
-    public IReadOnlyCollection<AgentCardViewModel> GetCatalog(string? query = null)
+    public IReadOnlyCollection<AgentCardViewModel> GetCatalog(string? query = null, ContextPackGoal? goal = null, bool supportsWriteActionsOnly = false)
     {
         var normalizedQuery = query?.Trim() ?? string.Empty;
         IEnumerable<FocusAgentDefinition> agents = Definitions;
+        if (goal.HasValue)
+        {
+            agents = agents.Where(agent => agent.DefaultGoal == goal.Value);
+        }
+
+        if (supportsWriteActionsOnly)
+        {
+            agents = agents.Where(agent => agent.SupportsWriteActions);
+        }
+
         if (!string.IsNullOrWhiteSpace(normalizedQuery))
         {
             agents = agents.Where(agent =>
@@ -98,7 +160,8 @@ public sealed class FocusAgentCatalogService
                 Agent = Map(agent),
                 Inputs = agent.Inputs,
                 Outputs = agent.Outputs,
-                SuggestedPrompt = agent.SuggestedPrompt
+                SuggestedPrompt = agent.SuggestedPrompt,
+                SuggestedQuestion = agent.SuggestedQuestion
             };
     }
 
@@ -117,11 +180,11 @@ public sealed class FocusAgentCatalogService
                 decimal score = agent.DefaultGoal == goal ? 5m : 0m;
                 score += goal switch
                 {
-                    ContextPackGoal.General when agent.Slug is "context-agent" or "research-agent" => 2m,
-                    ContextPackGoal.Debugging when agent.Slug is "research-agent" or "review-agent" => 2m,
-                    ContextPackGoal.Delivery when agent.Slug is "execution-agent" or "review-agent" => 2m,
-                    ContextPackGoal.Research when agent.Slug is "research-agent" or "context-agent" => 2m,
-                    ContextPackGoal.Architecture when agent.Slug is "context-agent" or "review-agent" => 2m,
+                    ContextPackGoal.General when agent.Slug is "context-agent" or "triage-agent" or "research-agent" => 2m,
+                    ContextPackGoal.Debugging when agent.Slug is "research-agent" or "impact-agent" or "review-agent" => 2m,
+                    ContextPackGoal.Delivery when agent.Slug is "execution-agent" or "curation-agent" or "review-agent" => 2m,
+                    ContextPackGoal.Research when agent.Slug is "research-agent" or "context-agent" or "impact-agent" => 2m,
+                    ContextPackGoal.Architecture when agent.Slug is "context-agent" or "impact-agent" or "review-agent" => 2m,
                     _ => 0m
                 };
 
@@ -139,7 +202,7 @@ public sealed class FocusAgentCatalogService
                     }
                 }
 
-                if (string.IsNullOrWhiteSpace(normalizedQuestion) && agent.Slug is "context-agent" or "research-agent")
+                if (string.IsNullOrWhiteSpace(normalizedQuestion) && agent.Slug is "context-agent" or "triage-agent" or "research-agent")
                 {
                     score += 2m;
                 }
@@ -163,12 +226,16 @@ public sealed class FocusAgentCatalogService
             Mission = agent.Mission,
             ScopeLabel = agent.ScopeLabel,
             OutputLabel = agent.OutputLabel,
+            DefaultGoal = agent.DefaultGoal,
+            DefaultGoalLabel = agent.DefaultGoal.ToString(),
             SupportsWriteActions = agent.SupportsWriteActions,
             BestFor = agent.BestFor,
             Guardrails = agent.Guardrails,
+            KeywordHints = agent.Keywords.Take(6).ToArray(),
             RecommendationReason = recommendationReason,
             RecommendationScore = recommendationScore,
-            RecommendationScoreLabel = recommendationScore <= 0 ? string.Empty : $"{recommendationScore:0.#} fit"
+            RecommendationScoreLabel = recommendationScore <= 0 ? string.Empty : $"{recommendationScore:0.#} fit",
+            SuggestedQuestion = agent.SuggestedQuestion
         };
     }
 
@@ -187,8 +254,11 @@ public sealed class FocusAgentCatalogService
         return agent.Slug switch
         {
             "context-agent" => "Best first step when the task needs grounded Focus context.",
+            "triage-agent" => "Best when raw work needs routing, dedupe checks, and priority before deeper analysis.",
             "research-agent" => "Strong fit for synthesis and evidence gathering before acting.",
+            "impact-agent" => "Best for naming blast radius, risk, and validation scope before making the change.",
             "execution-agent" => "Best when the task already has a bounded plan and needs follow-through.",
+            "curation-agent" => "Best for turning completed work into durable Focus knowledge and cleanup actions.",
             "review-agent" => "Best for catching risk and missing wiring before calling the task done.",
             _ => $"Recommended for {goal.ToString().ToLowerInvariant()} work."
         };
@@ -210,6 +280,7 @@ public sealed class FocusAgentCatalogService
         IReadOnlyCollection<string> Inputs,
         IReadOnlyCollection<string> Outputs,
         string SuggestedPrompt,
+        string SuggestedQuestion,
         ContextPackGoal DefaultGoal,
         IReadOnlyCollection<string> Keywords);
 }

@@ -7,22 +7,50 @@
     <div>
         <p class="eyebrow text-dark">Scoped automation</p>
         <h1>Agents</h1>
-        <p class="page-copy">Four built-in Focus agents cover context gathering, research, bounded execution, and review without turning Focus into an unbounded autonomous swarm.</p>
+        <p class="page-copy">Seven built-in Focus agents now cover intake, context gathering, research, impact analysis, bounded execution, curation, and review without turning Focus into an unbounded autonomous swarm.</p>
     </div>
 </section>
 
 <div class="card shadow-sm border-0 mb-4">
     <div class="card-body">
         <form method="get" class="row g-3">
-            <div class="col-lg-8">
+            <div class="col-lg-5">
                 <label class="form-label">Search text</label>
                 <input class="form-control" name="query" value="@Model.Query" placeholder="context, research, review, execution..." />
             </div>
-            <div class="col-lg-4 d-flex align-items-end">
-                <div class="d-flex gap-2">
-                    <button class="btn btn-primary" type="submit">Search Agents</button>
-                    <a class="btn btn-outline-secondary" asp-action="Index">Reset</a>
+            <div class="col-lg-4">
+                <label class="form-label">Default goal</label>
+                <select class="form-select" name="goal">
+                    <option value="">All goals</option>
+                    @foreach (var goal in Enum.GetValues<ContextPackGoal>())
+                    {
+                        if (Model.Goal == goal)
+                        {
+                            <option value="@goal" selected="selected">@goal</option>
+                        }
+                        else
+                        {
+                            <option value="@goal">@goal</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="col-lg-3">
+                <div class="form-check mt-4 pt-2">
+                    @if (Model.SupportsWriteActionsOnly)
+                    {
+                        <input class="form-check-input" type="checkbox" name="supportsWriteActionsOnly" value="true" checked="checked" />
+                    }
+                    else
+                    {
+                        <input class="form-check-input" type="checkbox" name="supportsWriteActionsOnly" value="true" />
+                    }
+                    <label class="form-check-label">Write-enabled only</label>
                 </div>
+            </div>
+            <div class="col-12">
+                <button class="btn btn-primary" type="submit">Search Agents</button>
+                <a class="btn btn-outline-secondary" asp-action="Index">Reset</a>
             </div>
         </form>
     </div>
@@ -33,39 +61,73 @@
     <span>@Model.Agents.Count agents</span>
 </div>
 
-<div class="row g-3">
-    @foreach (var agent in Model.Agents)
-    {
-        <div class="col-lg-6">
-            <article class="card h-100 shadow-sm border-0">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between gap-2 align-items-start mb-2">
-                        <div>
-                            <div class="memory-meta">@agent.ScopeLabel</div>
-                            <h3 class="memory-title">
-                                <a asp-action="Agent" asp-route-slug="@agent.Slug">@agent.Name</a>
-                            </h3>
-                        </div>
-                        <span class="badge @(agent.SupportsWriteActions ? "text-bg-primary" : "text-bg-secondary")">
-                            @(agent.SupportsWriteActions ? "Write-limited" : "Read-only")
-                        </span>
-                    </div>
-                    <p class="memory-summary">@agent.Summary</p>
-                    <div class="text-secondary small mb-2">@agent.Mission</div>
-                    @if (agent.BestFor.Count > 0)
-                    {
-                        <div class="tag-row">
-                            @foreach (var item in agent.BestFor.Take(4))
-                            {
-                                <span class="tag-pill">@item</span>
-                            }
-                        </div>
-                    }
-                </div>
-                <div class="card-footer bg-transparent border-0 pt-0 d-flex justify-content-end">
-                    <a class="btn btn-sm btn-outline-primary" asp-action="Agent" asp-route-slug="@agent.Slug">Open Agent</a>
-                </div>
-            </article>
+@if (Model.Agents.Count == 0)
+{
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+            <div class="empty-state">
+                <h3>No matching agents</h3>
+                <p>Try broader wording or remove goal/write filters to see the full Focus agent catalog.</p>
+            </div>
         </div>
-    }
-</div>
+    </div>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var agent in Model.Agents)
+        {
+            <div class="col-lg-6">
+                <article class="card h-100 shadow-sm border-0">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between gap-2 align-items-start mb-2">
+                            <div>
+                                <div class="memory-meta">@agent.ScopeLabel • default @agent.DefaultGoalLabel</div>
+                                <h3 class="memory-title">
+                                    <a asp-action="Agent" asp-route-slug="@agent.Slug">@agent.Name</a>
+                                </h3>
+                            </div>
+                            <div class="d-flex gap-2 flex-wrap justify-content-end">
+                                @if (!string.IsNullOrWhiteSpace(agent.RecommendationScoreLabel))
+                                {
+                                    <span class="badge text-bg-light">@agent.RecommendationScoreLabel</span>
+                                }
+                                <span class="badge @(agent.SupportsWriteActions ? "text-bg-primary" : "text-bg-secondary")">
+                                    @(agent.SupportsWriteActions ? "Write-limited" : "Read-only")
+                                </span>
+                            </div>
+                        </div>
+                        <p class="memory-summary">@agent.Summary</p>
+                        <div class="text-secondary small mb-2">@agent.Mission</div>
+                        @if (!string.IsNullOrWhiteSpace(agent.RecommendationReason))
+                        {
+                            <div class="alert alert-info py-2 px-3 small mb-2">@agent.RecommendationReason</div>
+                        }
+                        @if (agent.KeywordHints.Count > 0)
+                        {
+                            <div class="tag-row mb-2">
+                                @foreach (var item in agent.KeywordHints)
+                                {
+                                    <span class="tag-pill">@item</span>
+                                }
+                            </div>
+                        }
+                        @if (agent.BestFor.Count > 0)
+                        {
+                            <div class="tag-row">
+                                @foreach (var item in agent.BestFor.Take(4))
+                                {
+                                    <span class="tag-pill">@item</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <div class="card-footer bg-transparent border-0 pt-0 d-flex justify-content-between align-items-center">
+                        <small class="text-secondary"><code>@agent.SuggestedQuestion</code></small>
+                        <a class="btn btn-sm btn-outline-primary" asp-action="Agent" asp-route-slug="@agent.Slug">Open Agent</a>
+                    </div>
+                </article>
+            </div>
+        }
+    </div>
+}

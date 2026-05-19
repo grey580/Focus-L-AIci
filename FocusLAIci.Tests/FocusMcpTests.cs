@@ -374,15 +374,23 @@ public sealed class FocusMcpTests
             CancellationToken.None));
         var agentListResult = JsonSerializer.SerializeToElement(await registry.InvokeAsync(
             "focus.agent.list",
-            JsonDocument.Parse("""{"query":"review"}""").RootElement,
+            JsonDocument.Parse("""{"query":"execute","goal":"Delivery","supportsWriteActions":true}""").RootElement,
             CancellationToken.None));
         var agentGetResult = JsonSerializer.SerializeToElement(await registry.InvokeAsync(
             "focus.agent.get",
-            JsonDocument.Parse("""{"slug":"review-agent"}""").RootElement,
+            JsonDocument.Parse("""{"slug":"execution-agent"}""").RootElement,
             CancellationToken.None));
         var agentRecommendResult = JsonSerializer.SerializeToElement(await registry.InvokeAsync(
             "focus.agent.recommend",
             JsonDocument.Parse("""{"question":"review a risky change before shipping it","goal":"Delivery","limit":2}""").RootElement,
+            CancellationToken.None));
+        var agentRunResult = JsonSerializer.SerializeToElement(await registry.InvokeAsync(
+            "focus.agent.run",
+            JsonDocument.Parse("""{"slug":"execution-agent","question":"ship the release after validating the bounded checklist","includeCompletedWork":true,"expandHistory":true,"resultsPerSection":4}""").RootElement,
+            CancellationToken.None));
+        var impactAgentResult = JsonSerializer.SerializeToElement(await registry.InvokeAsync(
+            "focus.agent.get",
+            JsonDocument.Parse("""{"slug":"impact-agent"}""").RootElement,
             CancellationToken.None));
         var skillGetResult = JsonSerializer.SerializeToElement(await registry.InvokeAsync(
             "focus.skill.get",
@@ -421,9 +429,16 @@ public sealed class FocusMcpTests
         Assert.True(governanceResult.GetProperty("queue").GetProperty("UnverifiedActiveCount").GetInt32() >= 1);
         Assert.Equal(governanceResult.GetProperty("queue").GetProperty("Items").GetArrayLength(), governanceResult.GetProperty("summary").GetProperty("QueueItemCount").GetInt32());
         Assert.Equal(governanceResult.GetProperty("queue").GetProperty("NeedsReviewCount").GetInt32(), governanceResult.GetProperty("summary").GetProperty("NeedsReviewCount").GetInt32());
-        Assert.Contains(agentListResult.GetProperty("agents").EnumerateArray(), x => x.GetProperty("Slug").GetString() == "review-agent");
-        Assert.Equal("Review Agent", agentGetResult.GetProperty("agent").GetProperty("Agent").GetProperty("Name").GetString());
+        Assert.Single(agentListResult.GetProperty("agents").EnumerateArray());
+        Assert.Equal("execution-agent", agentListResult.GetProperty("agents").EnumerateArray().Single().GetProperty("Slug").GetString());
+        Assert.Equal("Execution Agent", agentGetResult.GetProperty("agent").GetProperty("Agent").GetProperty("Name").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(agentGetResult.GetProperty("agent").GetProperty("SuggestedQuestion").GetString()));
+        Assert.True(agentGetResult.GetProperty("agent").GetProperty("CompanionSkills").GetArrayLength() >= 1);
+        Assert.Equal("Impact Agent", impactAgentResult.GetProperty("agent").GetProperty("Agent").GetProperty("Name").GetString());
         Assert.Contains(agentRecommendResult.GetProperty("agents").EnumerateArray(), x => x.GetProperty("Slug").GetString() == "review-agent");
+        Assert.Equal("ship the release after validating the bounded checklist", agentRunResult.GetProperty("run").GetProperty("TaskQuestion").GetString());
+        Assert.True(agentRunResult.GetProperty("run").GetProperty("Steps").GetArrayLength() >= 3);
+        Assert.True(agentRunResult.GetProperty("run").GetProperty("CompanionSkills").GetArrayLength() >= 1);
         Assert.Contains(skillListResult.GetProperty("skills").EnumerateArray(), x => x.GetProperty("Id").GetGuid() == skillId);
         Assert.Equal("Run MCP usability pass", skillGetResult.GetProperty("skill").GetProperty("Skill").GetProperty("Name").GetString());
         Assert.Equal("Run MCP usability pass", skillRecommendResult.GetProperty("skills").EnumerateArray().First().GetProperty("Name").GetString());
@@ -432,8 +447,10 @@ public sealed class FocusMcpTests
         Assert.Contains(contextPack!.TopMatches, x => x.Kind == ContextRecordKind.Memory && x.Title.Contains("API outage", StringComparison.Ordinal));
         Assert.Equal("operator", operatorBootstrap.GetProperty("Profile").GetString());
         Assert.Equal("Ops", roomDirectory.GetProperty("rooms").EnumerateArray().Single().GetProperty("WingName").GetString());
-        Assert.Equal(4, agentDirectory.GetProperty("agents").GetArrayLength());
+        Assert.Equal(7, agentDirectory.GetProperty("agents").GetArrayLength());
+        Assert.Contains(agentDirectory.GetProperty("agents").EnumerateArray(), x => x.GetProperty("Slug").GetString() == "triage-agent");
         Assert.Equal("Context Agent", agentResource.GetProperty("Agent").GetProperty("Name").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(agentResource.GetProperty("SuggestedQuestion").GetString()));
         Assert.Contains(skillDirectory.GetProperty("skills").EnumerateArray(), x => x.GetProperty("Id").GetGuid() == skillId);
         Assert.Equal("Run MCP usability pass", skillResource.GetProperty("Skill").GetProperty("Name").GetString());
     }

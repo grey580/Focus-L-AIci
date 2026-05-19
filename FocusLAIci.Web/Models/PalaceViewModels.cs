@@ -742,6 +742,8 @@ public sealed class SkillBrowseViewModel
 public sealed class AgentBrowseViewModel
 {
     public string Query { get; init; } = string.Empty;
+    public ContextPackGoal? Goal { get; init; }
+    public bool SupportsWriteActionsOnly { get; init; }
     public IReadOnlyCollection<AgentCardViewModel> Agents { get; init; } = Array.Empty<AgentCardViewModel>();
 }
 
@@ -753,12 +755,16 @@ public sealed class AgentCardViewModel
     public string Mission { get; init; } = string.Empty;
     public string ScopeLabel { get; init; } = string.Empty;
     public string OutputLabel { get; init; } = string.Empty;
+    public ContextPackGoal DefaultGoal { get; init; }
+    public string DefaultGoalLabel { get; init; } = string.Empty;
     public bool SupportsWriteActions { get; init; }
     public IReadOnlyCollection<string> BestFor { get; init; } = Array.Empty<string>();
     public IReadOnlyCollection<string> Guardrails { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<string> KeywordHints { get; init; } = Array.Empty<string>();
     public string RecommendationReason { get; init; } = string.Empty;
     public decimal RecommendationScore { get; init; }
     public string RecommendationScoreLabel { get; init; } = string.Empty;
+    public string SuggestedQuestion { get; init; } = string.Empty;
 }
 
 public sealed class AgentDetailViewModel
@@ -767,6 +773,51 @@ public sealed class AgentDetailViewModel
     public IReadOnlyCollection<string> Inputs { get; init; } = Array.Empty<string>();
     public IReadOnlyCollection<string> Outputs { get; init; } = Array.Empty<string>();
     public string SuggestedPrompt { get; init; } = string.Empty;
+    public string SuggestedQuestion { get; init; } = string.Empty;
+    public ContextPackViewModel? RelatedContext { get; init; }
+    public IReadOnlyCollection<SkillCardViewModel> CompanionSkills { get; init; } = Array.Empty<SkillCardViewModel>();
+    public IReadOnlyCollection<AgentCardViewModel> RecommendedPeers { get; init; } = Array.Empty<AgentCardViewModel>();
+    public AgentRunInput RunInput { get; init; } = new();
+    public AgentRunViewModel? RunResult { get; init; }
+}
+
+public sealed class AgentRunInput
+{
+    [Required]
+    [StringLength(400)]
+    [Display(Name = "Task or question")]
+    public string Question { get; set; } = string.Empty;
+
+    [Display(Name = "Include completed work")]
+    public bool IncludeCompletedWork { get; set; } = true;
+
+    [Display(Name = "Expand ticket history")]
+    public bool ExpandHistory { get; set; } = true;
+
+    [Range(3, 10)]
+    [Display(Name = "Items per source")]
+    public int ResultsPerSection { get; set; } = 4;
+}
+
+public sealed class AgentRunViewModel
+{
+    public string TaskQuestion { get; init; } = string.Empty;
+    public string Summary { get; init; } = string.Empty;
+    public string OperatorPrompt { get; init; } = string.Empty;
+    public string ExecutionModeLabel { get; init; } = string.Empty;
+    public bool SupportsWriteActions { get; init; }
+    public IReadOnlyCollection<AgentExecutionStepViewModel> Steps { get; init; } = Array.Empty<AgentExecutionStepViewModel>();
+    public IReadOnlyCollection<string> NextActions { get; init; } = Array.Empty<string>();
+    public IReadOnlyCollection<SkillCardViewModel> CompanionSkills { get; init; } = Array.Empty<SkillCardViewModel>();
+    public IReadOnlyCollection<AgentCardViewModel> FollowOnAgents { get; init; } = Array.Empty<AgentCardViewModel>();
+    public ContextPackViewModel? ContextPack { get; init; }
+}
+
+public sealed class AgentExecutionStepViewModel
+{
+    public string Title { get; init; } = string.Empty;
+    public string Detail { get; init; } = string.Empty;
+    public string Outcome { get; init; } = string.Empty;
 }
 
 public sealed class SkillCardViewModel

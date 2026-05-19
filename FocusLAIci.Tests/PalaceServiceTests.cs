@@ -413,12 +413,197 @@ public sealed class PalaceServiceTests
         var workspace = await service.GetWorkspaceExportAsync(CancellationToken.None);
         var bootstrap = await service.GetWorkspaceBootstrapAsync("operator", CancellationToken.None);
 
-        Assert.Equal(4, dashboard.FeaturedAgents.Count);
+        Assert.Equal(7, dashboard.FeaturedAgents.Count);
         Assert.Contains(dashboard.RecommendedAgents, x => x.Slug == "review-agent");
         Assert.Equal(4, workspace.RecommendedAgents.Count);
-        Assert.Equal(4, bootstrap.FeaturedAgents.Count);
+        Assert.Equal(7, bootstrap.FeaturedAgents.Count);
         Assert.Contains(bootstrap.RecommendedAgents, x => x.Slug == "context-agent");
         Assert.Contains("Scoped agents:", workspace.ExportText);
+    }
+
+    [Fact]
+    public async Task AgentCatalogAndDetail_AddRoutingFiltersAndRelatedContext()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Delivery",
+            Description = "Delivery coordination"
+        }, CancellationToken.None);
+
+        await service.SaveSkillAsync(new SkillEditorInput
+        {
+            Name = "Ship bounded release",
+            Summary = "Run the bounded delivery checklist before shipping.",
+            Category = SkillCategory.Task,
+            WhenToUse = "Use this when a release plan is already approved.",
+            Flow = "Review checklist.\nRun validation.\nShip and summarize.",
+            ExamplesText = "Ship a bounded release after review.",
+            TriggerHintsText = "ship, release, checklist, bounded",
+            WingId = wingId,
+            IsPinned = true
+        }, CancellationToken.None);
+
+        await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Bounded delivery requires an explicit checklist",
+            Summary = "Execution work should stay inside an approved plan.",
+            Content = "Use execution only when the plan is explicit and bounded.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.ManualNote,
+            WingId = wingId,
+            Importance = 4,
+            IsPinned = true,
+            TagsText = "delivery, execution"
+        }, CancellationToken.None);
+
+        var catalog = await service.GetAgentCatalogAsync(null, ContextPackGoal.Delivery, true, CancellationToken.None);
+        var detail = await service.GetAgentAsync("execution-agent", CancellationToken.None);
+
+        Assert.Equal(2, catalog.Agents.Count);
+        Assert.Contains(catalog.Agents, x => x.Slug == "execution-agent");
+        Assert.Contains(catalog.Agents, x => x.Slug == "curation-agent");
+        Assert.NotNull(detail);
+        Assert.Equal(ContextPackGoal.Delivery, detail!.Agent.DefaultGoal);
+        Assert.NotEmpty(detail.SuggestedQuestion);
+        Assert.NotNull(detail.RelatedContext);
+        Assert.NotEmpty(detail.CompanionSkills);
+        Assert.Contains(detail.CompanionSkills, x => x.Slug == "ship-bounded-release");
+        Assert.Contains(detail.RecommendedPeers, x => x.Slug == "curation-agent");
+    }
+
+    [Fact]
+    public async Task RunAgentAsync_BuildsActionableTaskBrief()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Release",
+            Description = "Release delivery"
+        }, CancellationToken.None);
+
+        await service.SaveSkillAsync(new SkillEditorInput
+        {
+            Name = "Validate release checklist",
+            Summary = "Run the release checklist before shipping.",
+            Category = SkillCategory.Task,
+            WhenToUse = "Use this before a production release.",
+            Flow = "Review the release notes.\nRun tests.\nConfirm rollout readiness.",
+            ExamplesText = "Validate the release checklist before shipping.",
+            TriggerHintsText = "release, checklist, ship, validate",
+            WingId = wingId,
+            IsPinned = true
+        }, CancellationToken.None);
+
+        await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Release readiness requires tests and rollout notes",
+            Summary = "Do not ship until the release checklist is complete.",
+            Content = "Shipping should stay bounded and validated.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.ManualNote,
+            WingId = wingId,
+            Importance = 4,
+            IsPinned = true,
+            TagsText = "release, delivery"
+        }, CancellationToken.None);
+
+        var detail = await service.RunAgentAsync("execution-agent", new AgentRunInput
+        {
+            Question = "Ship the release after validating the bounded checklist.",
+            ResultsPerSection = 4,
+            IncludeCompletedWork = true,
+            ExpandHistory = true
+        }, CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.NotNull(detail!.RunResult);
+        Assert.Equal("Ship the release after validating the bounded checklist.", detail.RunResult!.TaskQuestion);
+        Assert.NotEmpty(detail.RunResult.Steps);
+        Assert.NotEmpty(detail.RunResult.NextActions);
+        Assert.NotNull(detail.RunResult.ContextPack);
+        Assert.NotEmpty(detail.RunResult.CompanionSkills);
+        Assert.Contains(detail.RunResult.CompanionSkills, x => x.Slug == "validate-release-checklist");
+        Assert.Contains(detail.RunResult.FollowOnAgents, x => x.Slug == "review-agent");
+    }
+
+    [Fact]
+    public async Task RunAgentAsync_SupportsConsensusTriageImpactAndCurationAgents()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var serviceContext = harness.CreateDbContext();
+        var service = new PalaceService(serviceContext);
+
+        var wingId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Architecture",
+            Description = "Architecture and delivery"
+        }, CancellationToken.None);
+
+        await service.SaveSkillAsync(new SkillEditorInput
+        {
+            Name = "Assess migration impact",
+            Summary = "Map likely blast radius and validation targets before a migration.",
+            Category = SkillCategory.System,
+            WhenToUse = "Use this before touching shared architecture.",
+            Flow = "Map affected surface.\nRank validation targets.\nChoose the next handoff.",
+            ExamplesText = "Assess the impact of a shared configuration migration.",
+            TriggerHintsText = "impact, blast radius, migration, validation",
+            WingId = wingId,
+            IsPinned = true
+        }, CancellationToken.None);
+
+        await service.SaveMemoryAsync(new MemoryEditorInput
+        {
+            Title = "Shared config changes require impact analysis and durable write-back",
+            Summary = "Map the blast radius first, then capture the durable outcome after shipping.",
+            Content = "Use impact analysis before execution and curation after the task ships.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.Architecture,
+            WingId = wingId,
+            Importance = 4,
+            IsPinned = true,
+            TagsText = "impact, curation, migration"
+        }, CancellationToken.None);
+
+        var triage = await service.RunAgentAsync("triage-agent", new AgentRunInput
+        {
+            Question = "Triage a raw request to clean up duplicate onboarding tickets.",
+            ResultsPerSection = 4,
+            IncludeCompletedWork = true
+        }, CancellationToken.None);
+        var impact = await service.RunAgentAsync("impact-agent", new AgentRunInput
+        {
+            Question = "Assess the blast radius of migrating shared configuration loading.",
+            ResultsPerSection = 4,
+            IncludeCompletedWork = true,
+            ExpandHistory = true
+        }, CancellationToken.None);
+        var curation = await service.RunAgentAsync("curation-agent", new AgentRunInput
+        {
+            Question = "Capture the durable outcome after finishing the shared configuration migration.",
+            ResultsPerSection = 4,
+            IncludeCompletedWork = true,
+            ExpandHistory = true
+        }, CancellationToken.None);
+
+        Assert.NotNull(triage);
+        Assert.NotNull(impact);
+        Assert.NotNull(curation);
+        Assert.Equal("triage-agent", triage!.Agent.Slug);
+        Assert.Equal("impact-agent", impact!.Agent.Slug);
+        Assert.Equal("curation-agent", curation!.Agent.Slug);
+        Assert.Contains(triage.RunResult!.Steps, x => x.Title == "Normalize the intake");
+        Assert.Contains(impact.RunResult!.Steps, x => x.Title == "Map the affected surface");
+        Assert.Contains(curation.RunResult!.Steps, x => x.Title == "Extract the durable outcomes");
+        Assert.Contains(impact.RunResult.CompanionSkills, x => x.Slug == "assess-migration-impact");
+        Assert.Contains(curation.RunResult.FollowOnAgents, x => x.Slug == "review-agent" || x.Slug == "execution-agent");
     }
 
     [Fact]
@@ -2316,6 +2501,8 @@ public sealed class PalaceServiceTests
         Assert.True(pack!.NeedsMoreContext);
         Assert.Contains(pack.DetectedGapItems, gap => gap.Code == "need-more-context");
         Assert.NotEmpty(pack.ClarifyingQuestions);
+        Assert.Equal("Clarify", pack.Decision.Kind);
+        Assert.Contains("insufficient-context", pack.Decision.Causes);
         Assert.Empty(pack.TopMatches);
         Assert.Empty(pack.Memories);
         Assert.Empty(pack.RecommendedSkills);
@@ -2344,6 +2531,7 @@ public sealed class PalaceServiceTests
         Assert.NotNull(pack);
         Assert.True(pack!.NeedsMoreContext);
         Assert.NotEmpty(pack.ClarifyingQuestions);
+        Assert.Equal("Clarify", pack.Decision.Kind);
         Assert.Empty(pack.TopMatches);
         Assert.Empty(pack.RecommendedSkills);
         Assert.Empty(pack.CodeGraphProjects);
@@ -2366,6 +2554,8 @@ public sealed class PalaceServiceTests
         Assert.True(pack!.NeedsMoreContext);
         Assert.Contains(pack.DetectedGapItems, gap => gap.Code == "insufficient-grounding");
         Assert.NotEmpty(pack.ClarifyingQuestions);
+        Assert.Equal("Unsupported", pack.Decision.Kind);
+        Assert.Contains("missing-family", pack.Decision.Causes);
         Assert.Empty(pack.TopMatches);
         Assert.Empty(pack.RecommendedSkills);
         Assert.Contains("grounded supporting context", pack.Summary, StringComparison.OrdinalIgnoreCase);
@@ -3780,6 +3970,11 @@ public sealed class PalaceServiceTests
             Question = "review azure deployment",
             GoalLabel = "Delivery",
             Summary = "1 memory, 1 skill",
+            Decision = new ContextPackDecisionViewModel
+            {
+                Kind = "Proceed",
+                Causes = Array.Empty<string>()
+            },
             Input = new ContextBriefInput
             {
                 Question = "review azure deployment",
@@ -3801,6 +3996,8 @@ public sealed class PalaceServiceTests
         Assert.Equal("review azure deployment", record.Question);
         Assert.Equal("Delivery", record.GoalLabel);
         Assert.Equal(1, record.RecommendedSkillCount);
+        Assert.Equal(5, record.ReviewScore);
+        Assert.Contains("decision Proceed", record.ReviewNotes, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("azure", record.SearchTokensJson, StringComparison.OrdinalIgnoreCase);
     }
 

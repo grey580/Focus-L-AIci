@@ -1,6 +1,7 @@
 @model FocusLAIci.Web.Models.AgentDetailViewModel
 @{
     ViewData["Title"] = Model.Agent.Name;
+    var runResult = Model.RunResult;
 }
 
 <nav aria-label="breadcrumb" class="breadcrumb-bar">
@@ -13,7 +14,7 @@
 
 <section class="page-header">
     <div>
-        <p class="eyebrow text-dark">@Model.Agent.ScopeLabel</p>
+        <p class="eyebrow text-dark">@Model.Agent.ScopeLabel • default @Model.Agent.DefaultGoalLabel</p>
         <h1>@Model.Agent.Name</h1>
         <p class="page-copy">@Model.Agent.Summary</p>
         <div class="memory-meta mt-2">@Model.Agent.Mission</div>
@@ -22,6 +23,104 @@
         @(Model.Agent.SupportsWriteActions ? "Write-limited" : "Read-only")
     </span>
 </section>
+
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+        <div class="section-heading">
+            <h2>Run this agent on a task</h2>
+            <span class="text-secondary small">Build a concrete task brief, context pack, and next-step checklist.</span>
+        </div>
+        <form method="post" class="row g-3">
+            @Html.AntiForgeryToken()
+            <div class="col-12">
+                <label asp-for="RunInput.Question" class="form-label"></label>
+                <textarea asp-for="RunInput.Question" class="form-control" rows="3" placeholder="Review the riskiest release changes before shipping."></textarea>
+                <span asp-validation-for="RunInput.Question" class="text-danger small"></span>
+            </div>
+            <div class="col-md-3">
+                <label asp-for="RunInput.ResultsPerSection" class="form-label"></label>
+                <select asp-for="RunInput.ResultsPerSection" class="form-select">
+                    @foreach (var option in new[] { 3, 4, 5, 6, 8 })
+                    {
+                        if (Model.RunInput.ResultsPerSection == option)
+                        {
+                            <option value="@option" selected="selected">@option</option>
+                        }
+                        else
+                        {
+                            <option value="@option">@option</option>
+                        }
+                    }
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <div class="form-check mb-2">
+                    <input asp-for="RunInput.IncludeCompletedWork" class="form-check-input" />
+                    <label asp-for="RunInput.IncludeCompletedWork" class="form-check-label"></label>
+                </div>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <div class="form-check mb-2">
+                    <input asp-for="RunInput.ExpandHistory" class="form-check-input" />
+                    <label asp-for="RunInput.ExpandHistory" class="form-check-label"></label>
+                </div>
+            </div>
+            <div class="col-md-3 d-flex align-items-end justify-content-md-end">
+                <button type="submit" class="btn btn-primary">Build task brief</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@if (runResult is not null)
+{
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <div class="section-heading">
+                <h2>Task brief</h2>
+                <span class="text-secondary small">@runResult.ExecutionModeLabel</span>
+            </div>
+            <p class="mb-2">@runResult.Summary</p>
+            <p class="text-secondary small mb-3"><code>@runResult.OperatorPrompt</code></p>
+            <div class="row g-4">
+                <div class="col-lg-7">
+                    <h3 class="h6">Execution steps</h3>
+                    <ol class="mb-0">
+                        @foreach (var step in runResult.Steps)
+                        {
+                            <li class="mb-3">
+                                <strong>@step.Title</strong>
+                                <div class="text-secondary small">@step.Detail</div>
+                                <div class="small mt-1"><span class="memory-meta">Outcome</span> @step.Outcome</div>
+                            </li>
+                        }
+                    </ol>
+                </div>
+                <div class="col-lg-5">
+                    <h3 class="h6">Next actions</h3>
+                    <ul class="mb-0">
+                        @foreach (var action in runResult.NextActions)
+                        {
+                            <li>@action</li>
+                        }
+                    </ul>
+                </div>
+            </div>
+            <div class="d-flex gap-2 flex-wrap mt-3">
+                <a class="btn btn-outline-primary"
+                   asp-controller="Admin"
+                   asp-action="Inspect"
+                   asp-route-Question="@runResult.TaskQuestion"
+                   asp-route-IncludeCompletedWork="@Model.RunInput.IncludeCompletedWork"
+                   asp-route-ExpandHistory="@Model.RunInput.ExpandHistory"
+                   asp-route-ResultsPerSection="@Model.RunInput.ResultsPerSection">Open Inspect for this task</a>
+                <a class="btn btn-outline-secondary"
+                   asp-controller="Home"
+                   asp-action="Index">Back to dashboard</a>
+            </div>
+        </div>
+    </div>
+}
 
 <div class="row g-4">
     <div class="col-lg-8">
@@ -78,13 +177,218 @@
                     @foreach (var item in Model.Agent.Guardrails)
                     {
                         <li>@item</li>
-                    }
+                }
                 </ul>
+                <div class="section-heading">
+                    <h2>Keyword hints</h2>
+                </div>
+                @if (Model.Agent.KeywordHints.Count == 0)
+                {
+                    <p class="text-secondary small">No keyword hints captured.</p>
+                }
+                else
+                {
+                    <div class="tag-row mb-4">
+                        @foreach (var hint in Model.Agent.KeywordHints)
+                        {
+                            <span class="tag-pill">@hint</span>
+                        }
+                    </div>
+                }
                 <div class="section-heading">
                     <h2>Suggested prompt</h2>
                 </div>
-                <p class="text-secondary small mb-0"><code>@Model.SuggestedPrompt</code></p>
+                <p class="text-secondary small"><code>@Model.SuggestedPrompt</code></p>
+                <div class="section-heading">
+                    <h2>Suggested task framing</h2>
+                </div>
+                <p class="text-secondary small mb-3"><code>@Model.SuggestedQuestion</code></p>
+                <a class="btn btn-outline-primary"
+                   asp-controller="Admin"
+                   asp-action="Inspect"
+                   asp-route-Question="@Model.SuggestedQuestion"
+                   asp-route-IncludeCompletedWork="true"
+                   asp-route-ExpandHistory="true"
+                   asp-route-ResultsPerSection="4">Open Inspect with this agent</a>
             </div>
         </div>
     </div>
 </div>
+
+@if (Model.CompanionSkills.Count > 0 || Model.RecommendedPeers.Count > 0)
+{
+    <div class="row g-4 mt-1">
+        @if (Model.CompanionSkills.Count > 0)
+        {
+            <div class="col-lg-7">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-body">
+                        <div class="section-heading">
+                            <h2>Companion skills</h2>
+                            <span class="text-secondary small">@Model.CompanionSkills.Count matched workflows</span>
+                        </div>
+                        <div class="row g-3">
+                            @foreach (var skill in Model.CompanionSkills.Take(4))
+                            {
+                                <div class="col-md-6">
+                                    <article class="card shadow-sm border-0 inner-card h-100">
+                                        <div class="card-body">
+                                            <div class="memory-meta">@skill.CategoryLabel@(string.IsNullOrWhiteSpace(skill.WingName) ? string.Empty : $" • {skill.WingName}")</div>
+                                            <h3 class="memory-title">
+                                                <a asp-controller="Skills" asp-action="Skill" asp-route-slug="@skill.Slug">@skill.Name</a>
+                                            </h3>
+                                            <p class="memory-summary mb-2">@skill.Summary</p>
+                                            @if (!string.IsNullOrWhiteSpace(skill.RecommendationReason))
+                                            {
+                                                <div class="text-secondary small">@skill.RecommendationReason</div>
+                                            }
+                                        </div>
+                                    </article>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (Model.RecommendedPeers.Count > 0)
+        {
+            <div class="col-lg-5">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-body">
+                        <div class="section-heading">
+                            <h2>Use with</h2>
+                            <span class="text-secondary small">@Model.RecommendedPeers.Count adjacent agents</span>
+                        </div>
+                        <div class="code-graph-side-list">
+                            @foreach (var peer in Model.RecommendedPeers)
+                            {
+                                <a class="code-graph-side-item" asp-action="Agent" asp-route-slug="@peer.Slug">
+                                    <strong>@peer.Name</strong>
+                                    <span>@peer.ScopeLabel • @peer.DefaultGoalLabel</span>
+                                    @if (!string.IsNullOrWhiteSpace(peer.RecommendationReason))
+                                    {
+                                        <small>@peer.RecommendationReason</small>
+                                    }
+                                </a>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (runResult?.CompanionSkills.Count > 0 || runResult?.FollowOnAgents.Count > 0)
+{
+    <div class="row g-4 mt-1">
+        @if (runResult!.CompanionSkills.Count > 0)
+        {
+            <div class="col-lg-7">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-body">
+                        <div class="section-heading">
+                            <h2>Task companion skills</h2>
+                            <span class="text-secondary small">@runResult.CompanionSkills.Count matched workflows</span>
+                        </div>
+                        <div class="row g-3">
+                            @foreach (var skill in runResult.CompanionSkills.Take(4))
+                            {
+                                <div class="col-md-6">
+                                    <article class="card shadow-sm border-0 inner-card h-100">
+                                        <div class="card-body">
+                                            <div class="memory-meta">@skill.CategoryLabel</div>
+                                            <h3 class="memory-title">
+                                                <a asp-controller="Skills" asp-action="Skill" asp-route-slug="@skill.Slug">@skill.Name</a>
+                                            </h3>
+                                            <p class="memory-summary mb-0">@skill.Summary</p>
+                                        </div>
+                                    </article>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+        @if (runResult!.FollowOnAgents.Count > 0)
+        {
+            <div class="col-lg-5">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-body">
+                        <div class="section-heading">
+                            <h2>Follow-on agents</h2>
+                            <span class="text-secondary small">@runResult.FollowOnAgents.Count next-phase options</span>
+                        </div>
+                        <div class="code-graph-side-list">
+                            @foreach (var agent in runResult.FollowOnAgents)
+                            {
+                                <a class="code-graph-side-item" asp-action="Agent" asp-route-slug="@agent.Slug">
+                                    <strong>@agent.Name</strong>
+                                    <span>@agent.ScopeLabel • @agent.DefaultGoalLabel</span>
+                                    @if (!string.IsNullOrWhiteSpace(agent.RecommendationReason))
+                                    {
+                                        <small>@agent.RecommendationReason</small>
+                                    }
+                                </a>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (Model.RelatedContext is not null)
+{
+    <div class="row g-4 mt-1">
+        @{
+            var relatedSections = new[]
+            {
+                new { Title = "Related memories", Items = Model.RelatedContext.Memories },
+                new { Title = "Related tickets", Items = Model.RelatedContext.Tickets },
+                new { Title = "Related code graph projects", Items = Model.RelatedContext.CodeGraphProjects },
+                new { Title = "Related code files", Items = Model.RelatedContext.CodeGraphFiles }
+            };
+        }
+        @foreach (var relatedSection in relatedSections)
+        {
+            <div class="col-lg-6">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-body">
+                        <div class="section-heading">
+                            <h2 class="h5">@relatedSection.Title</h2>
+                            <span class="text-secondary small">@relatedSection.Items.Count links</span>
+                        </div>
+                        @if (relatedSection.Items.Count == 0)
+                        {
+                            <p class="text-secondary mb-0">No related context was found yet.</p>
+                        }
+                        else
+                        {
+                            <div class="code-graph-side-list">
+                                @foreach (var item in relatedSection.Items.Take(4))
+                                {
+                                    <a class="code-graph-side-item" href="@item.Url">
+                                        <strong>@item.Title</strong>
+                                        @if (!string.IsNullOrWhiteSpace(item.Subtitle))
+                                        {
+                                            <span>@item.Subtitle</span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(item.Preview))
+                                        {
+                                            <small>@item.Preview</small>
+                                        }
+                                    </a>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}

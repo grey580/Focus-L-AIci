@@ -189,10 +189,19 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
             new { type = "object", properties = new { rooms = new { type = "array" } } }),
         CreateDescriptor(
             "focus.agent.list",
-            "List the four built-in Focus scoped agents.",
+            "List the built-in Focus scoped agents.",
             "agents",
             false,
-            new { type = "object", properties = new { query = new { type = "string" } } },
+            new
+            {
+                type = "object",
+                properties = new
+                {
+                    query = new { type = "string" },
+                    goal = new { type = "string", @enum = Enum.GetNames<ContextPackGoal>() },
+                    supportsWriteActions = new { type = "boolean" }
+                }
+            },
             new { type = "object", properties = new { agents = new { type = "array" } } }),
         CreateDescriptor(
             "focus.agent.get",
@@ -217,6 +226,25 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
                 }
             },
             new { type = "object", properties = new { agents = new { type = "array" } } }),
+        CreateDescriptor(
+            "focus.agent.run",
+            "Build an actionable task brief for a Focus agent using a concrete task question.",
+            "agents",
+            false,
+            new
+            {
+                type = "object",
+                required = new[] { "slug", "question" },
+                properties = new
+                {
+                    slug = new { type = "string" },
+                    question = new { type = "string" },
+                    includeCompletedWork = new { type = "boolean" },
+                    expandHistory = new { type = "boolean" },
+                    resultsPerSection = new { type = "integer", minimum = 3, maximum = 10 }
+                }
+            },
+            new { type = "object", properties = new { run = new { type = "object" } } }),
         CreateDescriptor(
             "focus.skill.list",
             "List Focus skills and reusable runbook workflows.",
@@ -492,8 +520,9 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
             "focus.wing.list" => await GetWingsAsync(palaceService, arguments, cancellationToken),
             "focus.room.list" => await GetRoomsAsync(palaceService, arguments, cancellationToken),
             "focus.agent.list" => GetAgents(arguments),
-            "focus.agent.get" => GetAgent(arguments),
+            "focus.agent.get" => await GetAgentAsync(palaceService, arguments, cancellationToken),
             "focus.agent.recommend" => RecommendAgents(arguments),
+            "focus.agent.run" => await RunAgentAsync(palaceService, arguments, cancellationToken),
             "focus.skill.list" => await GetSkillsAsync(palaceService, arguments, cancellationToken),
             "focus.skill.get" => await GetSkillAsync(palaceService, arguments, cancellationToken),
             "focus.skill.recommend" => await RecommendSkillsAsync(palaceService, arguments, cancellationToken),
@@ -737,14 +766,14 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
     object GetAgents(JsonElement arguments)
     {
         var input = Deserialize<AgentListToolInput>(arguments);
-        return new { agents = agentCatalogService.GetCatalog(input.Query) };
+        return new { agents = agentCatalogService.GetCatalog(input.Query, input.Goal, input.SupportsWriteActions) };
     }
 
-    object GetAgent(JsonElement arguments)
+    private static async Task<object> GetAgentAsync(PalaceService palaceService, JsonElement arguments, CancellationToken cancellationToken)
     {
         var input = Deserialize<AgentGetToolInput>(arguments);
         Validate(input);
-        var agent = agentCatalogService.GetAgent(input.Slug)
+        var agent = await palaceService.GetAgentAsync(input.Slug, cancellationToken)
             ?? throw new InvalidOperationException("That agent no longer exists.");
         return new { agent };
     }
@@ -754,6 +783,21 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
         var input = Deserialize<AgentRecommendToolInput>(arguments);
         Validate(input);
         return new { agents = agentCatalogService.RecommendAgents(input.Question, input.Goal, input.Limit) };
+    }
+
+    private static async Task<object> RunAgentAsync(PalaceService palaceService, JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var input = Deserialize<AgentRunToolInput>(arguments);
+        Validate(input);
+        var detail = await palaceService.RunAgentAsync(input.Slug, new AgentRunInput
+        {
+            Question = input.Question,
+            IncludeCompletedWork = input.IncludeCompletedWork,
+            ExpandHistory = input.ExpandHistory,
+            ResultsPerSection = input.ResultsPerSection
+        }, cancellationToken)
+            ?? throw new InvalidOperationException("That agent no longer exists.");
+        return new { run = detail.RunResult, agent = detail.Agent };
     }
 
     private static async Task<object> GetSkillsAsync(PalaceService palaceService, JsonElement arguments, CancellationToken cancellationToken)
@@ -1114,6 +1158,8 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
     private sealed class AgentListToolInput
     {
         public string? Query { get; set; }
+        public ContextPackGoal? Goal { get; set; }
+        public bool SupportsWriteActions { get; set; }
     }
 
     private sealed class AgentGetToolInput
@@ -1130,6 +1176,23 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
         public ContextPackGoal Goal { get; set; } = ContextPackGoal.General;
         [Range(1, 4)]
         public int Limit { get; set; } = 4;
+    }
+
+    private sealed class AgentRunToolInput
+    {
+        [Required]
+        [RegularExpression("^[a-z0-9]+(?:-[a-z0-9]+)*$")]
+        public string Slug { get; set; } = string.Empty;
+
+        [Required]
+        [StringLength(400)]
+        public string Question { get; set; } = string.Empty;
+
+        public bool IncludeCompletedWork { get; set; } = true;
+        public bool ExpandHistory { get; set; } = true;
+
+        [Range(3, 10)]
+        public int ResultsPerSection { get; set; } = 4;
     }
 
     private sealed class SkillListToolInput

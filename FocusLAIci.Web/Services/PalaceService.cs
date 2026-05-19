@@ -311,6 +311,105 @@ public sealed class PalaceService
         };
     }
 
+    public Task<AgentBrowseViewModel> GetAgentCatalogAsync(
+        string? query,
+        ContextPackGoal? goal,
+        bool supportsWriteActionsOnly,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new AgentBrowseViewModel
+        {
+            Query = query?.Trim() ?? string.Empty,
+            Goal = goal,
+            SupportsWriteActionsOnly = supportsWriteActionsOnly,
+            Agents = _agentCatalogService.GetCatalog(query, goal, supportsWriteActionsOnly)
+        });
+    }
+
+    public async Task<AgentDetailViewModel?> GetAgentAsync(string slug, CancellationToken cancellationToken)
+        => await BuildAgentDetailAsync(slug, null, false, cancellationToken);
+
+    public async Task<AgentDetailViewModel?> RunAgentAsync(string slug, AgentRunInput input, CancellationToken cancellationToken)
+        => await BuildAgentDetailAsync(slug, input, true, cancellationToken);
+
+    private async Task<AgentDetailViewModel?> BuildAgentDetailAsync(string slug, AgentRunInput? runInput, bool buildRun, CancellationToken cancellationToken)
+    {
+        var detail = _agentCatalogService.GetAgent(slug);
+        if (detail is null)
+        {
+            return null;
+        }
+
+        var relatedContext = await _contextService.BuildContextPackAsync(new ContextBriefInput
+        {
+            Question = detail.SuggestedQuestion,
+            IncludeCompletedWork = true,
+            ExpandHistory = true,
+            ResultsPerSection = 3,
+            PackGoal = detail.Agent.DefaultGoal,
+            PreferRecentChanges = true
+        }, cancellationToken);
+        var companionSkills = await RecommendSkillsAsync(
+            $"{detail.Agent.Name} {detail.SuggestedQuestion} {detail.SuggestedPrompt}",
+            null,
+            null,
+            4,
+            cancellationToken);
+        var peerAgents = _agentCatalogService.RecommendAgents(
+                $"{detail.Agent.Name} {detail.SuggestedQuestion}",
+                detail.Agent.DefaultGoal,
+                4)
+            .Where(agent => !string.Equals(agent.Slug, slug, StringComparison.OrdinalIgnoreCase))
+            .Take(3)
+            .ToArray();
+        var effectiveRunInput = runInput ?? new AgentRunInput
+        {
+            Question = detail.SuggestedQuestion
+        };
+        AgentRunViewModel? runResult = null;
+        if (buildRun && !string.IsNullOrWhiteSpace(effectiveRunInput.Question))
+        {
+            var runContext = await _contextService.BuildContextPackAsync(new ContextBriefInput
+            {
+                Question = effectiveRunInput.Question.Trim(),
+                IncludeCompletedWork = effectiveRunInput.IncludeCompletedWork,
+                ExpandHistory = effectiveRunInput.ExpandHistory,
+                ResultsPerSection = Math.Clamp(effectiveRunInput.ResultsPerSection, 3, 10),
+                PackGoal = detail.Agent.DefaultGoal,
+                PreferRecentChanges = true
+            }, cancellationToken);
+            var runSkills = await RecommendSkillsAsync(
+                $"{detail.Agent.Name} {effectiveRunInput.Question} {detail.SuggestedPrompt}",
+                null,
+                null,
+                4,
+                cancellationToken);
+            var runPeers = _agentCatalogService.RecommendAgents(
+                    effectiveRunInput.Question,
+                    detail.Agent.DefaultGoal,
+                    4)
+                .Where(agent => !string.Equals(agent.Slug, slug, StringComparison.OrdinalIgnoreCase))
+                .Take(3)
+                .ToArray();
+            runResult = BuildAgentRunViewModel(detail, effectiveRunInput, runContext, runSkills, runPeers);
+        }
+
+        return new AgentDetailViewModel
+        {
+            Agent = detail.Agent,
+            Inputs = detail.Inputs,
+            Outputs = detail.Outputs,
+            SuggestedPrompt = detail.SuggestedPrompt,
+            SuggestedQuestion = detail.SuggestedQuestion,
+            RelatedContext = relatedContext,
+            CompanionSkills = companionSkills,
+            RecommendedPeers = peerAgents,
+            RunInput = effectiveRunInput,
+            RunResult = runResult
+        };
+    }
+
     public async Task<DashboardDiagnosticsViewModel> GetDashboardDiagnosticsAsync(ContextBriefInput? contextInput, CancellationToken cancellationToken)
     {
         var dashboard = await GetDashboardAsync(contextInput, cancellationToken);
@@ -3307,6 +3406,211 @@ public sealed class PalaceService
         }
 
         return builder.ToString().TrimEnd();
+    }
+
+    private static AgentRunViewModel BuildAgentRunViewModel(
+        AgentDetailViewModel detail,
+        AgentRunInput input,
+        ContextPackViewModel? contextPack,
+        IReadOnlyCollection<SkillCardViewModel> companionSkills,
+        IReadOnlyCollection<AgentCardViewModel> followOnAgents)
+    {
+        AgentExecutionStepViewModel[] steps = detail.Agent.Slug switch
+        {
+            "context-agent" =>
+            [
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Clarify the task",
+                    Detail = "Use the task framing and top context matches to tighten the question before acting.",
+                    Outcome = "A focused task statement and grounded context pack."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Read the strongest evidence",
+                    Detail = "Review the top memories, tickets, todos, and recent changes surfaced for this task.",
+                    Outcome = "The best prior decisions and relevant work are in view."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Route the work",
+                    Detail = "Choose the next agent or skill based on the dominant goal and any context gaps.",
+                    Outcome = "A clear downstream plan instead of a cold start."
+                }
+            ],
+            "triage-agent" =>
+            [
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Normalize the intake",
+                    Detail = "Turn the raw request into a clear problem statement, explicit scope, and named urgency before creating downstream work.",
+                    Outcome = "The task is framed clearly enough to route and prioritize."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Check overlap and route it",
+                    Detail = "Use the context pack to look for related memories, tickets, todos, and recent changes that suggest duplicates or the right Focus destination.",
+                    Outcome = "Duplicate risk is visible and the work is routed to the correct wing, room, or agent path."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Propose the next records",
+                    Detail = "Name the tickets, todos, and next agent handoff that would make this work executable without losing the original intake.",
+                    Outcome = "A bounded intake result that can move directly into context, planning, or execution."
+                }
+            ],
+            "research-agent" =>
+            [
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Collect evidence",
+                    Detail = "Use the related context pack to gather memories, tickets, code graph clues, and recent changes tied to the question.",
+                    Outcome = "A source-backed evidence set for the investigation."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Synthesize the findings",
+                    Detail = "Summarize the most likely explanation, what is confirmed, and what is still missing.",
+                    Outcome = "A concise investigative brief with named evidence."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Name the next checks",
+                    Detail = "Turn gaps and ambiguities into concrete next checks or follow-on tasks.",
+                    Outcome = "A short list of decisive next actions."
+                }
+            ],
+            "impact-agent" =>
+            [
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Map the affected surface",
+                    Detail = "Use the context pack, code graph clues, and recent changes to identify which files, rooms, systems, or workflows the task could touch.",
+                    Outcome = "The likely blast radius is visible before anything changes."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Rank the risks and checks",
+                    Detail = "Turn the affected surface into a practical validation list covering breakpoints, dependencies, and likely regressions.",
+                    Outcome = "A risk-ranked checklist for what must be validated next."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Stage the downstream handoff",
+                    Detail = "Recommend whether the task should move to execution, review, or deeper research based on the impact confidence and remaining unknowns.",
+                    Outcome = "The next phase is chosen from evidence instead of guesswork."
+                }
+            ],
+            "execution-agent" =>
+            [
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Confirm the bounds",
+                    Detail = "Use the context pack and prompt to make sure the task is explicit, scoped, and ready for follow-through.",
+                    Outcome = "A bounded plan that is safe to execute."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Run the concrete steps",
+                    Detail = "Execute the approved checklist, build, test, maintenance task, or delivery flow in order.",
+                    Outcome = "A completed step log and visible task progress."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Capture the result",
+                    Detail = "Summarize outcomes, blockers, and any durable knowledge that should be written back into Focus.",
+                    Outcome = "The task result is ready for handoff or memory capture."
+                }
+            ],
+            "curation-agent" =>
+            [
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Extract the durable outcomes",
+                    Detail = "Separate stable decisions, shipped behavior, and reusable lessons from transient task chatter or one-off execution details.",
+                    Outcome = "Only durable knowledge is eligible for Focus write-back."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Propose freshness and merge updates",
+                    Detail = "Compare the new outcome against existing memories, bootstrap context, and recent changes to find merge, supersede, or refresh opportunities.",
+                    Outcome = "Memory cleanup and freshness work is grounded in evidence."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Queue the write-back",
+                    Detail = "Name the memory captures, merges, and follow-up governance actions that should happen to keep Focus trustworthy after the task.",
+                    Outcome = "The durable outcome is ready to become system-of-record knowledge."
+                }
+            ],
+            _ =>
+            [
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Read the proposed work",
+                    Detail = "Review the task framing, related context, and the strongest evidence before assessing quality.",
+                    Outcome = "The review starts from exact context, not guesses."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Look for material risk",
+                    Detail = "Check for regressions, missing wiring, weak assumptions, and work that escaped its intended scope.",
+                    Outcome = "A high-signal risk list focused on what matters."
+                },
+                new AgentExecutionStepViewModel
+                {
+                    Title = "Recommend follow-up",
+                    Detail = "Convert the risks into concrete follow-up checks or fixes before the work is treated as done.",
+                    Outcome = "A short validation and remediation checklist."
+                }
+            ]
+        };
+
+        var nextActions = new List<string>();
+        if (contextPack?.TopMatches.Count > 0)
+        {
+            nextActions.Add($"Read the top {Math.Min(3, contextPack.TopMatches.Count)} context matches first.");
+        }
+
+        if (contextPack?.ClarifyingQuestions.Count > 0)
+        {
+            nextActions.Add($"Answer: {contextPack.ClarifyingQuestions.First()}");
+        }
+
+        if (companionSkills.Count > 0)
+        {
+            nextActions.Add($"Use the companion skill {companionSkills.First().Name} for the concrete workflow.");
+        }
+
+        if (followOnAgents.Count > 0)
+        {
+            nextActions.Add($"Hand off next to {followOnAgents.First().Name} if the task changes phase.");
+        }
+
+        if (nextActions.Count == 0)
+        {
+            nextActions.Add("Read the context pack, follow the agent steps, and record the durable outcome.");
+        }
+
+        var summary = $"{detail.Agent.Name} prepared a {detail.Agent.DefaultGoalLabel.ToLowerInvariant()} task brief for \"{input.Question.Trim()}\".";
+        if (contextPack is not null)
+        {
+            summary += $" It surfaced {contextPack.TopMatches.Count} top matches and {companionSkills.Count} companion skills.";
+        }
+
+        return new AgentRunViewModel
+        {
+            TaskQuestion = input.Question.Trim(),
+            Summary = summary,
+            OperatorPrompt = $"{detail.SuggestedPrompt} Task: {input.Question.Trim()}",
+            ExecutionModeLabel = detail.Agent.ScopeLabel,
+            SupportsWriteActions = detail.Agent.SupportsWriteActions,
+            Steps = steps,
+            NextActions = nextActions,
+            CompanionSkills = companionSkills,
+            FollowOnAgents = followOnAgents,
+            ContextPack = contextPack
+        };
     }
 
     private static string BuildWorkspaceBootstrapSummary(

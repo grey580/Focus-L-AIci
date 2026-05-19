@@ -257,6 +257,40 @@ else if (shouldLazyLoadContextPack)
     </section>
 }
 
+@if (Model.ContextPack is null && Model.FeaturedAgents.Count > 0)
+{
+    <section class="mb-4">
+        <div class="section-heading">
+            <h2>Featured agents</h2>
+            <a class="btn btn-sm btn-outline-primary" asp-controller="Agents" asp-action="Index">Browse Agents</a>
+        </div>
+        <div class="row g-3">
+            @foreach (var agent in Model.FeaturedAgents.Take(4))
+            {
+                <div class="col-lg-6">
+                    <article class="card shadow-sm border-0 h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between gap-2 align-items-start mb-2">
+                                <div>
+                                    <div class="memory-meta">@agent.ScopeLabel • default @agent.DefaultGoalLabel</div>
+                                    <h3 class="memory-title">
+                                        <a asp-controller="Agents" asp-action="Agent" asp-route-slug="@agent.Slug">@agent.Name</a>
+                                    </h3>
+                                </div>
+                                <span class="badge @(agent.SupportsWriteActions ? "text-bg-primary" : "text-bg-secondary")">
+                                    @(agent.SupportsWriteActions ? "Write-limited" : "Read-only")
+                                </span>
+                            </div>
+                            <p class="memory-summary mb-2">@agent.Summary</p>
+                            <div class="text-secondary small">@agent.Mission</div>
+                        </div>
+                    </article>
+                </div>
+            }
+        </div>
+    </section>
+}
+
 <section class="dashboard-status-grid mb-4">
     <div class="card shadow-sm border-0 dashboard-panel">
         <div class="card-body dashboard-panel-body">
