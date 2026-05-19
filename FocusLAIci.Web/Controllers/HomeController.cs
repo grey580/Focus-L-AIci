@@ -43,6 +43,18 @@ public sealed class HomeController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SuggestAgent(ContextBriefInput input, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            return View("Index", ApplyMessages(await RebuildDashboardAsync(input, cancellationToken)));
+        }
+
+        return View("Index", ApplyMessages(await BuildDashboardWithSuggestionAsync(input, cancellationToken)));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> QuickCapture(QuickCaptureInput input, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
@@ -53,6 +65,7 @@ public sealed class HomeController : Controller
                 Stats = dashboard.Stats,
                 ContextInput = dashboard.ContextInput,
                 ContextPack = dashboard.ContextPack,
+                SuggestedAgentDetail = dashboard.SuggestedAgentDetail,
                 FallbackContext = dashboard.FallbackContext,
                 QuickCaptureInput = input,
                 ActiveTickets = dashboard.ActiveTickets,
@@ -124,6 +137,7 @@ public sealed class HomeController : Controller
             Stats = dashboard.Stats,
             ContextInput = input,
             ContextPack = dashboard.ContextPack,
+            SuggestedAgentDetail = dashboard.SuggestedAgentDetail,
             FallbackContext = dashboard.FallbackContext,
             QuickCaptureInput = dashboard.QuickCaptureInput,
             ActiveTickets = dashboard.ActiveTickets,
@@ -151,6 +165,37 @@ public sealed class HomeController : Controller
             Stats = dashboard.Stats,
             ContextInput = RequestInputPolicy.NormalizeBoundContextBriefInput(input),
             ContextPack = dashboard.ContextPack,
+            SuggestedAgentDetail = dashboard.SuggestedAgentDetail,
+            FallbackContext = dashboard.FallbackContext,
+            QuickCaptureInput = dashboard.QuickCaptureInput,
+            ActiveTickets = dashboard.ActiveTickets,
+            RecentActivity = dashboard.RecentActivity,
+            Wings = dashboard.Wings,
+            RecentMemories = dashboard.RecentMemories,
+            PinnedMemories = dashboard.PinnedMemories,
+            ResurfacingMemories = dashboard.ResurfacingMemories,
+            RecommendedAgents = dashboard.RecommendedAgents,
+            FeaturedAgents = dashboard.FeaturedAgents,
+            RecommendedSkills = dashboard.RecommendedSkills,
+            FeaturedSkills = dashboard.FeaturedSkills,
+            CurrentTodos = dashboard.CurrentTodos,
+            MissingContextWarnings = dashboard.MissingContextWarnings,
+            MissingContextWarningItems = dashboard.MissingContextWarningItems,
+            SearchExamples = dashboard.SearchExamples
+        };
+    }
+
+    private async Task<DashboardViewModel> BuildDashboardWithSuggestionAsync(ContextBriefInput input, CancellationToken cancellationToken)
+    {
+        var normalizedInput = RequestInputPolicy.NormalizeBoundContextBriefInput(input);
+        var dashboard = await _palaceService.GetDashboardShellAsync(cancellationToken);
+        var suggestion = await _palaceService.SuggestAgentRunAsync(normalizedInput, cancellationToken);
+        return new DashboardViewModel
+        {
+            Stats = dashboard.Stats,
+            ContextInput = normalizedInput,
+            ContextPack = dashboard.ContextPack,
+            SuggestedAgentDetail = suggestion,
             FallbackContext = dashboard.FallbackContext,
             QuickCaptureInput = dashboard.QuickCaptureInput,
             ActiveTickets = dashboard.ActiveTickets,
@@ -177,6 +222,7 @@ public sealed class HomeController : Controller
             Stats = model.Stats,
             ContextInput = model.ContextInput,
             ContextPack = model.ContextPack,
+            SuggestedAgentDetail = model.SuggestedAgentDetail,
             FallbackContext = model.FallbackContext,
             QuickCaptureInput = model.QuickCaptureInput,
             ActiveTickets = model.ActiveTickets,

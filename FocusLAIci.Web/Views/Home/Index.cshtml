@@ -132,7 +132,7 @@
             <button type="submit" class="btn btn-primary dashboard-command-submit">Build pack</button>
             <button type="submit"
                     class="btn btn-outline-secondary dashboard-command-submit"
-                    formaction="@Url.Action("Suggest", "Agents")"
+                    formaction="@Url.Action("SuggestAgent", "Home")"
                     formmethod="post">Suggest agent</button>
         </div>
         <div class="dashboard-hero-config-row">
@@ -228,6 +228,54 @@
         </div>
     </form>
 </section>
+
+@if (Model.SuggestedAgentDetail?.RunResult is not null)
+{
+    var suggestion = Model.SuggestedAgentDetail;
+    var runResult = suggestion.RunResult!;
+    <section class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <div class="section-heading">
+                <h2>Suggested agent: @suggestion.Agent.Name</h2>
+                <span class="text-secondary small">@runResult.ExecutionModeLabel</span>
+            </div>
+            <p class="memory-summary mb-2">@runResult.Summary</p>
+            <div class="row g-3 mb-4">
+                @foreach (var output in runResult.ReusableOutputs)
+                {
+                    <div class="col-lg-4">
+                        <div class="border rounded-3 p-3 h-100">
+                            <div class="section-heading mb-2">
+                                <h3 class="h6 mb-0">@output.Title</h3>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(output.Description))
+                            {
+                                <p class="text-secondary small mb-2">@output.Description</p>
+                            }
+                            <textarea class="form-control form-control-sm" rows="6" readonly>@output.Value</textarea>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                @if (!string.IsNullOrWhiteSpace(runResult.DashboardQuestion))
+                {
+                    <a class="btn btn-primary"
+                       asp-action="UseOnDashboard"
+                       asp-route-Question="@runResult.DashboardQuestion"
+                       asp-route-PackGoal="@Model.ContextInput.PackGoal"
+                       asp-route-IncludeCompletedWork="@Model.ContextInput.IncludeCompletedWork"
+                       asp-route-ExpandHistory="@Model.ContextInput.ExpandHistory"
+                       asp-route-ResultsPerSection="@Model.ContextInput.ResultsPerSection">Use refined prompt on dashboard</a>
+                }
+                <a class="btn btn-outline-secondary"
+                   asp-controller="Agents"
+                   asp-action="Agent"
+                   asp-route-slug="@suggestion.Agent.Slug">Open full agent</a>
+            </div>
+        </div>
+    </section>
+}
 
 @if (Model.ContextPack is not null)
 {

@@ -8,6 +8,7 @@ public sealed class DashboardViewModel
     public PalaceStatsViewModel Stats { get; init; } = new();
     public ContextBriefInput ContextInput { get; init; } = new();
     public ContextPackViewModel? ContextPack { get; init; }
+    public AgentDetailViewModel? SuggestedAgentDetail { get; init; }
     public DashboardFallbackContextViewModel? FallbackContext { get; init; }
     public QuickCaptureInput QuickCaptureInput { get; init; } = new();
     public IReadOnlyCollection<TicketSummaryViewModel> ActiveTickets { get; init; } = Array.Empty<TicketSummaryViewModel>();
