@@ -54,6 +54,7 @@ These screenshots were captured from the current hosted Focus L-AIci build.
 
 ## What changed recently
 
+- **Multi-model consensus review follow-through** - all 11 findings from a multi-model consensus code review are now fixed: optimistic concurrency tokens on memories (prevents silent lost updates when the web UI, REST API, and MCP edit the same memory at once), server-side filtering for context-pack and room queries (no more whole-table loads before filtering), expanded `PackCriticEngine` test coverage, consolidated duplicate tokenizer/stopword logic into a shared utility, MCP dispatch case-sensitivity and CodeGraph symlink-traversal fixes, and more.
 - **MCP wing/room creation** - `focus.wing.create` and `focus.room.create` MCP tools expose the existing palace-structure builders so agents can create new wings/rooms without leaving the MCP session.
 - **Batch memory verification** - `focus.memory.verify-batch` verifies up to 100 memory ids in one call instead of requiring one `focus.memory.verify` call per id.
 - **Configurable ticket board paging** - `focus.ticket.board` accepts an optional `completedPageSize` (1-100) so completed-ticket lookups aren't capped at the previous hard-coded page size of 5.

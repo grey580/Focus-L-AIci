@@ -41,7 +41,7 @@ Focus L-AIci uses a memory-palace inspired structure:
 
 - **Wing** - a major domain such as Product Strategy, Engineering Operations, or Customer Delivery
 - **Room** - a focused area within a wing, such as Installer Reliability or Admin UX
-- **Memory** - an individual knowledge entry with title, summary, content, source, importance, timestamps, and tags
+- **Memory** - an individual knowledge entry with title, summary, content, source, importance, timestamps, tags, and an optimistic concurrency token so simultaneous edits from the web UI, REST API, and MCP surface a clear conflict instead of silently overwriting one another
 - **Links** - relationships between memories so context stays connected
 
 This makes the system much better than a basic note app for operational work, because knowledge is grouped by meaning and can be navigated intentionally.
@@ -55,6 +55,16 @@ This makes the system much better than a basic note app for operational work, be
 - product teams who want decisions and rationale preserved, not just outcomes
 
 ## Recent additions
+
+### Consensus review hardening
+
+A multi-model consensus code review surfaced 11 findings across data integrity, performance, and maintainability; all are now fixed:
+
+- **Optimistic concurrency for memories** - a `RowVersion` token on each memory means a stale writer (web UI, REST API, or MCP racing on the same memory) gets a clear "changed by another request" error instead of silently losing the other writer's edit.
+- **Server-side filtering** - context-pack building and the rooms browse page now push lifecycle/wing/room/kind/tag/text filters into the SQL query instead of loading the whole table and filtering in memory, keeping the cost proportional to matches instead of total row count.
+- **Expanded critic-engine test coverage** - `PackCriticEngine`'s accept/repair/unsupported decision logic (the safety net behind every context pack) now has coverage for every issue code and grounding path, not just the two original happy-path scenarios.
+- **Consolidated tokenizer logic** - the duplicated "low signal token" list and punctuation-splitting logic that had drifted into three separate services now lives in one shared `TextTokenizationUtility`.
+- **MCP dispatch and CodeGraph fixes** - case-sensitivity in MCP tool name dispatch and a symlink-traversal issue in repository code-graph scanning were also fixed as part of this pass.
 
 ### Prompt-friendly todo details
 
