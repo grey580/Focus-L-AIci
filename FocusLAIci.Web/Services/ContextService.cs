@@ -372,11 +372,7 @@ public sealed partial class ContextService
         if (!string.IsNullOrWhiteSpace(effectiveInput.Tag))
         {
             var tagSlug = SlugUtility.CreateSlug(effectiveInput.Tag);
-            var tagMatchedMemories = memories.Where(x => x.MemoryTags.Any(tag => tag.Tag!.Slug == tagSlug)).ToList();
-            if (tagMatchedMemories.Count > 0)
-            {
-                memories = tagMatchedMemories;
-            }
+            memories = memories.Where(x => x.MemoryTags.Any(tag => tag.Tag!.Slug == tagSlug)).ToList();
         }
 
         var todosQuery = _dbContext.Todos
@@ -2068,11 +2064,7 @@ public sealed partial class ContextService
         if (!string.IsNullOrWhiteSpace(effectiveInput.Tag))
         {
             var tagSlug = SlugUtility.CreateSlug(effectiveInput.Tag);
-            var tagMatchedMemories = memories.Where(x => x.MemoryTags.Any(tag => tag.Tag!.Slug == tagSlug)).ToList();
-            if (tagMatchedMemories.Count > 0)
-            {
-                memories = tagMatchedMemories;
-            }
+            memories = memories.Where(x => x.MemoryTags.Any(tag => tag.Tag!.Slug == tagSlug)).ToList();
         }
 
         return memories

@@ -1870,6 +1870,60 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task ContextService_TagFilterWithNoMatchesReturnsEmptyInsteadOfAllMemories()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var dbContext = harness.CreateDbContext();
+
+        var tag = new Tag { Name = "security", Slug = SlugUtility.CreateSlug("security") };
+        var taggedMemory = new MemoryEntry
+        {
+            Title = "Security policy baseline",
+            Summary = "Security policy notes.",
+            Content = "This memory covers security posture.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.Architecture,
+            UpdatedUtc = DateTime.UtcNow
+        };
+        taggedMemory.MemoryTags.Add(new MemoryEntryTag { MemoryEntry = taggedMemory, Tag = tag });
+
+        dbContext.Memories.Add(taggedMemory);
+        dbContext.Memories.Add(new MemoryEntry
+        {
+            Title = "Unrelated deployment notes",
+            Summary = "Deployment steps.",
+            Content = "This memory is unrelated and has no tags.",
+            Kind = MemoryKind.Decision,
+            SourceKind = SourceKind.Architecture,
+            UpdatedUtc = DateTime.UtcNow
+        });
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var service = new ContextService(dbContext);
+
+        var matchingTagPack = await service.BuildContextPackAsync(new ContextBriefInput
+        {
+            Question = "security policy",
+            Tag = "security",
+            ResultsPerSection = 10
+        }, CancellationToken.None);
+
+        var nonMatchingTagPack = await service.BuildContextPackAsync(new ContextBriefInput
+        {
+            Question = "security policy",
+            Tag = "no-such-tag",
+            ResultsPerSection = 10
+        }, CancellationToken.None);
+
+        Assert.NotNull(matchingTagPack);
+        Assert.Contains(matchingTagPack!.Memories, x => x.Title == "Security policy baseline");
+        Assert.DoesNotContain(matchingTagPack.Memories, x => x.Title == "Unrelated deployment notes");
+
+        Assert.NotNull(nonMatchingTagPack);
+        Assert.Empty(nonMatchingTagPack!.Memories);
+    }
+
+    [Fact]
     public async Task ContextService_PrefersCurrentProjectForCodeGraphMatches()
     {
         var repoRoot = Path.Combine(Path.GetTempPath(), $"focus-current-repo-{Guid.NewGuid():N}");
