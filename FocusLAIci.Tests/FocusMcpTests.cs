@@ -279,6 +279,114 @@ public sealed class FocusMcpTests
     }
 
     [Fact]
+    public async Task WingAndRoomCreateToolsPersistNewPalaceStructure()
+    {
+        await using var harness = await McpHarness.CreateAsync();
+        await using var scope = harness.Services.CreateAsyncScope();
+        var registry = scope.ServiceProvider.GetRequiredService<FocusMcpToolRegistry>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<FocusMemoryContext>();
+
+        var wingResult = await registry.InvokeAsync(
+            "focus.wing.create",
+            JsonDocument.Parse("""{"name":"NinjaOne","description":"NinjaOne RMM scripts and runbooks"}""").RootElement,
+            CancellationToken.None);
+        var wingId = JsonSerializer.SerializeToElement(wingResult).GetProperty("id").GetGuid();
+
+        var roomResult = await registry.InvokeAsync(
+            "focus.room.create",
+            JsonDocument.Parse($$"""{"wingId":"{{wingId}}","name":"Scripts","description":"Deployed RMM scripts"}""").RootElement,
+            CancellationToken.None);
+        var roomId = JsonSerializer.SerializeToElement(roomResult).GetProperty("id").GetGuid();
+
+        var wing = await dbContext.Wings.AsNoTracking().SingleAsync(x => x.Id == wingId, CancellationToken.None);
+        var room = await dbContext.Rooms.AsNoTracking().SingleAsync(x => x.Id == roomId, CancellationToken.None);
+
+        Assert.True(JsonSerializer.SerializeToElement(wingResult).GetProperty("created").GetBoolean());
+        Assert.Equal("NinjaOne", wing.Name);
+        Assert.True(JsonSerializer.SerializeToElement(roomResult).GetProperty("created").GetBoolean());
+        Assert.Equal("Scripts", room.Name);
+        Assert.Equal(wingId, room.WingId);
+    }
+
+    [Fact]
+    public async Task VerifyBatchToolVerifiesValidIdsAndReportsFailuresForInvalidIds()
+    {
+        await using var harness = await McpHarness.CreateAsync();
+        await using var scope = harness.Services.CreateAsyncScope();
+        var registry = scope.ServiceProvider.GetRequiredService<FocusMcpToolRegistry>();
+        var palaceService = scope.ServiceProvider.GetRequiredService<PalaceService>();
+
+        var firstId = await palaceService.SaveMemoryAsync(
+            new MemoryEditorInput
+            {
+                Title = "Batch verify candidate one",
+                Summary = "First memory to be verified in bulk.",
+                Content = "Content for the first batch-verify candidate.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote
+            },
+            CancellationToken.None);
+        var secondId = await palaceService.SaveMemoryAsync(
+            new MemoryEditorInput
+            {
+                Title = "Batch verify candidate two",
+                Summary = "Second memory to be verified in bulk.",
+                Content = "Content for the second batch-verify candidate.",
+                Kind = MemoryKind.Reference,
+                SourceKind = SourceKind.ManualNote
+            },
+            CancellationToken.None);
+        var missingId = Guid.NewGuid();
+
+        var batchResult = await registry.InvokeAsync(
+            "focus.memory.verify-batch",
+            JsonDocument.Parse($$"""{"ids":["{{firstId}}","{{secondId}}","{{missingId}}"]}""").RootElement,
+            CancellationToken.None);
+        var batchElement = JsonSerializer.SerializeToElement(batchResult);
+
+        var firstMemory = await palaceService.GetMemoryAsync(firstId, CancellationToken.None);
+        var secondMemory = await palaceService.GetMemoryAsync(secondId, CancellationToken.None);
+
+        Assert.Equal(2, batchElement.GetProperty("verifiedCount").GetInt32());
+        Assert.Equal(1, batchElement.GetProperty("failedCount").GetInt32());
+        Assert.Equal("Verified", firstMemory!.Memory.VerificationStatusLabel);
+        Assert.Equal("Verified", secondMemory!.Memory.VerificationStatusLabel);
+    }
+
+    [Fact]
+    public async Task TicketBoardToolHonorsConfigurableCompletedPageSize()
+    {
+        await using var harness = await McpHarness.CreateAsync();
+        await using var scope = harness.Services.CreateAsyncScope();
+        var registry = scope.ServiceProvider.GetRequiredService<FocusMcpToolRegistry>();
+        var ticketingService = scope.ServiceProvider.GetRequiredService<TicketingService>();
+
+        for (var i = 0; i < 8; i++)
+        {
+            var ticketId = await ticketingService.CreateTicketAsync(
+                new TicketEditorInput { Title = $"Completed ticket {i}", Description = "Done work.", Status = TicketStatus.Completed },
+                CancellationToken.None);
+            await ticketingService.UpdateTicketStatusAsync(ticketId, TicketStatus.Completed, CancellationToken.None);
+        }
+
+        var defaultPageResult = await registry.InvokeAsync(
+            "focus.ticket.board",
+            JsonDocument.Parse("""{}""").RootElement,
+            CancellationToken.None);
+        var customPageResult = await registry.InvokeAsync(
+            "focus.ticket.board",
+            JsonDocument.Parse("""{"completedPageSize":8}""").RootElement,
+            CancellationToken.None);
+
+        var defaultBoard = JsonSerializer.SerializeToElement(defaultPageResult).GetProperty("board");
+        var customBoard = JsonSerializer.SerializeToElement(customPageResult).GetProperty("board");
+
+        Assert.Equal(5, defaultBoard.GetProperty("CompletedPageSize").GetInt32());
+        Assert.Equal(8, customBoard.GetProperty("CompletedPageSize").GetInt32());
+        Assert.Equal(8, customBoard.GetProperty("CompletedTickets").GetArrayLength());
+    }
+
+    [Fact]
     public async Task AdvancedMemoryToolsSupportDryRunDuplicatesCanonicalMergeAndParameterizedResources()
     {
         await using var harness = await McpHarness.CreateAsync();

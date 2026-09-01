@@ -200,11 +200,11 @@ internal static class SkillRecommendationEngine
             }
         }
 
-        var nameHits = CountOverlap(queryTokens, nameTokens);
-        var triggerHits = CountOverlap(queryTokens, triggerTokens);
-        var summaryHits = CountOverlap(queryTokens, summaryTokens);
-        var guidanceHits = CountOverlap(queryTokens, guidanceTokens);
         var substantiveQueryTokens = queryTokens.Where(token => !GenericQueryTokens.Contains(token)).ToArray();
+        var nameHits = CountOverlap(substantiveQueryTokens, nameTokens);
+        var triggerHits = CountOverlap(substantiveQueryTokens, triggerTokens);
+        var summaryHits = CountOverlap(substantiveQueryTokens, summaryTokens);
+        var guidanceHits = CountOverlap(substantiveQueryTokens, guidanceTokens);
         var substantiveMatches = CountOverlap(substantiveQueryTokens, nameTokens)
                                  + CountOverlap(substantiveQueryTokens, triggerTokens)
                                  + CountOverlap(substantiveQueryTokens, summaryTokens)

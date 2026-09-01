@@ -122,6 +122,13 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
             new { type = "object", required = new[] { "id" }, properties = new { id = new { type = "string", format = "uuid" } } },
             new { type = "object", properties = new { id = new { type = "string", format = "uuid" }, status = new { type = "string" } } }),
         CreateDescriptor(
+            "focus.memory.verify-batch",
+            "Mark multiple memories verified in a single call. Returns per-id results; failures for one id do not block the others.",
+            "memories",
+            true,
+            new { type = "object", required = new[] { "ids" }, properties = new { ids = new { type = "array", items = new { type = "string", format = "uuid" }, minItems = 1, maxItems = 100 } } },
+            new { type = "object", properties = new { verifiedCount = new { type = "integer" }, failedCount = new { type = "integer" }, results = new { type = "array" } } }),
+        CreateDescriptor(
             "focus.memory.mark-review",
             "Mark a memory as needing review.",
             "memories",
@@ -171,6 +178,22 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
             new { type = "object", properties = new { query = new { type = "string" } } },
             new { type = "object", properties = new { wings = new { type = "array" } } }),
         CreateDescriptor(
+            "focus.wing.create",
+            "Create a new Focus wing (broad domain area) with a name and description.",
+            "palace",
+            true,
+            new
+            {
+                type = "object",
+                required = new[] { "name", "description" },
+                properties = new
+                {
+                    name = new { type = "string" },
+                    description = new { type = "string" }
+                }
+            },
+            new { type = "object", properties = new { created = new { type = "boolean" }, id = new { type = "string", format = "uuid" } } }),
+        CreateDescriptor(
             "focus.room.list",
             "List Focus rooms and resolve them by wing id, slug, or name.",
             "palace",
@@ -187,6 +210,23 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
                 }
             },
             new { type = "object", properties = new { rooms = new { type = "array" } } }),
+        CreateDescriptor(
+            "focus.room.create",
+            "Create a new Focus room (focused area) inside an existing wing.",
+            "palace",
+            true,
+            new
+            {
+                type = "object",
+                required = new[] { "wingId", "name", "description" },
+                properties = new
+                {
+                    wingId = new { type = "string", format = "uuid" },
+                    name = new { type = "string" },
+                    description = new { type = "string" }
+                }
+            },
+            new { type = "object", properties = new { created = new { type = "boolean" }, id = new { type = "string", format = "uuid" } } }),
         CreateDescriptor(
             "focus.agent.list",
             "List the built-in Focus scoped agents.",
@@ -381,7 +421,7 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
             "Get the Focus ticket board summary.",
             "tickets",
             false,
-            new { type = "object", properties = new { completedSearch = new { type = "string" }, completedPage = new { type = "integer", minimum = 1 } } },
+            new { type = "object", properties = new { completedSearch = new { type = "string" }, completedPage = new { type = "integer", minimum = 1 }, completedPageSize = new { type = "integer", minimum = 1, maximum = 100 } } },
             new { type = "object", properties = new { board = new { type = "object" } } }),
         CreateDescriptor(
             "focus.ticket.details",
@@ -511,6 +551,7 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
             "focus.memory.merge" => await MergeMemoryAsync(palaceService, arguments, cancellationToken),
             "focus.memory.resolve-canonical" => await ResolveCanonicalMemoryAsync(palaceService, arguments, cancellationToken),
             "focus.memory.verify" => await VerifyMemoryAsync(palaceService, arguments, cancellationToken),
+            "focus.memory.verify-batch" => await VerifyMemoryBatchAsync(palaceService, arguments, cancellationToken),
             "focus.memory.mark-review" => await MarkMemoryReviewAsync(palaceService, arguments, cancellationToken),
             "focus.memory.archive" => await ArchiveMemoryAsync(palaceService, arguments, cancellationToken),
             "focus.memory.restore" => await RestoreMemoryAsync(palaceService, arguments, cancellationToken),
@@ -518,7 +559,9 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
             "focus.memory.update-tags" => await UpdateMemoryTagsAsync(palaceService, arguments, cancellationToken),
             "focus.memory.governance-queue" => await GetMemoryGovernanceQueueAsync(palaceService, cancellationToken),
             "focus.wing.list" => await GetWingsAsync(palaceService, arguments, cancellationToken),
+            "focus.wing.create" => await CreateWingAsync(palaceService, arguments, cancellationToken),
             "focus.room.list" => await GetRoomsAsync(palaceService, arguments, cancellationToken),
+            "focus.room.create" => await CreateRoomAsync(palaceService, arguments, cancellationToken),
             "focus.agent.list" => GetAgents(arguments),
             "focus.agent.get" => await GetAgentAsync(palaceService, arguments, cancellationToken),
             "focus.agent.recommend" => RecommendAgents(arguments),
@@ -703,6 +746,33 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
         return new { id = input.Id, status = nameof(MemoryVerificationStatus.Verified) };
     }
 
+    private static async Task<object> VerifyMemoryBatchAsync(PalaceService palaceService, JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var input = Deserialize<MemoryVerifyBatchToolInput>(arguments);
+        Validate(input);
+
+        var results = new List<object>();
+        var verifiedCount = 0;
+        var failedCount = 0;
+
+        foreach (var id in input.Ids.Distinct())
+        {
+            try
+            {
+                await palaceService.MarkMemoryVerifiedAsync(id, cancellationToken);
+                results.Add(new { id, status = nameof(MemoryVerificationStatus.Verified), succeeded = true });
+                verifiedCount++;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException)
+            {
+                results.Add(new { id, status = (string?)null, succeeded = false, error = ex.Message });
+                failedCount++;
+            }
+        }
+
+        return new { verifiedCount, failedCount, results };
+    }
+
     private static async Task<object> MarkMemoryReviewAsync(PalaceService palaceService, JsonElement arguments, CancellationToken cancellationToken)
     {
         var input = Deserialize<FocusGuidInput>(arguments);
@@ -756,11 +826,36 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
         return new { wings = await palaceService.GetWingSummariesAsync(input.Query, cancellationToken) };
     }
 
+    private static async Task<object> CreateWingAsync(PalaceService palaceService, JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var input = Deserialize<WingCreateToolInput>(arguments);
+        Validate(input);
+        var id = await palaceService.CreateWingAsync(new WingEditorInput
+        {
+            Name = input.Name,
+            Description = input.Description
+        }, cancellationToken);
+        return new { created = true, id };
+    }
+
     private static async Task<object> GetRoomsAsync(PalaceService palaceService, JsonElement arguments, CancellationToken cancellationToken)
     {
         var input = Deserialize<RoomListToolInput>(arguments);
         Validate(input);
         return new { rooms = await palaceService.GetRoomsAsync(input.WingId, input.WingSlug, input.WingName, input.Query, cancellationToken) };
+    }
+
+    private static async Task<object> CreateRoomAsync(PalaceService palaceService, JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var input = Deserialize<RoomCreateToolInput>(arguments);
+        Validate(input);
+        var id = await palaceService.CreateRoomAsync(new RoomEditorInput
+        {
+            WingId = input.WingId,
+            Name = input.Name,
+            Description = input.Description
+        }, cancellationToken);
+        return new { created = true, id };
     }
 
     object GetAgents(JsonElement arguments)
@@ -861,7 +956,7 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
     private static async Task<object> GetTicketBoardAsync(TicketingService ticketingService, JsonElement arguments, CancellationToken cancellationToken)
     {
         var input = Deserialize<TicketBoardToolInput>(arguments);
-        var board = await ticketingService.GetBoardAsync(input.CompletedSearch, input.CompletedPage, cancellationToken);
+        var board = await ticketingService.GetBoardAsync(input.CompletedSearch, input.CompletedPage, cancellationToken, input.CompletedPageSize);
         return new { board };
     }
 
@@ -1099,6 +1194,8 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
         public string? CompletedSearch { get; set; }
         [Range(1, 100)]
         public int CompletedPage { get; set; } = 1;
+        [Range(1, 100)]
+        public int? CompletedPageSize { get; set; }
     }
 
     private sealed class WingListToolInput
@@ -1106,10 +1203,52 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
         public string? Query { get; set; }
     }
 
+    private sealed class WingCreateToolInput
+    {
+        [Required]
+        [StringLength(120)]
+        public string Name { get; set; } = string.Empty;
+
+        [Required]
+        [StringLength(400)]
+        public string Description { get; set; } = string.Empty;
+    }
+
+    private sealed class RoomCreateToolInput
+    {
+        [Required]
+        public Guid WingId { get; set; }
+
+        [Required]
+        [StringLength(120)]
+        public string Name { get; set; } = string.Empty;
+
+        [Required]
+        [StringLength(400)]
+        public string Description { get; set; } = string.Empty;
+    }
+
     private sealed class FocusGuidInput
     {
         [Required]
         public Guid Id { get; set; }
+    }
+
+    private sealed class MemoryVerifyBatchToolInput : IValidatableObject
+    {
+        public List<Guid> Ids { get; set; } = [];
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if (Ids.Count == 0)
+            {
+                yield return new ValidationResult("Provide at least one memory id to verify.", [nameof(Ids)]);
+            }
+            else if (Ids.Count > 100)
+            {
+                yield return new ValidationResult("Provide at most 100 memory ids per batch.", [nameof(Ids)]);
+            }
+        }
     }
 
     private sealed class MemoryArchiveToolInput

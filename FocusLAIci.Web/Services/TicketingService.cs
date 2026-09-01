@@ -31,8 +31,12 @@ public sealed class TicketingService
         _eventPublisher = eventPublisher;
     }
 
-    public async Task<TicketBoardViewModel> GetBoardAsync(string? completedSearch, int completedPage, CancellationToken cancellationToken)
+    public async Task<TicketBoardViewModel> GetBoardAsync(string? completedSearch, int completedPage, CancellationToken cancellationToken, int? completedPageSize = null)
     {
+        var effectivePageSize = completedPageSize is > 0
+            ? Math.Min(completedPageSize.Value, 100)
+            : TicketBoardViewModel.DefaultCompletedPageSize;
+
         var activeTickets = await BuildTopLevelTicketQuery(includeCompleted: false)
             .AsNoTracking()
             .Include(x => x.SubTickets)
@@ -63,13 +67,13 @@ public sealed class TicketingService
         var filteredCompletedCount = await completedQuery.CountAsync(cancellationToken);
         var completedTotalPages = filteredCompletedCount == 0
             ? 0
-            : (int)Math.Ceiling(filteredCompletedCount / (double)TicketBoardViewModel.DefaultCompletedPageSize);
+            : (int)Math.Ceiling(filteredCompletedCount / (double)effectivePageSize);
         var safeCompletedPage = completedTotalPages == 0
             ? 1
             : Math.Min(Math.Max(completedPage, 1), completedTotalPages);
         var completedTickets = await completedQuery
-            .Skip((safeCompletedPage - 1) * TicketBoardViewModel.DefaultCompletedPageSize)
-            .Take(TicketBoardViewModel.DefaultCompletedPageSize)
+            .Skip((safeCompletedPage - 1) * effectivePageSize)
+            .Take(effectivePageSize)
             .ToListAsync(cancellationToken);
 
         return new TicketBoardViewModel
@@ -85,7 +89,7 @@ public sealed class TicketingService
             CompletedTickets = completedTickets.Select(MapTicketSummary).ToArray(),
             CompletedSearch = normalizedSearch,
             CompletedPage = safeCompletedPage,
-            CompletedPageSize = TicketBoardViewModel.DefaultCompletedPageSize,
+            CompletedPageSize = effectivePageSize,
             CompletedFilteredCount = filteredCompletedCount,
             CompletedTotalPages = completedTotalPages
         };
