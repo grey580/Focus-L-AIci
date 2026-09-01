@@ -341,39 +341,41 @@ public sealed partial class ContextService
                 cancellationToken);
         }
 
-        var memories = await _dbContext.Memories
+        var memoriesQuery = _dbContext.Memories
             .AsNoTracking()
             .Include(x => x.Wing)
             .Include(x => x.Room)
             .Include(x => x.MemoryTags)
                 .ThenInclude(x => x.Tag)
-            .ToListAsync(cancellationToken);
+            .AsQueryable();
 
         if (!effectiveInput.IncludeRetired)
         {
-            memories = memories.Where(x => x.LifecycleState == MemoryLifecycleState.Active).ToList();
+            memoriesQuery = memoriesQuery.Where(x => x.LifecycleState == MemoryLifecycleState.Active);
         }
 
         if (effectiveInput.WingId.HasValue)
         {
-            memories = memories.Where(x => x.WingId == effectiveInput.WingId.Value).ToList();
+            memoriesQuery = memoriesQuery.Where(x => x.WingId == effectiveInput.WingId.Value);
         }
 
         if (effectiveInput.RoomId.HasValue)
         {
-            memories = memories.Where(x => x.RoomId == effectiveInput.RoomId.Value).ToList();
+            memoriesQuery = memoriesQuery.Where(x => x.RoomId == effectiveInput.RoomId.Value);
         }
 
         if (effectiveInput.Kind.HasValue)
         {
-            memories = memories.Where(x => x.Kind == effectiveInput.Kind.Value).ToList();
+            memoriesQuery = memoriesQuery.Where(x => x.Kind == effectiveInput.Kind.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(effectiveInput.Tag))
         {
             var tagSlug = SlugUtility.CreateSlug(effectiveInput.Tag);
-            memories = memories.Where(x => x.MemoryTags.Any(tag => tag.Tag!.Slug == tagSlug)).ToList();
+            memoriesQuery = memoriesQuery.Where(x => x.MemoryTags.Any(tag => tag.Tag!.Slug == tagSlug));
         }
+
+        var memories = await memoriesQuery.ToListAsync(cancellationToken);
 
         var todosQuery = _dbContext.Todos
             .AsNoTracking()
@@ -2038,39 +2040,41 @@ public sealed partial class ContextService
         var currentProjectCodeQuery = explicitCodeQuery && HasCurrentProjectHint(tokens);
         var directoryAdminQuery = IsDirectoryAdminQuery(tokens);
 
-        var memories = await _dbContext.Memories
+        var memoriesQuery = _dbContext.Memories
             .AsNoTracking()
             .Include(x => x.Wing)
             .Include(x => x.Room)
             .Include(x => x.MemoryTags)
                 .ThenInclude(x => x.Tag)
-            .ToListAsync(cancellationToken);
+            .AsQueryable();
 
         if (!effectiveInput.IncludeRetired)
         {
-            memories = memories.Where(x => x.LifecycleState == MemoryLifecycleState.Active).ToList();
+            memoriesQuery = memoriesQuery.Where(x => x.LifecycleState == MemoryLifecycleState.Active);
         }
 
         if (effectiveInput.WingId.HasValue)
         {
-            memories = memories.Where(x => x.WingId == effectiveInput.WingId.Value).ToList();
+            memoriesQuery = memoriesQuery.Where(x => x.WingId == effectiveInput.WingId.Value);
         }
 
         if (effectiveInput.RoomId.HasValue)
         {
-            memories = memories.Where(x => x.RoomId == effectiveInput.RoomId.Value).ToList();
+            memoriesQuery = memoriesQuery.Where(x => x.RoomId == effectiveInput.RoomId.Value);
         }
 
         if (effectiveInput.Kind.HasValue)
         {
-            memories = memories.Where(x => x.Kind == effectiveInput.Kind.Value).ToList();
+            memoriesQuery = memoriesQuery.Where(x => x.Kind == effectiveInput.Kind.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(effectiveInput.Tag))
         {
             var tagSlug = SlugUtility.CreateSlug(effectiveInput.Tag);
-            memories = memories.Where(x => x.MemoryTags.Any(tag => tag.Tag!.Slug == tagSlug)).ToList();
+            memoriesQuery = memoriesQuery.Where(x => x.MemoryTags.Any(tag => tag.Tag!.Slug == tagSlug));
         }
+
+        var memories = await memoriesQuery.ToListAsync(cancellationToken);
 
         return memories
             .Select(memory =>

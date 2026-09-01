@@ -2311,10 +2311,38 @@ public sealed class PalaceService
 
     public async Task<IReadOnlyCollection<RoomBrowseItemViewModel>> GetRoomsAsync(Guid? wingId, string? wingSlug, string? wingName, string? query, CancellationToken cancellationToken)
     {
-        var rooms = await _dbContext.Rooms
+        var roomsQuery = _dbContext.Rooms
             .AsNoTracking()
             .Include(x => x.Wing)
             .Include(x => x.Memories)
+            .AsQueryable();
+
+        if (wingId.HasValue)
+        {
+            roomsQuery = roomsQuery.Where(x => x.WingId == wingId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(wingSlug))
+        {
+            var trimmedWingSlug = wingSlug.Trim();
+            roomsQuery = roomsQuery.Where(x => x.Wing!.Slug.ToLower() == trimmedWingSlug.ToLower());
+        }
+        else if (!string.IsNullOrWhiteSpace(wingName))
+        {
+            var trimmedWingName = wingName.Trim();
+            roomsQuery = roomsQuery.Where(x => x.Wing!.Name.ToLower() == trimmedWingName.ToLower());
+        }
+
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            var normalized = query.Trim().ToLowerInvariant();
+            roomsQuery = roomsQuery.Where(x =>
+                x.Name.ToLower().Contains(normalized) ||
+                x.Description.ToLower().Contains(normalized) ||
+                x.Wing!.Name.ToLower().Contains(normalized) ||
+                x.Wing!.Slug.ToLower().Contains(normalized));
+        }
+
+        return await roomsQuery
             .OrderBy(x => x.Wing!.Name)
             .ThenBy(x => x.Name)
             .Select(x => new RoomBrowseItemViewModel
@@ -2327,33 +2355,7 @@ public sealed class PalaceService
                 RoomDescription = x.Description,
                 MemoryCount = x.Memories.Count(m => m.LifecycleState == MemoryLifecycleState.Active)
             })
-            .ToListAsync(cancellationToken);
-
-        IEnumerable<RoomBrowseItemViewModel> filtered = rooms;
-        if (wingId.HasValue)
-        {
-            filtered = filtered.Where(x => x.WingId == wingId.Value);
-        }
-        else if (!string.IsNullOrWhiteSpace(wingSlug))
-        {
-            filtered = filtered.Where(x => string.Equals(x.WingSlug, wingSlug.Trim(), StringComparison.OrdinalIgnoreCase));
-        }
-        else if (!string.IsNullOrWhiteSpace(wingName))
-        {
-            filtered = filtered.Where(x => string.Equals(x.WingName, wingName.Trim(), StringComparison.OrdinalIgnoreCase));
-        }
-
-        if (!string.IsNullOrWhiteSpace(query))
-        {
-            var trimmedQuery = query.Trim();
-            filtered = filtered.Where(x =>
-                x.RoomName.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase) ||
-                x.RoomDescription.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase) ||
-                x.WingName.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase) ||
-                x.WingSlug.Contains(trimmedQuery, StringComparison.OrdinalIgnoreCase));
-        }
-
-        return filtered.ToArray();
+            .ToArrayAsync(cancellationToken);
     }
 
     private IQueryable<SkillEntry> BuildSkillQuery(

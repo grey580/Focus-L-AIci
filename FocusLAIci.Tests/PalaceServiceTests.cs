@@ -277,6 +277,56 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task GetRoomsAsync_FiltersServerSideByWingAndQueryWithoutMaterializingWholeTable()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+        await using var setupContext = harness.CreateDbContext();
+        var service = new PalaceService(setupContext);
+
+        var wingAId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Engineering Operations",
+            Description = "Wing A."
+        }, CancellationToken.None);
+        var wingBId = await service.CreateWingAsync(new WingEditorInput
+        {
+            Name = "Product Design",
+            Description = "Wing B."
+        }, CancellationToken.None);
+
+        await service.CreateRoomAsync(new RoomEditorInput
+        {
+            WingId = wingAId,
+            Name = "Deployment Runbooks",
+            Description = "How we ship."
+        }, CancellationToken.None);
+        await service.CreateRoomAsync(new RoomEditorInput
+        {
+            WingId = wingBId,
+            Name = "Design Reviews",
+            Description = "How we critique."
+        }, CancellationToken.None);
+
+        await using var queryContext = harness.CreateDbContext();
+        var queryService = new PalaceService(queryContext);
+
+        var byWingId = await queryService.GetRoomsAsync(wingAId, null, null, null, CancellationToken.None);
+        Assert.Single(byWingId);
+        Assert.Equal("Deployment Runbooks", byWingId.Single().RoomName);
+
+        var byWingName = await queryService.GetRoomsAsync(null, null, "product design", null, CancellationToken.None);
+        Assert.Single(byWingName);
+        Assert.Equal("Design Reviews", byWingName.Single().RoomName);
+
+        var byQuery = await queryService.GetRoomsAsync(null, null, null, "runbooks", CancellationToken.None);
+        Assert.Single(byQuery);
+        Assert.Equal("Deployment Runbooks", byQuery.Single().RoomName);
+
+        var all = await queryService.GetRoomsAsync(null, null, null, null, CancellationToken.None);
+        Assert.Equal(2, all.Count);
+    }
+
+    [Fact]
     public async Task UpdateMemoryTagsAsync_ReplacesSuggestedTagsWithExplicitTags()
     {
         await using var harness = await TestHarness.CreateAsync();
