@@ -54,6 +54,10 @@ These screenshots were captured from the current hosted Focus L-AIci build.
 
 ## What changed recently
 
+- **MCP wing/room creation** - `focus.wing.create` and `focus.room.create` MCP tools expose the existing palace-structure builders so agents can create new wings/rooms without leaving the MCP session.
+- **Batch memory verification** - `focus.memory.verify-batch` verifies up to 100 memory ids in one call instead of requiring one `focus.memory.verify` call per id.
+- **Configurable ticket board paging** - `focus.ticket.board` accepts an optional `completedPageSize` (1-100) so completed-ticket lookups aren't capped at the previous hard-coded page size of 5.
+- **Skill recommendation grounding fix** - generic query words (e.g. "review", "check", "build") no longer inflate the skill match score just because a skill's name happens to start with that word; recommendations are now scored against the specific, substantive query tokens.
 - **Pack refinement loop** - every built context pack can now be archived into SQLite with counts, export text, and review fields so later ranking/tuning work has durable raw material.
 - **Decision-aware context packs** - context packs now record the routing/retrieval decision that produced them, including explicit causes, evidence, and nearby memory fallbacks when Focus needs clarification or lacks grounded support.
 - **Agent output blocks** - agent runs now produce reusable outputs such as refined prompts, suggested artifacts, and validation checklists instead of only generic workflow narration.
