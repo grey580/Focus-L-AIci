@@ -121,12 +121,7 @@ public sealed partial class ContextService
         "network", "wifi", "slow", "performance", "troubleshoot", "troubleshooting", "latency",
         "wmi", "cim", "winmgmt", "rpc", "computer", "computers", "winrm", "port", "ports", "tcp", "udp"
     ];
-    private static readonly HashSet<string> RetrievalLowSignalTokens =
-    [
-        "build", "check", "checks", "command", "commands", "computer", "computers", "create", "find", "help", "line",
-        "list", "local", "machine", "machines", "make", "need", "pc", "pcs", "please", "powershell", "run", "script",
-        "show", "tell", "use", "using", "windows", "will", "with"
-    ];
+    private static readonly HashSet<string> RetrievalLowSignalTokens = TextTokenizationUtility.LowSignalGroundingTokens;
     private static readonly HashSet<string> WebUiTokens =
     [
         "website", "web", "ui", "layout", "homepage", "spacing", "css", "frontend", "design"

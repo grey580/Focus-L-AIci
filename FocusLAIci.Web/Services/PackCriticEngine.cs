@@ -2,6 +2,8 @@ using FocusLAIci.Web.Models;
 
 namespace FocusLAIci.Web.Services;
 
+using static TextTokenizationUtility;
+
 public enum PackCritiqueAction
 {
     Accept = 1,
@@ -36,13 +38,6 @@ public interface IPackCriticEngine
 
 public sealed class PackCriticEngine : IPackCriticEngine
 {
-    private static readonly HashSet<string> LowSignalTokens =
-    [
-        "build", "check", "checks", "command", "commands", "computer", "computers", "create", "find", "help", "line",
-        "list", "local", "machine", "machines", "make", "need", "pc", "pcs", "please", "powershell", "run", "script",
-        "show", "tell", "use", "using", "windows", "will", "with"
-    ];
-
     public PackCritiqueResult Evaluate(PackCritiqueContext context)
     {
         var groundedSkillIds = context.CandidatePack.RecommendedSkills
@@ -122,7 +117,7 @@ public sealed class PackCriticEngine : IPackCriticEngine
         bool allowSingleSpecificTokenMatch = false)
     {
         var specificTokens = queryTokens
-            .Where(token => !LowSignalTokens.Contains(token))
+            .Where(token => !LowSignalGroundingTokens.Contains(token))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         var specificPhrases = BuildSpecificPhrases(normalizedQuestion).ToArray();
@@ -150,7 +145,7 @@ public sealed class PackCriticEngine : IPackCriticEngine
     {
         var tokens = normalizedQuestion
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(token => !LowSignalTokens.Contains(token))
+            .Where(token => !LowSignalGroundingTokens.Contains(token))
             .ToArray();
         if (tokens.Length < 2)
         {
@@ -194,14 +189,10 @@ public sealed class PackCriticEngine : IPackCriticEngine
         });
 
     private static string Normalize(string value)
-        => string.Join(' ', value
-            .ToLowerInvariant()
-            .Split([' ', '\r', '\n', '\t', ',', '.', ':', ';', '/', '\\', '(', ')', '[', ']', '{', '}', '-', '_', '"', '\''], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        => string.Join(' ', SplitIntoRawTokens(value));
 
     private static HashSet<string> Tokenize(string value)
-        => value
-            .ToLowerInvariant()
-            .Split([' ', '\r', '\n', '\t', ',', '.', ':', ';', '/', '\\', '(', ')', '[', ']', '{', '}', '-', '_', '"', '\''], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        => SplitIntoRawTokens(value)
             .Where(token => token.Length > 1)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 }

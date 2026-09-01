@@ -2942,14 +2942,7 @@ public sealed class PalaceService
 
     private static IReadOnlyCollection<string> TokenizeDraftText(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return Array.Empty<string>();
-        }
-
-        return value
-            .ToLowerInvariant()
-            .Split([' ', '\r', '\n', '\t', ',', '.', ':', ';', '/', '\\', '(', ')', '[', ']', '{', '}', '-', '_', '"', '\''], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        return TextTokenizationUtility.SplitIntoRawTokens(value)
             .Where(token => token.Length > 2)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(token => token)
