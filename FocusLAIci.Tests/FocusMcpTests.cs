@@ -155,6 +155,28 @@ public sealed class FocusMcpTests
     }
 
     [Fact]
+    public async Task ToolRegistry_InvokeAsyncIsCaseInsensitiveLikeTryGetDescriptor()
+    {
+        // TryGetDescriptor/Complete match tool names case-insensitively, but InvokeAsync's
+        // dispatch switch is ordinal case-sensitive. A differently-cased tool name that
+        // resolves to a valid descriptor must still be dispatched correctly instead of
+        // throwing "Unknown Focus MCP tool".
+        await using var harness = await McpHarness.CreateAsync();
+        await using var scope = harness.Services.CreateAsyncScope();
+        var registry = scope.ServiceProvider.GetRequiredService<FocusMcpToolRegistry>();
+
+        Assert.True(registry.TryGetDescriptor("Focus.System.Self-Test", out var descriptor));
+        Assert.Equal("focus.system.self-test", descriptor!.Name);
+
+        var result = await registry.InvokeAsync(
+            "FOCUS.SYSTEM.SELF-TEST",
+            JsonDocument.Parse("{}").RootElement,
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+    }
+
+    [Fact]
     public async Task ToolRegistry_MemoryMutationToolsAcceptStringEnumsAndExposeGovernanceFlow()
     {
         await using var harness = await McpHarness.CreateAsync();

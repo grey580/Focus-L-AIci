@@ -1,5 +1,6 @@
 using FocusLAIci.Web.Data;
 using FocusLAIci.Web.Models;
+using FocusLAIci.Web.Security;
 using FocusLAIci.Web.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -7,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -1528,6 +1530,71 @@ public sealed class PalaceServiceTests
 
         Assert.Equal(8, ticketNumbers.Count);
         Assert.Equal(ticketNumbers.Count, ticketNumbers.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
+    public async Task CodeGraphService_ScanSkipsDirectoryJunctionsOutsideApprovedRoot()
+    {
+        // Guards against a scan following a directory junction/symlink out of the approved
+        // project root and indexing files it shouldn't have access to.
+        var rootPath = Path.Combine(Path.GetTempPath(), "focus-codegraph-root-" + Guid.NewGuid().ToString("N"));
+        var outsidePath = Path.Combine(Path.GetTempPath(), "focus-codegraph-outside-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+        Directory.CreateDirectory(outsidePath);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(rootPath, "Inside.cs"), "public class Inside {}");
+            await File.WriteAllTextAsync(Path.Combine(outsidePath, "Outside.cs"), "public class Outside {}");
+
+            var junctionPath = Path.Combine(rootPath, "linked-outside");
+            var mklinkResult = Process.Start(new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c mklink /J \"{junctionPath}\" \"{outsidePath}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            });
+            Assert.NotNull(mklinkResult);
+            await mklinkResult!.WaitForExitAsync();
+            if (mklinkResult.ExitCode != 0 || !Directory.Exists(junctionPath))
+            {
+                // Junction creation can be blocked by local policy/permissions in some CI
+                // environments; skip rather than fail the whole suite in that case.
+                return;
+            }
+
+            await using var harness = await TestHarness.CreateAsync();
+            await using var serviceContext = harness.CreateDbContext();
+            var pathPolicy = new LocalPathPolicy([rootPath], [Path.GetTempPath()]);
+            var service = new CodeGraphService(serviceContext, new ContextService(serviceContext), pathPolicy);
+
+            var projectId = await service.CreateProjectAsync(new CodeGraphProjectInput
+            {
+                Name = "Junction test project",
+                RootPath = rootPath,
+                Description = "Verifies junction traversal is blocked."
+            }, CancellationToken.None);
+
+            var files = await serviceContext.CodeGraphFiles
+                .Where(x => x.ProjectId == projectId)
+                .Select(x => x.RelativePath)
+                .ToListAsync();
+
+            Assert.Contains(files, x => x.Contains("Inside.cs"));
+            Assert.DoesNotContain(files, x => x.Contains("Outside.cs"));
+        }
+        finally
+        {
+            try { Directory.Delete(rootPath, recursive: false); } catch { /* best effort cleanup; junction removed separately */ }
+            if (Directory.Exists(Path.Combine(rootPath, "linked-outside")))
+            {
+                try { Directory.Delete(Path.Combine(rootPath, "linked-outside"), recursive: false); } catch { }
+            }
+            try { Directory.Delete(rootPath, recursive: true); } catch { }
+            try { Directory.Delete(outsidePath, recursive: true); } catch { }
+        }
     }
 
     [Fact]

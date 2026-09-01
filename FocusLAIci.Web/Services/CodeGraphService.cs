@@ -537,6 +537,13 @@ public sealed partial class CodeGraphService
                     continue;
                 }
 
+                // Skip reparse points (symlinks/junctions) so a scan can't be tricked into
+                // walking outside the approved project root via a directory link.
+                if (IsReparsePoint(directory))
+                {
+                    continue;
+                }
+
                 pending.Push(directory);
             }
 
@@ -544,6 +551,23 @@ public sealed partial class CodeGraphService
             {
                 yield return file;
             }
+        }
+    }
+
+    private static bool IsReparsePoint(string path)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(path);
+            return attributes.HasFlag(FileAttributes.ReparsePoint);
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return true;
         }
     }
 

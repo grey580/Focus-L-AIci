@@ -532,6 +532,15 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
 
     public async Task<object> InvokeAsync(string toolName, JsonElement arguments, CancellationToken cancellationToken)
     {
+        // Tool name lookups are case-insensitive (TryGetDescriptor/Complete), but the dispatch
+        // switch below is an ordinal case-sensitive match. Normalize to the descriptor's
+        // canonical casing here so a differently-cased but otherwise valid tool name (e.g.
+        // "Focus.Memory.Save") doesn't fall through to the "unknown tool" branch.
+        if (TryGetDescriptor(toolName, out var canonicalDescriptor) && canonicalDescriptor is not null)
+        {
+            toolName = canonicalDescriptor.Name;
+        }
+
         logger.LogInformation("Handling Focus MCP tool call {ToolName}", toolName);
 
         await using var scope = scopeFactory.CreateAsyncScope();
