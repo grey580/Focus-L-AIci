@@ -14,7 +14,7 @@ namespace FocusLAIci.Web.Models;
 public static class TextTokenizationUtility
 {
     private static readonly char[] WordDelimiters =
-        [' ', '\r', '\n', '\t', ',', '.', ':', ';', '/', '\\', '(', ')', '[', ']', '{', '}', '-', '_', '"', '\''];
+        [' ', '\r', '\n', '\t', ',', '.', ':', ';', '/', '\\', '(', ')', '[', ']', '{', '}', '-', '_', '"', '\'', '*', '`', '#'];
 
     /// <summary>
     /// Lowercases <paramref name="value"/> and splits it on common punctuation and

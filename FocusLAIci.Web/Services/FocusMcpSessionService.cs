@@ -7,6 +7,13 @@ public sealed class FocusMcpSessionService
 {
     private readonly ConcurrentDictionary<string, FocusMcpSessionState> _sessions = new(StringComparer.Ordinal);
 
+    // Tracks session ids that were explicitly deleted (via DELETE /api/mcp) so that
+    // TryTouch's "recover an unknown session id" fallback below can't be used to
+    // resurrect a session a client just tore down. Without this, deleting a session
+    // was a no-op in practice: the very next request bearing the same (now stale)
+    // session id would be silently "recovered" and treated as valid again.
+    private readonly ConcurrentDictionary<string, byte> _removedSessionIds = new(StringComparer.Ordinal);
+
     public FocusMcpSessionSummaryViewModel CreateSession(FocusMcpInitializeInput input, string remoteAddress, string authMode)
     {
         var now = DateTime.UtcNow;
@@ -22,6 +29,7 @@ public sealed class FocusMcpSessionService
             new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
         _sessions[session.SessionId] = session;
+        _removedSessionIds.TryRemove(session.SessionId, out _);
         return session.ToViewModel();
     }
 
@@ -31,7 +39,7 @@ public sealed class FocusMcpSessionService
         sessionId = sessionId?.Trim() ?? string.Empty;
         if (!_sessions.TryGetValue(sessionId, out var current))
         {
-            if (string.IsNullOrWhiteSpace(sessionId))
+            if (string.IsNullOrWhiteSpace(sessionId) || _removedSessionIds.ContainsKey(sessionId))
             {
                 return false;
             }
@@ -62,6 +70,7 @@ public sealed class FocusMcpSessionService
 
     public bool Remove(string sessionId)
     {
+        _removedSessionIds[sessionId] = 0;
         return _sessions.TryRemove(sessionId, out _);
     }
 

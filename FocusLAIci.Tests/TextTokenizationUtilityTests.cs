@@ -20,6 +20,18 @@ public sealed class TextTokenizationUtilityTests
     }
 
     [Fact]
+    public void SplitIntoRawTokens_StripsMarkdownEmphasisAndCodeFenceCharacters()
+    {
+        // Regression test: auto-suggested memory tags were picking up markdown
+        // artifacts like "**fix" and "`lowsignaltokens`" because '*', '`', and '#'
+        // weren't in the delimiter set, so bold/code-fenced words in memory
+        // content leaked directly into the tag list.
+        var tokens = TextTokenizationUtility.SplitIntoRawTokens("**fix** the `lowSignalTokens` list, see #123").ToArray();
+
+        Assert.Equal(["fix", "the", "lowsignaltokens", "list", "see", "123"], tokens);
+    }
+
+    [Fact]
     public void LowSignalGroundingTokens_ContainsCommonAutomationFillerWords()
     {
         // This shared list is what both PackCriticEngine and ContextService use

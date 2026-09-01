@@ -57,6 +57,31 @@ public sealed class FocusMcpTests
     }
 
     [Fact]
+    public void SessionService_DoesNotRecoverAnExplicitlyRemovedSessionId()
+    {
+        // Regression test: TryTouch's "recover an unknown session id" fallback used
+        // to accept ANY session id, including one that had just been deleted via
+        // DELETE /api/mcp. That made session deletion a no-op in practice, since the
+        // very next request bearing the same stale id was silently treated as valid.
+        var service = new FocusMcpSessionService();
+        var session = service.CreateSession(
+            new FocusMcpInitializeInput
+            {
+                ClientName = "Test Client",
+                ClientVersion = "1.0"
+            },
+            "127.0.0.1",
+            "loopback");
+
+        Assert.True(service.Remove(session.SessionId));
+
+        var touched = service.TryTouch(session.SessionId, out _);
+
+        Assert.False(touched);
+        Assert.False(service.Exists(session.SessionId));
+    }
+
+    [Fact]
     public async Task EventBus_PublishesToSubscribersAndKeepsNewestEventsFirst()
     {
         var bus = new FocusMcpEventBus(NullLogger<FocusMcpEventBus>.Instance);
