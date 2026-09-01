@@ -672,6 +672,64 @@ public sealed class FocusMcpTests
     }
 
     [Fact]
+    public async Task ReadOnlyApiKeysCannotInvokeContextInspectBecauseItMutatesReferenceState()
+    {
+        await using var harness = await McpHarness.CreateAsync(new Dictionary<string, string?>
+        {
+            ["FocusPalace:Mcp:ApiKeyDefinitions:0:Value"] = "readonly-key",
+            ["FocusPalace:Mcp:ApiKeyDefinitions:0:Label"] = "observer",
+            ["FocusPalace:Mcp:ApiKeyDefinitions:0:CanWrite"] = "false"
+        });
+
+        await using var scope = harness.Services.CreateAsyncScope();
+        var authService = scope.ServiceProvider.GetRequiredService<FocusMcpAuthService>();
+        var sessionService = scope.ServiceProvider.GetRequiredService<FocusMcpSessionService>();
+        var toolRegistry = scope.ServiceProvider.GetRequiredService<FocusMcpToolRegistry>();
+        var resourceRegistry = scope.ServiceProvider.GetRequiredService<FocusMcpResourceRegistry>();
+        var eventBus = scope.ServiceProvider.GetRequiredService<FocusMcpEventBus>();
+
+        Assert.True(toolRegistry.TryGetDescriptor("focus.context.inspect", out var descriptor));
+        Assert.True(descriptor!.Mutating, "focus.context.inspect writes memory reference/embedding state via TouchMemoryReferencesAsync and must be flagged as mutating.");
+
+        var controller = new FocusLAIci.Web.Controllers.Api.McpController(
+            authService,
+            sessionService,
+            toolRegistry,
+            resourceRegistry,
+            eventBus,
+            NullLogger<FocusLAIci.Web.Controllers.Api.McpController>.Instance);
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext()
+        };
+        controller.HttpContext.Connection.RemoteIpAddress = IPAddress.Parse("10.10.10.21");
+        controller.HttpContext.Request.Headers["Authorization"] = "Bearer readonly-key";
+
+        var session = sessionService.CreateSession(new FocusMcpInitializeInput { ClientName = "Readonly", ClientVersion = "1.0" }, "10.10.10.21", "api-key-readonly");
+        using var document = JsonDocument.Parse("""
+        {
+          "name": "focus.context.inspect",
+          "arguments": {
+            "question": "check dism component store health"
+          }
+        }
+        """);
+
+        var response = await controller.Message(new FocusMcpRequestEnvelope
+        {
+            Id = "readonly-context-inspect-test",
+            Type = "call_tool",
+            SessionId = session.SessionId,
+            Payload = document.RootElement.Clone()
+        }, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(response.Result);
+        var envelope = Assert.IsType<FocusMcpResponseEnvelope>(ok.Value);
+        Assert.Equal("error", envelope.Type);
+        Assert.Equal("unauthorized", envelope.Error?.Code);
+    }
+
+    [Fact]
     public async Task SkillMutationTools_CreateUpdateDeleteEditableSkills()
     {
         await using var harness = await McpHarness.CreateAsync();

@@ -469,7 +469,7 @@ public sealed class FocusMcpToolRegistry(IServiceScopeFactory scopeFactory, ILog
             "focus.context.inspect",
             "Build a Focus context pack for a specific question.",
             "context",
-            false,
+            true,
             new
             {
                 type = "object",

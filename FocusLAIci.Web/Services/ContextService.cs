@@ -1735,13 +1735,18 @@ public sealed partial class ContextService
         bool preferDurableMemoryLead,
         CancellationToken cancellationToken)
     {
+        // The critic's grounding heuristics (HasSpecificGrounding) are tuned for memory/skill text
+        // and do not reliably score code-graph project/file/node matches, so code-graph queries are
+        // intentionally exempted from the critic loop to avoid false "Unsupported" rejections.
         if (allowCodeGraph)
         {
             return (candidatePack, false);
         }
 
         var workingPack = candidatePack;
-        for (var attempt = 1; attempt <= 3; attempt++)
+        // PackCriticEngine.Evaluate forces Unsupported (never Repair) once AttemptNumber >= 2,
+        // so a third iteration can never be reached; the bound below reflects that reality.
+        for (var attempt = 1; attempt <= 2; attempt++)
         {
             var critique = _packCriticEngine.Evaluate(new PackCritiqueContext(
                 normalizedQuestionPhrase,
@@ -1755,7 +1760,7 @@ public sealed partial class ContextService
                 return (workingPack, false);
             }
 
-            if (critique.Action == PackCritiqueAction.Repair && attempt < 3)
+            if (critique.Action == PackCritiqueAction.Repair && attempt < 2)
             {
                 workingPack = ApplyCriticRepairs(
                     workingPack,

@@ -1,5 +1,7 @@
+using System.Net;
 using FocusLAIci.Web.Models;
 using FocusLAIci.Web.Security;
+using Microsoft.AspNetCore.Http;
 
 namespace FocusLAIci.Tests;
 
@@ -171,6 +173,117 @@ public sealed class SecurityPolicyTests
             TryDeleteDirectory(approvedRoot);
             TryDeleteDirectory(sandboxRoot);
         }
+    }
+
+    [Fact]
+    public async Task ApiWriteOriginGuard_BlocksNonLoopbackWriteWithNoFetchMetadata()
+    {
+        var invoked = false;
+        var middleware = new ApiWriteOriginGuardMiddleware(_ =>
+        {
+            invoked = true;
+            return Task.CompletedTask;
+        });
+
+        var context = new DefaultHttpContext();
+        context.Request.Method = "POST";
+        context.Request.Path = "/api/palace/memories";
+        context.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.5");
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        Assert.False(invoked);
+        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ApiWriteOriginGuard_AllowsLoopbackWriteWithNoFetchMetadata()
+    {
+        var invoked = false;
+        var middleware = new ApiWriteOriginGuardMiddleware(_ =>
+        {
+            invoked = true;
+            return Task.CompletedTask;
+        });
+
+        var context = new DefaultHttpContext();
+        context.Request.Method = "POST";
+        context.Request.Path = "/api/palace/memories";
+        context.Connection.RemoteIpAddress = IPAddress.Loopback;
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        Assert.True(invoked);
+    }
+
+    [Fact]
+    public async Task ApiWriteOriginGuard_AllowsSameOriginBrowserWrite()
+    {
+        var invoked = false;
+        var middleware = new ApiWriteOriginGuardMiddleware(_ =>
+        {
+            invoked = true;
+            return Task.CompletedTask;
+        });
+
+        var context = new DefaultHttpContext();
+        context.Request.Method = "POST";
+        context.Request.Path = "/api/palace/memories";
+        context.Request.Scheme = "http";
+        context.Request.Host = new HostString("localhost", 5191);
+        context.Request.Headers.Origin = "http://localhost:5191";
+        context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.5");
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        Assert.True(invoked);
+    }
+
+    [Fact]
+    public async Task ApiWriteOriginGuard_BlocksCrossSiteBrowserWrite()
+    {
+        var invoked = false;
+        var middleware = new ApiWriteOriginGuardMiddleware(_ =>
+        {
+            invoked = true;
+            return Task.CompletedTask;
+        });
+
+        var context = new DefaultHttpContext();
+        context.Request.Method = "POST";
+        context.Request.Path = "/api/palace/memories";
+        context.Request.Headers["Sec-Fetch-Site"] = "cross-site";
+        context.Connection.RemoteIpAddress = IPAddress.Loopback;
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        Assert.False(invoked);
+        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ApiWriteOriginGuard_ExemptsMcpEndpointFromBrowserGuard()
+    {
+        var invoked = false;
+        var middleware = new ApiWriteOriginGuardMiddleware(_ =>
+        {
+            invoked = true;
+            return Task.CompletedTask;
+        });
+
+        var context = new DefaultHttpContext();
+        context.Request.Method = "POST";
+        context.Request.Path = "/api/mcp/tools/call";
+        context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.5");
+        context.Response.Body = new MemoryStream();
+
+        await middleware.InvokeAsync(context);
+
+        Assert.True(invoked);
     }
 
     private static void TryDeleteDirectory(string path)

@@ -1499,6 +1499,38 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task TicketingService_ConcurrentCreatesGetDistinctTicketNumbers()
+    {
+        await using var harness = await TestHarness.CreateAsync();
+
+        async Task<Guid> CreateAsync(int index)
+        {
+            await using var context = harness.CreateDbContext();
+            var service = new TicketingService(context);
+            return await service.CreateTicketAsync(new TicketEditorInput
+            {
+                Title = $"Concurrent ticket {index}",
+                Description = "Exercises the ticket-number collision retry path.",
+                Status = TicketStatus.New,
+                Priority = TicketPriority.Medium,
+                Assignee = "Copilot",
+                TagsText = "concurrency"
+            }, CancellationToken.None);
+        }
+
+        var ids = await Task.WhenAll(Enumerable.Range(1, 8).Select(CreateAsync));
+
+        await using var verifyContext = harness.CreateDbContext();
+        var ticketNumbers = await verifyContext.Tickets
+            .Where(x => ids.Contains(x.Id))
+            .Select(x => x.TicketNumber)
+            .ToListAsync();
+
+        Assert.Equal(8, ticketNumbers.Count);
+        Assert.Equal(ticketNumbers.Count, ticketNumbers.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
     public async Task TicketingService_BoardCountsTopLevelTicketsSeparatelyFromOpenSubtickets()
     {
         await using var harness = await TestHarness.CreateAsync();

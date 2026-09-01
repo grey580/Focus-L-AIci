@@ -218,7 +218,6 @@ public sealed class TicketingService
         var now = DateTime.UtcNow;
         var ticket = new TicketEntry
         {
-            TicketNumber = FormatTicketNumber(await BuildNextTicketSequenceAsync(cancellationToken)),
             Title = input.Title.Trim(),
             Description = input.Description.Trim(),
             Status = input.Status,
@@ -233,7 +232,7 @@ public sealed class TicketingService
         };
 
         _dbContext.Tickets.Add(ticket);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveNewTicketWithSequenceRetryAsync(ticket, cancellationToken);
         await AddActivityAsync(ticket.Id, "created", $"Created {ticket.TicketNumber}.", string.Empty, cancellationToken);
 
         if (ticket.Status == TicketStatus.Completed)
@@ -255,7 +254,6 @@ public sealed class TicketingService
         var ticket = new TicketEntry
         {
             ParentTicketId = parent.Id,
-            TicketNumber = FormatTicketNumber(await BuildNextTicketSequenceAsync(cancellationToken)),
             Title = input.Title.Trim(),
             Description = input.Description.Trim(),
             Status = input.Status,
@@ -271,7 +269,7 @@ public sealed class TicketingService
 
         _dbContext.Tickets.Add(ticket);
         parent.UpdatedUtc = now;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveNewTicketWithSequenceRetryAsync(ticket, cancellationToken);
 
         await AddActivityAsync(parent.Id, "subticket-created", $"Added sub-ticket {ticket.TicketNumber}.", ticket.Title, cancellationToken);
         await AddActivityAsync(ticket.Id, "created", $"Created {ticket.TicketNumber} from parent {parent.TicketNumber}.", parent.Title, cancellationToken);
@@ -457,19 +455,11 @@ public sealed class TicketingService
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var now = DateTime.UtcNow;
-        var nextSequence = await BuildNextTicketSequenceAsync(cancellationToken);
-        var createdCount = 0;
-        foreach (var title in candidateTitles)
-        {
-            if (!existingTitles.Add(title))
-            {
-                continue;
-            }
-
-            _dbContext.Tickets.Add(new TicketEntry
+        var candidateEntries = candidateTitles
+            .Where(existingTitles.Add)
+            .Select(title => new TicketEntry
             {
                 ParentTicketId = ticket.Id,
-                TicketNumber = FormatTicketNumber(nextSequence++),
                 Title = title,
                 Description = $"Auto-generated from {ticket.TicketNumber}: {title}",
                 Status = TicketStatus.New,
@@ -480,17 +470,18 @@ public sealed class TicketingService
                 GitCommit = ticket.GitCommit,
                 CreatedUtc = now,
                 UpdatedUtc = now
-            });
-            createdCount++;
-        }
+            })
+            .ToArray();
+        var createdCount = candidateEntries.Length;
 
         if (createdCount == 0)
         {
             throw new InvalidOperationException("All generated subtickets already exist for this ticket.");
         }
 
+        _dbContext.Tickets.AddRange(candidateEntries);
         ticket.UpdatedUtc = now;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveNewTicketsWithSequenceRetryAsync(candidateEntries, cancellationToken);
         await AddActivityAsync(ticket.Id, "subtickets-generated", $"Generated {createdCount} subtickets.", string.Join(Environment.NewLine, candidateTitles), cancellationToken);
         await PublishTicketEventAsync("ticket.subtickets-generated", ticket.Id, ticket.Title, $"Generated {createdCount} subtickets.", cancellationToken);
         return createdCount;
@@ -808,6 +799,49 @@ public sealed class TicketingService
             CreatedUtc = DateTime.UtcNow
         });
         await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task SaveNewTicketWithSequenceRetryAsync(TicketEntry ticket, CancellationToken cancellationToken)
+        => await SaveNewTicketsWithSequenceRetryAsync([ticket], cancellationToken);
+
+    /// <summary>
+    /// Assigns ticket numbers and saves newly-added tickets, retrying with a freshly recomputed
+    /// sequence if a concurrent create collided on the TicketNumber unique index. This closes the
+    /// race condition where two callers could both read the same "next" sequence value from
+    /// <see cref="BuildNextTicketSequenceAsync"/> before either had committed.
+    /// </summary>
+    private async Task SaveNewTicketsWithSequenceRetryAsync(IReadOnlyCollection<TicketEntry> newTickets, CancellationToken cancellationToken)
+    {
+        const int maxAttempts = 5;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            var nextSequence = await BuildNextTicketSequenceAsync(cancellationToken);
+            foreach (var ticket in newTickets)
+            {
+                ticket.TicketNumber = FormatTicketNumber(nextSequence++);
+            }
+
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                return;
+            }
+            catch (DbUpdateException) when (attempt < maxAttempts)
+            {
+                // Another request created a ticket with a colliding number between our sequence
+                // read and this save. Detach the failed entries' tracked state so the next attempt
+                // can safely retry with newly-read numbers.
+                foreach (var ticket in newTickets)
+                {
+                    _dbContext.Entry(ticket).State = EntityState.Detached;
+                }
+
+                foreach (var ticket in newTickets)
+                {
+                    _dbContext.Tickets.Add(ticket);
+                }
+            }
+        }
     }
 
     private async Task<int> BuildNextTicketSequenceAsync(CancellationToken cancellationToken)

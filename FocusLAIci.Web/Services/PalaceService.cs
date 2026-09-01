@@ -1470,11 +1470,16 @@ public sealed class PalaceService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+        // Merging touches multiple tables (memory fields, tags, then the source's lifecycle state)
+        // across several SaveChangesAsync calls. Wrap them in one transaction so a mid-merge
+        // failure can't leave the target updated but the source still Active, or vice versa.
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
         await SyncTagsAsync(target.Id, mergedTags, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         await SupersedeMemoryAsync(sourceMemoryId, targetMemoryId, mergedReason, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         await PublishMemoryEventAsync("memory.merged", target.Id, target.Title, $"Merged '{source.Title}' into this memory.", cancellationToken);
         return target.Id;
     }
