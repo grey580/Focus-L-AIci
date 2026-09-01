@@ -155,52 +155,51 @@ public sealed class PalaceApiController : ControllerBase
     [HttpPost("memories/{id:guid}/verify")]
     public async Task<ActionResult<object>> VerifyMemory(Guid id, CancellationToken cancellationToken)
     {
-        try
-        {
-            await _palaceService.MarkMemoryVerifiedAsync(id, cancellationToken);
-            return Ok(new { id, verificationStatus = nameof(MemoryVerificationStatus.Verified) });
-        }
-        catch (InvalidOperationException)
-        {
-            return NotFound();
-        }
+        return await ExecuteOrNotFoundAsync(
+            () => _palaceService.MarkMemoryVerifiedAsync(id, cancellationToken),
+            () => Ok(new { id, verificationStatus = nameof(MemoryVerificationStatus.Verified) }));
     }
 
     [HttpPost("memories/{id:guid}/mark-review")]
     public async Task<ActionResult<object>> MarkMemoryNeedsReview(Guid id, CancellationToken cancellationToken)
     {
-        try
-        {
-            await _palaceService.MarkMemoryNeedsReviewAsync(id, cancellationToken);
-            return Ok(new { id, verificationStatus = nameof(MemoryVerificationStatus.NeedsReview) });
-        }
-        catch (InvalidOperationException)
-        {
-            return NotFound();
-        }
+        return await ExecuteOrNotFoundAsync(
+            () => _palaceService.MarkMemoryNeedsReviewAsync(id, cancellationToken),
+            () => Ok(new { id, verificationStatus = nameof(MemoryVerificationStatus.NeedsReview) }));
     }
 
     [HttpPost("memories/{id:guid}/archive")]
     public async Task<ActionResult<object>> ArchiveMemory(Guid id, [FromBody] MemoryBulkGovernanceInput input, CancellationToken cancellationToken)
     {
-        try
-        {
-            await _palaceService.ArchiveMemoryAsync(id, input.Reason, cancellationToken);
-            return Ok(new { id, lifecycleState = nameof(MemoryLifecycleState.Archived) });
-        }
-        catch (InvalidOperationException)
-        {
-            return NotFound();
-        }
+        return await ExecuteOrNotFoundAsync(
+            () => _palaceService.ArchiveMemoryAsync(id, input.Reason, cancellationToken),
+            () => Ok(new { id, lifecycleState = nameof(MemoryLifecycleState.Archived) }));
     }
 
     [HttpPost("memories/{id:guid}/restore")]
     public async Task<ActionResult<object>> RestoreMemory(Guid id, CancellationToken cancellationToken)
     {
+        return await ExecuteOrNotFoundAsync(
+            () => _palaceService.MarkMemoryActiveAsync(id, cancellationToken),
+            () => Ok(new { id, lifecycleState = nameof(MemoryLifecycleState.Active) }));
+    }
+
+    /// <summary>
+    /// Runs a memory-mutation call that throws <see cref="InvalidOperationException"/>
+    /// when the target memory no longer exists, mapping that specific failure to a
+    /// 404 instead of letting it bubble up as an unhandled 500. Shared by the several
+    /// memory-lifecycle endpoints above that previously repeated this same
+    /// try/catch/NotFound shape individually. Endpoints that need to surface the
+    /// exception message as field-specific validation detail (e.g. CreateMemory,
+    /// SupersedeMemory) intentionally keep their own try/catch, since that mapping
+    /// isn't generic across endpoints.
+    /// </summary>
+    private async Task<ActionResult<object>> ExecuteOrNotFoundAsync(Func<Task> action, Func<ActionResult<object>> onSuccess)
+    {
         try
         {
-            await _palaceService.MarkMemoryActiveAsync(id, cancellationToken);
-            return Ok(new { id, lifecycleState = nameof(MemoryLifecycleState.Active) });
+            await action();
+            return onSuccess();
         }
         catch (InvalidOperationException)
         {

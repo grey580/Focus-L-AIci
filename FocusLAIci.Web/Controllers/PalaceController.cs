@@ -69,70 +69,60 @@ public sealed class PalaceController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> VerifyMemory(Guid id, CancellationToken cancellationToken)
     {
-        try
-        {
-            await _palaceService.MarkMemoryVerifiedAsync(id, cancellationToken);
-            return RedirectToAction(nameof(Memory), new { id });
-        }
-        catch (InvalidOperationException)
-        {
-            return NotFound();
-        }
+        return await ExecuteOrNotFoundAsync(
+            () => _palaceService.MarkMemoryVerifiedAsync(id, cancellationToken),
+            () => RedirectToAction(nameof(Memory), new { id }));
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> MarkMemoryNeedsReview(Guid id, CancellationToken cancellationToken)
     {
-        try
-        {
-            await _palaceService.MarkMemoryNeedsReviewAsync(id, cancellationToken);
-            return RedirectToAction(nameof(Memory), new { id });
-        }
-        catch (InvalidOperationException)
-        {
-            return NotFound();
-        }
+        return await ExecuteOrNotFoundAsync(
+            () => _palaceService.MarkMemoryNeedsReviewAsync(id, cancellationToken),
+            () => RedirectToAction(nameof(Memory), new { id }));
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> ArchiveMemory(Guid id, string? reason, CancellationToken cancellationToken)
     {
-        try
-        {
-            await _palaceService.ArchiveMemoryAsync(id, reason, cancellationToken);
-            return RedirectToAction(nameof(Memory), new { id });
-        }
-        catch (InvalidOperationException)
-        {
-            return NotFound();
-        }
+        return await ExecuteOrNotFoundAsync(
+            () => _palaceService.ArchiveMemoryAsync(id, reason, cancellationToken),
+            () => RedirectToAction(nameof(Memory), new { id }));
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> RestoreMemory(Guid id, CancellationToken cancellationToken)
     {
-        try
-        {
-            await _palaceService.MarkMemoryActiveAsync(id, cancellationToken);
-            return RedirectToAction(nameof(Memory), new { id });
-        }
-        catch (InvalidOperationException)
-        {
-            return NotFound();
-        }
+        return await ExecuteOrNotFoundAsync(
+            () => _palaceService.MarkMemoryActiveAsync(id, cancellationToken),
+            () => RedirectToAction(nameof(Memory), new { id }));
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SupersedeMemory(Guid id, MemorySupersedeInput input, CancellationToken cancellationToken)
     {
+        return await ExecuteOrNotFoundAsync(
+            () => _palaceService.SupersedeMemoryAsync(id, input.ReplacementMemoryId, input.Reason, cancellationToken),
+            () => RedirectToAction(nameof(Memory), new { id }));
+    }
+
+    /// <summary>
+    /// Runs a memory-mutation call that throws <see cref="InvalidOperationException"/>
+    /// when the target memory no longer exists (or a supersede/archive target is
+    /// invalid), mapping that specific failure to a 404 instead of letting it bubble
+    /// up as an unhandled 500. Shared by the several memory-lifecycle actions above
+    /// that previously repeated this same try/catch/NotFound shape individually.
+    /// </summary>
+    private async Task<IActionResult> ExecuteOrNotFoundAsync(Func<Task> action, Func<IActionResult> onSuccess)
+    {
         try
         {
-            await _palaceService.SupersedeMemoryAsync(id, input.ReplacementMemoryId, input.Reason, cancellationToken);
-            return RedirectToAction(nameof(Memory), new { id });
+            await action();
+            return onSuccess();
         }
         catch (InvalidOperationException)
         {
