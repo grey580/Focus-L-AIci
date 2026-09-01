@@ -242,6 +242,11 @@ public sealed class MemoryEntry
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedUtc { get; set; } = DateTime.UtcNow;
     public DateTime? OccurredUtc { get; set; }
+
+    // Optimistic concurrency token: incremented on every SaveChanges affecting this row
+    // (see FocusMemoryContext.SaveChangesAsync). Guards against silent lost updates when
+    // the web UI, REST API, and MCP clients race to write the same memory concurrently.
+    public long RowVersion { get; set; }
     public Wing? Wing { get; set; }
     public Room? Room { get; set; }
     public MemoryEntry? SupersededByMemory { get; set; }

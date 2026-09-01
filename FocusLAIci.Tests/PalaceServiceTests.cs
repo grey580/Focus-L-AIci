@@ -181,6 +181,102 @@ public sealed class PalaceServiceTests
     }
 
     [Fact]
+    public async Task SaveMemoryAsync_ConcurrentEditsOnSameMemoryThrowConcurrencyExceptionInsteadOfSilentlyOverwriting()
+    {
+        // Two writers load the same memory into separate DbContexts (simulating two concurrent
+        // requests, e.g. web UI + MCP client), then both try to save. The second SaveChanges
+        // must detect the RowVersion mismatch and fail loudly instead of silently discarding
+        // the first writer's change.
+        await using var harness = await TestHarness.CreateAsync();
+        Guid memoryId;
+
+        await using (var setupContext = harness.CreateDbContext())
+        {
+            var service = new PalaceService(setupContext);
+            memoryId = await service.SaveMemoryAsync(new MemoryEditorInput
+            {
+                Title = "Concurrency guard baseline",
+                Summary = "Initial summary before the concurrent edits race.",
+                Content = "Initial content before the concurrent edits race.",
+                Kind = MemoryKind.Decision,
+                SourceKind = SourceKind.ManualNote,
+                Importance = 3
+            }, CancellationToken.None);
+        }
+
+        await using var firstWriterContext = harness.CreateDbContext();
+        await using var secondWriterContext = harness.CreateDbContext();
+
+        var firstWriterMemory = await firstWriterContext.Memories.FirstAsync(x => x.Id == memoryId, CancellationToken.None);
+        var secondWriterMemory = await secondWriterContext.Memories.FirstAsync(x => x.Id == memoryId, CancellationToken.None);
+
+        firstWriterMemory.Summary = "Updated by the first writer.";
+        await firstWriterContext.SaveChangesAsync(CancellationToken.None);
+
+        secondWriterMemory.Summary = "Updated by the second writer, unaware of the first writer's change.";
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(
+            () => secondWriterContext.SaveChangesAsync(CancellationToken.None));
+
+        await using var verifyContext = harness.CreateDbContext();
+        var verifyService = new PalaceService(verifyContext);
+        var detail = await verifyService.GetMemoryAsync(memoryId, CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.Equal("Updated by the first writer.", detail!.Memory.Summary);
+    }
+
+    [Fact]
+    public async Task PalaceService_ArchiveMemoryAsync_TranslatesConcurrencyConflictIntoClearError()
+    {
+        // Service-layer write paths (ArchiveMemoryAsync here, representative of the other
+        // memory-mutation methods that route through SaveMemoryChangesAsync) should surface a
+        // conflicting concurrent write as a clean InvalidOperationException, which controllers
+        // already map to a client-facing 400/invalid_request, rather than an unhandled 500 from
+        // a raw DbUpdateConcurrencyException.
+        await using var harness = await TestHarness.CreateAsync();
+        Guid memoryId;
+
+        await using (var setupContext = harness.CreateDbContext())
+        {
+            var service = new PalaceService(setupContext);
+            memoryId = await service.SaveMemoryAsync(new MemoryEditorInput
+            {
+                Title = "Archive concurrency guard",
+                Summary = "Baseline memory for the archive race test.",
+                Content = "Baseline content for the archive race test.",
+                Kind = MemoryKind.Decision,
+                SourceKind = SourceKind.ManualNote,
+                Importance = 3
+            }, CancellationToken.None);
+        }
+
+        await using var staleWriterContext = harness.CreateDbContext();
+        var staleMemory = await staleWriterContext.Memories.FirstAsync(x => x.Id == memoryId, CancellationToken.None);
+
+        await using (var otherWriterContext = harness.CreateDbContext())
+        {
+            var otherMemory = await otherWriterContext.Memories.FirstAsync(x => x.Id == memoryId, CancellationToken.None);
+            otherMemory.Summary = "Changed by another writer before the archive attempt.";
+            await otherWriterContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var staleService = new PalaceService(staleWriterContext);
+        staleMemory.Summary = "This should never be persisted.";
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => staleService.ArchiveMemoryAsync(memoryId, "Testing the concurrency guard.", CancellationToken.None));
+
+        Assert.Contains("changed by another request", exception.Message, StringComparison.OrdinalIgnoreCase);
+
+        await using var verifyContext = harness.CreateDbContext();
+        var verifyService = new PalaceService(verifyContext);
+        var detail = await verifyService.GetMemoryAsync(memoryId, CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.Equal("Changed by another writer before the archive attempt.", detail!.Memory.Summary);
+        Assert.Equal("Active", detail.Memory.LifecycleLabel);
+    }
+
+    [Fact]
     public async Task UpdateMemoryTagsAsync_ReplacesSuggestedTagsWithExplicitTags()
     {
         await using var harness = await TestHarness.CreateAsync();

@@ -163,6 +163,7 @@ public sealed class FocusMemoryContext : DbContext
             entity.Property(x => x.Summary).HasMaxLength(500);
             entity.Property(x => x.SourceReference).HasMaxLength(260);
             entity.Property(x => x.LifecycleReason).HasMaxLength(260);
+            entity.Property(x => x.RowVersion).IsConcurrencyToken();
             entity.HasOne(x => x.Wing)
                 .WithMany(x => x.Memories)
                 .HasForeignKey(x => x.WingId)
@@ -301,4 +302,34 @@ public sealed class FocusMemoryContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        BumpMemoryRowVersions();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        BumpMemoryRowVersions();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    // Increments the optimistic-concurrency RowVersion counter on every MemoryEntry that is
+    // being updated or deleted in this SaveChanges batch. EF's concurrency-token check compares
+    // the RowVersion value it originally read against what's currently in the database (via the
+    // WHERE clause on UPDATE/DELETE); if another writer already bumped it since we loaded the
+    // row, SaveChanges throws DbUpdateConcurrencyException instead of silently overwriting or
+    // losing that other writer's change.
+    private void BumpMemoryRowVersions()
+    {
+        foreach (var entry in ChangeTracker.Entries<MemoryEntry>())
+        {
+            if (entry.State == EntityState.Modified)
+            {
+                entry.Property(x => x.RowVersion).CurrentValue = entry.Property(x => x.RowVersion).OriginalValue + 1;
+            }
+        }
+    }
 }
+

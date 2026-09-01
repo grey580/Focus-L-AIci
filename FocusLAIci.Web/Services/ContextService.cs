@@ -2732,7 +2732,21 @@ public sealed partial class ContextService
             memory.ReferenceCount += 1;
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Reference-count/last-referenced tracking is best-effort telemetry, not a
+            // critical business write. If a concurrent writer (e.g. a merge/supersede)
+            // already changed one of these memories since we loaded it, just drop this
+            // update rather than fail the whole context-pack build over a stale counter.
+            foreach (var entry in _dbContext.ChangeTracker.Entries<MemoryEntry>().ToArray())
+            {
+                entry.State = EntityState.Detached;
+            }
+        }
     }
 
     private static ContextScoreOutcome ScoreFields(

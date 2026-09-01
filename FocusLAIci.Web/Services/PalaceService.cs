@@ -1474,9 +1474,9 @@ public sealed class PalaceService
         // across several SaveChangesAsync calls. Wrap them in one transaction so a mid-merge
         // failure can't leave the target updated but the source still Active, or vice versa.
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveMemoryChangesAsync(cancellationToken);
         await SyncTagsAsync(target.Id, mergedTags, cancellationToken);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveMemoryChangesAsync(cancellationToken);
 
         await SupersedeMemoryAsync(sourceMemoryId, targetMemoryId, mergedReason, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -1747,12 +1747,12 @@ public sealed class PalaceService
             memory.ReviewAfterUtc = now;
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveMemoryChangesAsync(cancellationToken);
 
         var tagNames = SuggestTagsForDraft(input);
         await SyncTagsAsync(memory.Id, tagNames, cancellationToken);
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveMemoryChangesAsync(cancellationToken);
         await PublishMemoryEventAsync(
             isExistingMemory ? "memory.updated" : "memory.created",
             memory.Id,
@@ -1772,7 +1772,7 @@ public sealed class PalaceService
         memory.LastVerifiedUtc = now;
         memory.ReviewAfterUtc = now.AddDays(MemoryTrustHelper.DefaultReviewWindowDays);
         memory.UpdatedUtc = now;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveMemoryChangesAsync(cancellationToken);
         await PublishMemoryEventAsync("memory.verified", memory.Id, memory.Title, "Memory marked verified.", cancellationToken);
     }
 
@@ -1785,7 +1785,7 @@ public sealed class PalaceService
         memory.VerificationStatus = MemoryVerificationStatus.NeedsReview;
         memory.ReviewAfterUtc = now;
         memory.UpdatedUtc = now;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveMemoryChangesAsync(cancellationToken);
         await PublishMemoryEventAsync("memory.needs-review", memory.Id, memory.Title, "Memory marked for review.", cancellationToken);
     }
 
@@ -1795,10 +1795,10 @@ public sealed class PalaceService
             ?? throw new InvalidOperationException("Memory entry not found.");
 
         memory.UpdatedUtc = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveMemoryChangesAsync(cancellationToken);
 
         await SyncTagsAsync(id, ParseTags(tagsText), cancellationToken);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveMemoryChangesAsync(cancellationToken);
         await PublishMemoryEventAsync("memory.tags-updated", memory.Id, memory.Title, "Memory tags updated.", cancellationToken);
     }
 
@@ -1814,7 +1814,7 @@ public sealed class PalaceService
         memory.LifecycleChangedUtc = now;
         memory.ArchivedUtc = null;
         memory.UpdatedUtc = now;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveMemoryChangesAsync(cancellationToken);
         await PublishMemoryEventAsync("memory.restored", memory.Id, memory.Title, "Memory restored to active state.", cancellationToken);
     }
 
@@ -1831,7 +1831,7 @@ public sealed class PalaceService
         memory.ArchivedUtc = now;
         memory.IsPinned = false;
         memory.UpdatedUtc = now;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveMemoryChangesAsync(cancellationToken);
         await PublishMemoryEventAsync("memory.archived", memory.Id, memory.Title, memory.LifecycleReason, cancellationToken);
     }
 
@@ -1877,7 +1877,7 @@ public sealed class PalaceService
         memory.ArchivedUtc = null;
         memory.IsPinned = false;
         memory.UpdatedUtc = now;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await SaveMemoryChangesAsync(cancellationToken);
         await PublishMemoryEventAsync("memory.superseded", memory.Id, memory.Title, memory.LifecycleReason, cancellationToken);
     }
 
@@ -2671,7 +2671,21 @@ public sealed class PalaceService
             memory.ReferenceCount += 1;
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Reference-count/last-referenced tracking is best-effort telemetry, not a
+            // critical business write; drop it on conflict rather than fail the whole
+            // memory-detail lookup over a stale counter (mirrors ContextService's
+            // TouchMemoryReferencesAsync handling of the same race).
+            foreach (var entry in _dbContext.ChangeTracker.Entries<MemoryEntry>().ToArray())
+            {
+                entry.State = EntityState.Detached;
+            }
+        }
     }
 
     private static TodoItemViewModel MapTodo(TodoEntry todo)
@@ -2723,6 +2737,30 @@ public sealed class PalaceService
 
         var candidates = await query.ToListAsync(cancellationToken);
         return candidates.FirstOrDefault(x => x.Id == id);
+    }
+
+    // Wraps SaveChangesAsync for memory-write paths and translates a concurrency conflict
+    // (another writer already changed a MemoryEntry we loaded and are trying to update) into
+    // a clear, user-facing InvalidOperationException instead of letting the raw
+    // DbUpdateConcurrencyException bubble up as an unhandled 500. Controllers already treat
+    // InvalidOperationException as a client-facing 400/invalid_request, so this reuses that
+    // existing error-handling path for both the REST and MCP surfaces.
+    private async Task SaveMemoryChangesAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            foreach (var entry in exception.Entries)
+            {
+                entry.State = EntityState.Detached;
+            }
+
+            throw new InvalidOperationException(
+                "This memory was changed by another request just now. Reload it and try again.");
+        }
     }
 
     private async Task SyncTagsAsync(Guid memoryId, IReadOnlyCollection<string> tagNames, CancellationToken cancellationToken)

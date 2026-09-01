@@ -425,6 +425,7 @@ public static class MemorySeeder
         await EnsureColumnExistsAsync(dbContext, "Memories", "ArchivedUtc", "TEXT NULL", cancellationToken);
         await EnsureColumnExistsAsync(dbContext, "Memories", "LastReferencedUtc", "TEXT NULL", cancellationToken);
         await EnsureColumnExistsAsync(dbContext, "Memories", "ReferenceCount", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+        await EnsureColumnExistsAsync(dbContext, "Memories", "RowVersion", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
         await EnsureColumnExistsAsync(dbContext, "Skills", "UseCount", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
         await EnsureColumnExistsAsync(dbContext, "Skills", "LastUsedUtc", "TEXT NULL", cancellationToken);
         await EnsureColumnExistsAsync(dbContext, "Skills", "LastReviewedUtc", "TEXT NULL", cancellationToken);
